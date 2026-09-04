@@ -84,15 +84,15 @@ async def cb_premium_buy(callback: CallbackQuery):
 _upsell_counter: dict[int, int] = {}
 _upsell_last_shown: dict[int, int] = {}
 
+
 async def maybe_show_upsell(bot, user_id: int) -> bool:
-    """Show premium upsell after every 3rd stop, max 1x/day. Returns True if shown."""
     import time
     now = int(time.time())
     today_start = now - (now % 86400)
 
     last_shown = _upsell_last_shown.get(user_id, 0)
     if last_shown > today_start:
-        return False  # Already shown today
+        return False
 
     count = _upsell_counter.get(user_id, 0) + 1
     _upsell_counter[user_id] = count
@@ -127,7 +127,10 @@ async def maybe_show_upsell(bot, user_id: int) -> bool:
 @premium_router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
     payload = query.invoice_payload
-    if payload.startswith("premium:") or payload.startswith("gender_filter:") or payload.startswith("reveal:"):
+    if (payload.startswith("premium:") or
+        payload.startswith("gender_filter:") or
+        payload.startswith("reveal:") or
+        payload.startswith("instant_search:")):
         await query.answer(ok=True)
     else:
         await query.answer(ok=False, error_message="Неизвестный товар")
@@ -154,10 +157,19 @@ async def successful_payment(message: Message):
     elif payload.startswith("gender_filter:"):
         await add_payment(user_id, "gender_filter", payment.total_amount, payment.telegram_payment_id)
         from utils.db import update_user
-        await update_user(user_id, settings_gender_filter="a")  # Reset to all, now they can choose
+        await update_user(user_id, settings_gender_filter="a")
         await message.answer(
             "✅ Фильтр по полу разблокирован!\n\n"
             "Теперь ты можешь выбирать кого искать в настройках.",
+            reply_markup=menu_kb(),
+        )
+    elif payload.startswith("instant_search:"):
+        # BUG FIX: now actually charges through Telegram Stars
+        await add_payment(user_id, "instant_search", payment.total_amount, payment.telegram_payment_id)
+        from services.chat_manager import set_instant_search
+        await set_instant_search(user_id)
+        await message.answer(
+            "⚡ Мгновенный поиск активирован!",
             reply_markup=menu_kb(),
         )
     else:

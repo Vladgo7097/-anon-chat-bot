@@ -1,11 +1,11 @@
 import asyncio
 import time
 from aiogram import F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, LabeledPrice
 
 from handlers import search_router
-from keyboards.inline import search_kb, chat_kb, menu_kb
-from keyboards.reply import chat_kb_reply, search_kb_reply
+from keyboards.inline import search_kb, menu_kb
+from keyboards.reply import chat_kb_reply
 from utils.db import get_or_create_user, increment_chats, check_ban, is_premium
 from services.chat_manager import (
     join_search, leave_search, search_with_timeout,
@@ -40,7 +40,8 @@ async def cb_search_start(callback: CallbackQuery):
     )
     await callback.answer()
 
-    await _search_loop(callback, user.id, db_user)
+    # BUG FIX: run search loop as background task instead of blocking
+    asyncio.create_task(_search_loop(callback, user.id, db_user))
 
 
 async def _search_loop(callback: CallbackQuery, user_id: int, db_user):
@@ -50,6 +51,11 @@ async def _search_loop(callback: CallbackQuery, user_id: int, db_user):
 
     while time.time() - start < config.SEARCH_TIMEOUT:
         await asyncio.sleep(2)
+
+        # Check if user is still searching (not cancelled)
+        from services.chat_manager import get_partner
+        if await get_partner(user_id):
+            return  # Already matched
 
         partner_id = await search_with_timeout(user_id, db_user.gender if db_user else None)
         if partner_id:
@@ -133,9 +139,13 @@ async def cb_search_instant(callback: CallbackQuery):
         await callback.answer("У тебя Premium — поиск и так мгновенный!", show_alert=True)
         return
 
-    from utils.db import add_payment
-    await add_payment(user.id, "instant_search", config.STARS_INSTANT_SEARCH)
-    await set_instant_search(user.id)
-
-    await callback.answer(f"⚡ Мгновенный поиск активирован!", show_alert=True)
-    await cb_search_start(callback)
+    # BUG FIX: send invoice instead of immediately charging
+    await callback.bot.send_invoice(
+        chat_id=user.id,
+        title="Мгновенный поиск",
+        description="Найти собеседника мгновенно, минуя очередь",
+        payload=f"instant_search:{user.id}",
+        currency="XTR",
+        prices=[LabeledPrice(label="Мгновенный поиск", amount=config.STARS_INSTANT_SEARCH)],
+    )
+    await callback.answer()

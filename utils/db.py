@@ -210,7 +210,6 @@ async def activate_premium(user_id: int, plan: str, stars: int):
             select(User).where(User.telegram_id == user_id)
         )).scalar_one_or_none()
         if user:
-            from datetime import datetime
             now = datetime.utcnow()
             if user.is_premium and user.premium_expires and user.premium_expires > now:
                 user.premium_expires = user.premium_expires + timedelta(days=days)
@@ -258,6 +257,7 @@ async def get_user_stats(user_id: int) -> dict:
             "rating_pct": user.positive_rating_pct,
             "streak": user.streak_days,
             "is_premium": user.is_premium,
+            "premium_expires": user.premium_expires,  # BUG FIX: was missing
             "total_spent": user.total_stars_spent,
             "gender": user.gender,
             "age": user.age,

@@ -17,7 +17,7 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
-@admin_router.message(F.command == "admin")
+@admin_router.message(F.command("admin"))
 async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Нет доступа.")
@@ -170,7 +170,7 @@ async def cb_admin_users(callback: CallbackQuery):
 
 # ── Broadcast ────────────────────────────────────────────────────
 
-_broadcast_state: dict[int, str] = {}  # user_id -> audience type
+_broadcast_state: dict[int, str] = {}
 
 
 @admin_router.callback_query(F.data == "admin:broadcast")
@@ -197,7 +197,7 @@ async def cb_broadcast_audience(callback: CallbackQuery):
         "premium": "только Premium",
         "inactive": "неактивным 7+ дней",
         "nopay": "без покупок",
-    }.get(auditorium, "всем")
+    }.get(audience, "всем")  # BUG FIX: was "auditorium"
 
     await callback.message.edit_text(
         f"📢 Рассылка {audience_text}\n\n"
@@ -206,7 +206,7 @@ async def cb_broadcast_audience(callback: CallbackQuery):
     await callback.answer()
 
 
-@admin_router.message(F.text.startswith("/broadcast "))
+@admin_router.message(F.command("broadcast"))
 async def cmd_broadcast(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -292,7 +292,7 @@ async def cb_admin_funnel(callback: CallbackQuery):
 
 # ── Admin text commands ──────────────────────────────────────────
 
-@admin_router.message(F.command == "ban_user")
+@admin_router.message(F.command("ban_user"))
 async def cmd_ban_user(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -310,7 +310,7 @@ async def cmd_ban_user(message: Message):
     await message.answer(f"⛔ {anon_id} забанен" + (f" на {hours}ч" if hours else " навсегда"))
 
 
-@admin_router.message(F.command == "user")
+@admin_router.message(F.command("user"))
 async def cmd_user(message: Message):
     if not is_admin(message.from_user.id):
         return
