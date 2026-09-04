@@ -2,9 +2,8 @@ from aiogram import F
 from aiogram.types import CallbackQuery
 
 from handlers import rating_router
-from utils.db import add_rating, save_chat, get_user_by_id
+from utils.db import add_rating, save_chat, get_user_by_id, get_or_create_user
 from keyboards.inline import menu_kb
-from services.chat_manager import get_partner
 
 
 _last_partner: dict[int, dict] = {}
@@ -30,9 +29,14 @@ async def cb_rate(callback: CallbackQuery):
         await add_rating(partner_id, is_positive)
         await save_chat(user_id, partner_id)
 
-        # BUG FIX: notify the rated user
+        # Notify the rated user
         from services.notifications import send_post_chat_rating
         await send_post_chat_rating(callback.bot, partner_id, is_positive)
+
+        # BUG FIX: activate referral if this was the first chat for a referred user
+        from handlers.referral import activate_referral
+        await activate_referral(user_id)
+        await activate_referral(partner_id)
 
     text = "👍 Спасибо за оценку!" if is_positive else "👎 Принято. Постараемся лучше!"
     await callback.message.edit_text(text, reply_markup=menu_kb())

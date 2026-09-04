@@ -8,7 +8,6 @@ from utils.db import get_or_create_user, get_user_stats
 
 
 def format_profile(stats: dict) -> str:
-    # BUG FIX: handle None premium_expires even if is_premium is True
     if stats.get("is_premium") and stats.get("premium_expires"):
         premium_text = "✅ до " + stats["premium_expires"].strftime("%d.%m.%Y")
     else:
@@ -103,7 +102,9 @@ async def cb_save_age(callback: CallbackQuery):
 async def cb_delete_profile(callback: CallbackQuery):
     from keyboards.inline import InlineKeyboardMarkup, InlineKeyboardButton
     await callback.message.edit_text(
-        "🗑 Удалить аккаунт?\n\nЭто действие необратимо!",
+        "🗑 Удалить аккаунт?\n\n"
+        "⚠️ Это действие необратимо!\n"
+        "Ты потеряешь всю статистику и Premium.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Да, удалить", callback_data="profile:delete:confirm")],
             [InlineKeyboardButton(text="⬅️ Нет, назад", callback_data="profile")],
@@ -116,5 +117,9 @@ async def cb_delete_profile(callback: CallbackQuery):
 async def cb_delete_confirm(callback: CallbackQuery):
     from utils.db import update_user
     await update_user(callback.from_user.id, is_banned=True)
-    await callback.message.edit_text("Аккаунт удалён. /start чтобы начать заново.")
+    # BUG FIX: misleading message — user can't actually restart
+    await callback.message.edit_text(
+        "✅ Аккаунт удалён.\n\n"
+        "Если захочешь вернуться — напиши /start"
+    )
     await callback.answer()

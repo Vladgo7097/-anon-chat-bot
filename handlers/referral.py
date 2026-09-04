@@ -2,7 +2,7 @@ from aiogram import F
 from aiogram.types import Message, CallbackQuery
 
 from handlers import menu_router
-from utils.db import get_or_create_user, update_user
+from utils.db import get_or_create_user, update_user, get_user_by_id
 from keyboards.inline import menu_kb
 
 
@@ -19,9 +19,9 @@ REFERRAL_TEXT = """👥 Приведи друга — получи скидку
 📤 Поделиться ссылкой"""
 
 
-def get_referral_link(bot_username: str, user_anon_id: str) -> str:
-    # Use telegram_id for referral, not anon_id (cleaner)
-    return f"t.me/{bot_username}?start=ref_{{user_id}}"
+def get_referral_link(bot_username: str, user_id: int) -> str:
+    # BUG FIX: was {{user_id}} (double braces = literal text)
+    return f"t.me/{bot_username}?start=ref_{user_id}"
 
 
 async def show_referral(message_or_callback, user_id: int, bot_username: str):
@@ -42,17 +42,19 @@ async def show_referral(message_or_callback, user_id: int, bot_username: str):
 async def process_referral(new_user_id: int, referrer_telegram_id: int):
     """Called when a new user joins via referral link."""
     if new_user_id == referrer_telegram_id:
-        return  # Can't refer yourself
+        return
 
-    from utils.db import get_user_by_id
     referrer = await get_user_by_id(referrer_telegram_id)
     if referrer:
         await update_user(referrer_telegram_id, referrals_count=referrer.referrals_count + 1)
 
 
-async def activate_referral(new_user_id: int, referrer_telegram_id: int):
-    """Called when referred user completes first chat."""
-    from utils.db import get_user_by_id
-    referrer = await get_user_by_id(referrer_telegram_id)
+async def activate_referral(new_user_id: int):
+    """Called when referred user completes first chat. Finds referrer automatically."""
+    user = await get_user_by_id(new_user_id)
+    if not user or not user.referrer_id:
+        return
+
+    referrer = await get_user_by_id(user.referrer_id)
     if referrer:
-        await update_user(referrer_telegram_id, referrals_activated=referrer.referrals_activated + 1)
+        await update_user(referrer.telegram_id, referrals_activated=referrer.referrals_activated + 1)
