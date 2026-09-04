@@ -154,6 +154,7 @@ async def successful_payment(message: Message):
             f"Все преимущества доступны сразу!",
             reply_markup=menu_kb(),
         )
+
     elif payload.startswith("gender_filter:"):
         await add_payment(user_id, "gender_filter", payment.total_amount, payment.telegram_payment_id)
         from utils.db import update_user
@@ -163,8 +164,8 @@ async def successful_payment(message: Message):
             "Теперь ты можешь выбирать кого искать в настройках.",
             reply_markup=menu_kb(),
         )
+
     elif payload.startswith("instant_search:"):
-        # BUG FIX: now actually charges through Telegram Stars
         await add_payment(user_id, "instant_search", payment.total_amount, payment.telegram_payment_id)
         from services.chat_manager import set_instant_search
         await set_instant_search(user_id)
@@ -172,5 +173,24 @@ async def successful_payment(message: Message):
             "⚡ Мгновенный поиск активирован!",
             reply_markup=menu_kb(),
         )
+
+    elif payload.startswith("reveal:"):
+        # BUG FIX: reveal payment was not handled
+        parts = payload.split(":")
+        if len(parts) == 3:
+            paid_user_id = int(parts[1])
+            target_id = int(parts[2])
+            await add_payment(user_id, "reveal", payment.total_amount, payment.telegram_payment_id)
+
+            from utils.db import get_user_by_id
+            target_user = await get_user_by_id(target_id)
+            username = target_user.username if target_user and target_user.username else "скрыт"
+            await message.answer(
+                f"👤 Собеседник: @{username}",
+                reply_markup=menu_kb(),
+            )
+        else:
+            await message.answer("Платёж получен. Спасибо!", reply_markup=menu_kb())
+
     else:
         await message.answer("Платёж получен. Спасибо!", reply_markup=menu_kb())

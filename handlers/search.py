@@ -1,7 +1,7 @@
 import asyncio
 import time
 from aiogram import F
-from aiogram.types import Message, CallbackQuery, LabeledPrice
+from aiogram.types import CallbackQuery, LabeledPrice
 
 from handlers import search_router
 from keyboards.inline import search_kb, menu_kb
@@ -40,7 +40,6 @@ async def cb_search_start(callback: CallbackQuery):
     )
     await callback.answer()
 
-    # BUG FIX: run search loop as background task instead of blocking
     asyncio.create_task(_search_loop(callback, user.id, db_user))
 
 
@@ -52,14 +51,12 @@ async def _search_loop(callback: CallbackQuery, user_id: int, db_user):
     while time.time() - start < config.SEARCH_TIMEOUT:
         await asyncio.sleep(2)
 
-        # Check if user is still searching (not cancelled)
         from services.chat_manager import get_partner
         if await get_partner(user_id):
-            return  # Already matched
+            return
 
         partner_id = await search_with_timeout(user_id, db_user.gender if db_user else None)
         if partner_id:
-            partner_db = await get_or_create_user(partner_id)
             await start_chat(user_id, partner_id)
             await increment_chats(user_id)
             await increment_chats(partner_id)
@@ -139,7 +136,6 @@ async def cb_search_instant(callback: CallbackQuery):
         await callback.answer("У тебя Premium — поиск и так мгновенный!", show_alert=True)
         return
 
-    # BUG FIX: send invoice instead of immediately charging
     await callback.bot.send_invoice(
         chat_id=user.id,
         title="Мгновенный поиск",
