@@ -8,7 +8,11 @@ from utils.db import get_or_create_user, get_user_stats
 
 
 def format_profile(stats: dict) -> str:
-    premium_text = "✅ до " + stats["premium_expires"].strftime("%d.%m.%Y") if stats.get("is_premium") else "нет"
+    # BUG FIX: handle None premium_expires even if is_premium is True
+    if stats.get("is_premium") and stats.get("premium_expires"):
+        premium_text = "✅ до " + stats["premium_expires"].strftime("%d.%m.%Y")
+    else:
+        premium_text = "нет"
     return (
         f"👤 Твой профиль\n\n"
         f"🆔 ID: {stats['anon_id']}\n"

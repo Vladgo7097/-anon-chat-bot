@@ -1,4 +1,3 @@
-import json
 from aiogram import F
 from aiogram.types import CallbackQuery
 
@@ -8,7 +7,6 @@ from keyboards.inline import menu_kb
 from services.chat_manager import get_partner
 
 
-# Store last partner for rating (simple in-memory, good enough for single worker)
 _last_partner: dict[int, dict] = {}
 
 
@@ -31,9 +29,10 @@ async def cb_rate(callback: CallbackQuery):
         partner_id = info["partner_id"]
         await add_rating(partner_id, is_positive)
         await save_chat(user_id, partner_id)
-    else:
-        # Fallback — still save rating even if we lost partner info
-        pass
+
+        # BUG FIX: notify the rated user
+        from services.notifications import send_post_chat_rating
+        await send_post_chat_rating(callback.bot, partner_id, is_positive)
 
     text = "👍 Спасибо за оценку!" if is_positive else "👎 Принято. Постараемся лучше!"
     await callback.message.edit_text(text, reply_markup=menu_kb())
