@@ -28,7 +28,6 @@ async def cb_report(callback: CallbackQuery):
     reason = REASON_MAP.get(callback.data, "Другое")
     await save_report(user_id, partner_id, reason)
 
-    # End chat and notify
     await end_chat(user_id)
 
     await callback.message.edit_text(
@@ -36,10 +35,9 @@ async def cb_report(callback: CallbackQuery):
     )
     await callback.message.answer(
         "Ищем нового собеседника...",
-        reply_markup=search_kb,
+        reply_markup=search_kb(),  # BUG FIX: was search_kb (function ref, not call)
     )
 
-    # Notify partner
     try:
         await callback.bot.send_message(
             partner_id,

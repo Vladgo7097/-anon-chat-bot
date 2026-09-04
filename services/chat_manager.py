@@ -8,7 +8,7 @@ Keys:
   online_users              – Set of user_ids seen recently
   last_message:{user_id}   -> timestamp (anti-flood)
   search_gender:{user_id}  -> m/f/a
-  reveal_requests:{chat_id} -> JSON list of user_ids who requested reveal
+  reveal:{min}:{max}       -> Set of user_ids who requested reveal
   instant_search:{user_id}  -> "1" if paid for instant search
 """
 import json
@@ -92,9 +92,8 @@ async def pop_from_search(my_id: int, my_gender: Optional[str] = None) -> Option
     """Try to find a partner from the search queue with optional gender filter."""
     r = await get_redis()
 
-    # Get users waiting > 1 sec
     candidates = await r.zrangebyscore(
-        "search_queue", "-inf", f"+inf", withscores=True
+        "search_queue", "-inf", "+inf", withscores=True
     )
 
     for user_id_str, score in candidates:
@@ -138,7 +137,6 @@ async def start_chat(user1_id: int, user2_id: int):
     await r.set(f"active_chat:{user2_id}", str(user1_id), ex=config.INACTIVE_CHAT_TTL)
     await r.set(f"chat_started:{user1_id}", now, ex=86400)
     await r.set(f"chat_started:{user2_id}", now, ex=86400)
-    # Remove both from search queue
     await r.zrem("search_queue", str(user1_id), str(user2_id))
 
 
@@ -156,7 +154,8 @@ async def end_chat(user_id: int) -> Optional[int]:
         await r.delete(f"active_chat:{partner_id}")
         await r.delete(f"chat_started:{user_id}")
         await r.delete(f"chat_started:{partner_id}")
-        await r.delete(f"reveal_requests:{self_chat_key(user_id, partner_id)}")
+        # BUG FIX: key is just "reveal:min:max", not "reveal_requests:reveal:min:max"
+        await r.delete(self_chat_key(user_id, partner_id))
     return partner_id
 
 

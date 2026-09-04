@@ -9,18 +9,20 @@ from services.chat_manager import get_partner, end_chat, refresh_chat_ttl
 from utils.db import get_or_create_user, check_ban, is_premium
 import config
 
-# Track when user last pressed "Next" for cooldown
 _last_next: dict[int, float] = {}
 
-CONTENT_MAP = {
-    "text": lambda m: m.text,
-    "photo": lambda m: m.photo[-1].file_id if m.photo else None,
-    "voice": lambda m: m.voice.file_id if m.voice else None,
-    "sticker": lambda m: m.sticker.file_id if m.sticker else None,
-    "video": lambda m: m.video.file_id if m.video else None,
-    "video_note": lambda m: m.video_note.file_id if m.video_note else None,
-    "animation": lambda m: m.animation.file_id if m.animation else None,
+IGNORE_MESSAGES = {
+    "⏭ Следующий", "🛑 Стоп", "🚩 Пожаловаться", "❤️ Раскрыть себя",
+    "🔍 Найти собеседника", "👤 Мой профиль", "⚙️ Настройки поиска",
+    "⭐ Premium", "📊 Статистика", "❓ Помощь", "🏠 Меню",
 }
+
+
+def _store_both_partners(user_a: int, user_b: int):
+    """Store partner for both users so both can rate."""
+    from handlers.rating import store_last_partner
+    store_last_partner(user_a, user_b)
+    store_last_partner(user_b, user_a)
 
 
 @chat_router.message(F.text == "🛑 Стоп")
@@ -32,10 +34,7 @@ async def cmd_stop(message: Message):
         return
 
     await end_chat(user_id)
-
-    # Store partner for rating
-    from handlers.rating import store_last_partner
-    store_last_partner(user_id, partner_id)
+    _store_both_partners(user_id, partner_id)
 
     await message.answer(
         "👋 Диалог завершён\n\nОцени собеседника:",
@@ -45,7 +44,7 @@ async def cmd_stop(message: Message):
     try:
         await message.bot.send_message(
             partner_id,
-            "😢 Собеседник покинул чат. Ищем нового?",
+            "😢 Собеседник покинул чат.\n\nОцени собеседника:",
             reply_markup=stop_kb(),
         )
     except Exception:
@@ -61,9 +60,7 @@ async def cb_stop(callback: CallbackQuery):
         return
 
     await end_chat(user_id)
-
-    from handlers.rating import store_last_partner
-    store_last_partner(user_id, partner_id)
+    _store_both_partners(user_id, partner_id)
 
     await callback.message.edit_text(
         "👋 Диалог завершён\n\nОцени собеседника:",
@@ -73,7 +70,7 @@ async def cb_stop(callback: CallbackQuery):
     try:
         await callback.bot.send_message(
             partner_id,
-            "😢 Собеседник покинул чат. Ищем нового?",
+            "😢 Собеседник покинул чат.\n\nОцени собеседника:",
             reply_markup=stop_kb(),
         )
     except Exception:
@@ -89,7 +86,6 @@ async def cb_next(callback: CallbackQuery):
         await callback.answer("Ты сейчас не в чате.", show_alert=True)
         return
 
-    # Cooldown check for free users
     premium = await is_premium(user_id)
     if not premium:
         now = time.time()
@@ -122,7 +118,6 @@ async def cmd_next(message: Message):
         await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
         return
 
-    # Cooldown check for free users
     premium = await is_premium(user_id)
     if not premium:
         now = time.time()
@@ -162,15 +157,6 @@ async def cmd_reveal(message: Message):
         "❤️ Предложить раскрыться взаимно?",
         reply_markup=reveal_offer_kb(partner_id),
     )
-
-
-# ── Generic message forwarding ──────────────────────────────────
-
-IGNORE_MESSAGES = {
-    "⏭ Следующий", "🛑 Стоп", "🚩 Пожаловаться", "❤️ Раскрыть себя",
-    "🔍 Найти собеседника", "👤 Мой профиль", "⚙️ Настройки поиска",
-    "⭐ Premium", "📊 Статистика", "❓ Помощь", "🏠 Меню",
-}
 
 
 @chat_router.message(F.content_type.in_({
