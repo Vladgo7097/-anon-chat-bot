@@ -1,0 +1,15 @@
+from aiogram import Router
+
+start_router = Router(name="start")
+menu_router = Router(name="menu")
+search_router = Router(name="search")
+chat_router = Router(name="chat")
+profile_router = Router(name="profile")
+settings_router = Router(name="settings")
+report_router = Router(name="report")
+premium_router = Router(name="premium")
+admin_router = Router(name="admin")
+stats_router = Router(name="stats")
+help_router = Router(name="help")
+reveal_router = Router(name="reveal")
+rating_router = Router(name="rating")
