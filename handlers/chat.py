@@ -20,10 +20,8 @@ IGNORE_MESSAGES = {
 
 def _store_both_partners(user_a: int, user_b: int):
     from handlers.rating import store_last_partner
-    import time as _time
-    now = _time.time()
-    store_last_partner(user_a, user_b, chat_started=now)
-    store_last_partner(user_b, user_a, chat_started=now)
+    store_last_partner(user_a, user_b)
+    store_last_partner(user_b, user_a)
 
 
 # ── Reply keyboard handlers ─────────────────────────────────────

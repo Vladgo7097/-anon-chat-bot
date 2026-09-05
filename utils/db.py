@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 
 from sqlalchemy import select, update, func
@@ -96,22 +96,23 @@ async def add_rating(user_id: int, is_positive: bool):
 
 
 async def save_chat(user1_id: int, user2_id: int, duration: int = 0) -> Chat:
+    duration = max(0, duration)
+    ended_at = datetime.utcnow()
     async with async_session() as session:
         chat = Chat(
             user1_id=user1_id,
             user2_id=user2_id,
-            ended_at=datetime.utcnow(),
+            started_at=ended_at - timedelta(seconds=duration),
+            ended_at=ended_at,
             duration_seconds=duration,
         )
         session.add(chat)
 
-        # BUG FIX: increment total_chat_seconds for both users
-        for uid in (user1_id, user2_id):
-            user = (await session.execute(
-                select(User).where(User.telegram_id == uid)
-            )).scalar_one_or_none()
-            if user:
-                user.total_chat_seconds += duration
+        await session.execute(
+            update(User)
+            .where(User.telegram_id.in_((user1_id, user2_id)))
+            .values(total_chat_seconds=func.coalesce(User.total_chat_seconds, 0) + duration)
+        )
 
         await session.commit()
         await session.refresh(chat)

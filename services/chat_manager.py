@@ -144,12 +144,23 @@ async def get_partner(user_id: int) -> Optional[int]:
 async def end_chat(user_id: int) -> Optional[int]:
     r = await get_redis()
     partner_id = await get_partner(user_id)
-    if partner_id:
-        await r.delete(f"active_chat:{user_id}")
-        await r.delete(f"active_chat:{partner_id}")
-        await r.delete(f"chat_started:{user_id}")
-        await r.delete(f"chat_started:{partner_id}")
-        await r.delete(self_chat_key(user_id, partner_id))
+    if not partner_id:
+        return None
+
+    # Both participants must share the same lock when ending their dialogue.
+    lock_key = f"end_chat:{min(user_id, partner_id)}:{max(user_id, partner_id)}"
+    async with r.lock(lock_key, timeout=60, blocking_timeout=10):
+        if await get_partner(user_id) != partner_id:
+            return None
+        started = await r.get(f"chat_started:{user_id}")
+        duration = max(0, int(time.time() - float(started))) if started else 0
+        from utils.db import save_chat
+        await save_chat(user_id, partner_id, duration)
+        await r.delete(
+            f"active_chat:{user_id}", f"active_chat:{partner_id}",
+            f"chat_started:{user_id}", f"chat_started:{partner_id}",
+            self_chat_key(user_id, partner_id),
+        )
     return partner_id
 
 
