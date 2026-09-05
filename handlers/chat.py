@@ -1,212 +1,102 @@
-import time
 from aiogram import F
-from aiogram.types import Message, CallbackQuery
-
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 from handlers import chat_router
-from keyboards.inline import report_reasons_kb, stop_kb, reveal_offer_kb, menu_kb
-from keyboards.reply import chat_kb_reply, main_menu_kb
-from services.chat_manager import get_partner, end_chat, refresh_chat_ttl, leave_search
-from utils.db import get_or_create_user, check_ban, is_premium
+from keyboards import texts as T
+from keyboards.reply import main_menu_kb
+from services.chats import ChatService
+from services.chat_manager import get_redis
+from repositories.chats import ChatRepository
 import config
+import logging
 
-_last_next: dict[int, float] = {}
-
-IGNORE_MESSAGES = {
-    "⏭ Следующий", "🛑 Стоп", "🚩 Пожаловаться", "❤️ Раскрыть себя",
-    "🔍 Найти собеседника", "👤 Мой профиль", "⚙️ Настройки поиска",
-    "⭐ Premium", "📊 Статистика", "❓ Помощь", "🏠 Меню",
-}
+logger = logging.getLogger(__name__)
 
 
-def _store_both_partners(user_a: int, user_b: int):
-    from handlers.rating import store_last_partner
-    store_last_partner(user_a, user_b)
-    store_last_partner(user_b, user_a)
+def rating_keyboard(session_id):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="👍 Понравилось", callback_data=f"v1:rate:{session_id}:1", style="success"),
+        InlineKeyboardButton(text="👎 Не понравилось", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
+    ]])
 
 
-# ── Reply keyboard handlers ─────────────────────────────────────
+async def finish(message, user_id, reason="stop"):
+    result = await ChatService().end_chat(user_id, reason=reason)
+    if not result.ok:
+        await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
+        return False
+    chat = result.data["chat"]
+    for uid in (chat.user1_id, chat.user2_id):
+        try:
+            await message.bot.send_message(uid, "👋 Диалог завершён" if uid == user_id else "😢 Собеседник покинул чат.", reply_markup=main_menu_kb())
+            await message.bot.send_message(uid, "Оцени собеседника:", reply_markup=rating_keyboard(chat.session_id))
+        except TelegramForbiddenError:
+            pass
+    if reason == "stop":
+        from services.growth import GrowthService, track
+        from handlers.premium import product_keyboard
+        text=await GrowthService().upsell(user_id)
+        if text:
+            await message.answer(text,reply_markup=await product_keyboard(["premium_1m"]))
+            await track(user_id,"premium_offer_shown",f"premium_offer:{chat.session_id}:{user_id}")
+    return True
 
-@chat_router.message(F.text == "🛑 Стоп")
+
+@chat_router.message(Command("stop"))
+@chat_router.message(F.text == T.STOP)
 async def cmd_stop(message: Message):
-    user_id = message.from_user.id
-    partner_id = await get_partner(user_id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
+    await finish(message, message.from_user.id)
+
+
+async def next_chat(message, user_id):
+    from utils.db import is_premium
+    from services.settings import bot_value
+    from services.payments import consume_delay_skip
+    r = await get_redis()
+    delay = await bot_value("chat_delay_next", config.CHAT_DELAY_NEXT)
+    if delay > 0 and not await is_premium(user_id) and not await r.set(f"cooldown:next:{user_id}", "1", ex=delay, nx=True) and not await consume_delay_skip(user_id):
+        await message.answer(f"⏳ Подожди {max(1, await r.ttl(f'cooldown:next:{user_id}'))} сек.")
+        from handlers.premium import product_keyboard
+        await message.answer("Можно продолжить без задержки:", reply_markup=await product_keyboard(["skip_next_delay", "premium_1m"]))
         return
-
-    await end_chat(user_id)
-    _store_both_partners(user_id, partner_id)
-
-    await message.answer(
-        "👋 Диалог завершён\n\nОцени собеседника:",
-        reply_markup=stop_kb(),
-    )
-
-    try:
-        await message.bot.send_message(
-            partner_id,
-            "😢 Собеседник покинул чат.\n\nОцени собеседника:",
-            reply_markup=stop_kb(),
-        )
-    except Exception:
-        pass
+    if await finish(message, user_id, "next"):
+        from handlers.search import begin_search
+        await begin_search(message, user_id)
 
 
-@chat_router.message(F.text == "⏭ Следующий")
+@chat_router.message(F.text == T.NEXT)
 async def cmd_next(message: Message):
-    user_id = message.from_user.id
-    partner_id = await get_partner(user_id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
-        return
-
-    premium = await is_premium(user_id)
-    if not premium:
-        now = time.time()
-        last = _last_next.get(user_id, 0)
-        remaining = config.CHAT_DELAY_NEXT - (now - last)
-        if remaining > 0:
-            await message.answer(f"⏳ Подожди {int(remaining)} сек. перед поиском нового собеседника.")
-            return
-        _last_next[user_id] = now
-
-    await end_chat(user_id)
-    from keyboards.inline import InlineKeyboardMarkup, InlineKeyboardButton
-    await message.answer(
-        "Нажми для нового поиска:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Найти собеседника", callback_data="search:start")],
-        ]),
-    )
+    await next_chat(message, message.from_user.id)
 
 
-@chat_router.message(F.text == "🚩 Пожаловаться")
-async def cmd_report(message: Message):
-    partner_id = await get_partner(message.from_user.id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.")
-        return
-    await message.answer("🚩 На что жалуетесь?", reply_markup=report_reasons_kb())
-
-
-@chat_router.message(F.text == "❤️ Раскрыть себя")
-async def cmd_reveal(message: Message):
-    partner_id = await get_partner(message.from_user.id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.")
-        return
-    await message.answer(
-        "❤️ Предложить раскрыться взаимно?",
-        reply_markup=reveal_offer_kb(partner_id),
-    )
-
-
-@chat_router.message(F.text == "❌ Отменить поиск")
-async def cmd_cancel_search(message: Message):
-    await leave_search(message.from_user.id)
-    await message.answer(
-        "🏠 Главное меню\n\nСтатус: 🟢 Онлайн",
-        reply_markup=main_menu_kb(),
-    )
-
-
-# ── Inline keyboard handlers ────────────────────────────────────
-
-@chat_router.callback_query(F.data == "chat:stop")
-async def cb_stop(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    partner_id = await get_partner(user_id)
-    if not partner_id:
-        await callback.answer("Ты сейчас не в чате.", show_alert=True)
-        return
-
-    await end_chat(user_id)
-    _store_both_partners(user_id, partner_id)
-
-    await callback.message.edit_text(
-        "👋 Диалог завершён\n\nОцени собеседника:",
-        reply_markup=stop_kb(),
-    )
-
-    try:
-        await callback.bot.send_message(
-            partner_id,
-            "😢 Собеседник покинул чат.\n\nОцени собеседника:",
-            reply_markup=stop_kb(),
-        )
-    except Exception:
-        pass
+@chat_router.callback_query(F.data.in_({"chat:stop", "chat:next"}))
+async def cb_chat_control(callback: CallbackQuery):
     await callback.answer()
+    if callback.data == "chat:next":
+        await next_chat(callback.message, callback.from_user.id)
+    else:
+        await finish(callback.message, callback.from_user.id)
 
 
-@chat_router.callback_query(F.data == "chat:next")
-async def cb_next(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    partner_id = await get_partner(user_id)
-    if not partner_id:
-        await callback.answer("Ты сейчас не в чате.", show_alert=True)
-        return
-
-    premium = await is_premium(user_id)
-    if not premium:
-        now = time.time()
-        last = _last_next.get(user_id, 0)
-        remaining = config.CHAT_DELAY_NEXT - (now - last)
-        if remaining > 0:
-            await callback.answer(f"⏳ Подожди {int(remaining)} сек.", show_alert=True)
-            return
-        _last_next[user_id] = now
-
-    await end_chat(user_id)
-    await callback.answer("Ищем нового собеседника...")
-
-    from handlers.search import cb_search_start
-    await cb_search_start(callback)
-
-
-@chat_router.callback_query(F.data == "chat:continue")
-async def cb_continue(callback: CallbackQuery):
-    await callback.answer("Продолжай общаться!")
-
-
-# ── Generic message forwarding ──────────────────────────────────
-
-@chat_router.message(F.content_type.in_({
-    "text", "photo", "voice", "sticker", "video", "video_note", "animation",
-}))
+@chat_router.message()
 async def forward_message(message: Message):
-    user_id = message.from_user.id
-    partner_id = await get_partner(user_id)
-    if not partner_id:
+    if message.text and (message.text.startswith("/") or message.text in T.SYSTEM_TEXTS):
         return
-
-    if message.text and (message.text.startswith("/") or message.text in IGNORE_MESSAGES):
+    from services.relay import RelayService
+    service=RelayService()
+    result=await service.prepare(message.from_user.id,message.content_type)
+    if result.code=="NOT_CHATTING":
         return
-
-    await refresh_chat_ttl(user_id)
-
-    copy_msg = None
-    if message.photo:
-        copy_msg = message
-    elif message.voice:
-        copy_msg = message
-    elif message.sticker:
-        copy_msg = message
-    elif message.video:
-        copy_msg = message
-    elif message.video_note:
-        copy_msg = message
-    elif message.animation:
-        copy_msg = message
-
+    if not result.ok:
+        await message.answer("Этот тип сообщения не поддерживается. Отправь текст, фото, голосовое или видео.")
+        return
+    partner = result.data["partner"]
     try:
-        if copy_msg:
-            await message.bot.copy_message(
-                chat_id=partner_id,
-                from_chat_id=user_id,
-                message_id=message.message_id,
-            )
-        elif message.text:
-            await message.bot.send_message(partner_id, message.text)
-    except Exception:
-        pass
+        await message.bot.copy_message(chat_id=partner, from_chat_id=message.chat.id, message_id=message.message_id)
+        await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
+    except TelegramForbiddenError:
+        await finish(message, message.from_user.id, "unreachable")
+    except TelegramBadRequest:
+        logger.warning("event=relay_failed chat_session_id=%s", result.data["session_id"])
+        await message.answer("Не удалось передать сообщение. Попробуй другой формат.")

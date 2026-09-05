@@ -1,90 +1,86 @@
 from aiogram import F
+from aiogram.filters import CommandStart, Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart
-
 from handlers import start_router
-from keyboards.inline import start_kb, rules_kb, menu_kb
-from utils.db import get_or_create_user, check_ban
-from services.chat_manager import set_online
+from keyboards import texts as T
+from keyboards.reply import onboarding_kb
+from services.onboarding import OnboardingService
 
-WELCOME_TEXT = """👋 Привет! Это анонимный чат-бот.
 
-Здесь ты можешь общаться с случайными людьми,
-не раскрывая своей личности 🎭
+class Onboarding(StatesGroup):
+    WELCOME = State()
+    GENDER = State()
+    AGE = State()
+    RULES = State()
 
-Жми «Начать поиск» — и через пару секунд найдём собеседника"""
 
-RULES_TEXT = """📜 Правила чата
+WELCOME_TEXT = "👋 Привет!\n\nЭто анонимный чат-бот 🎭\n\nЗдесь можно знакомиться и общаться со случайными людьми,\nне раскрывая своё имя, username и Telegram ID.\n\nГотов начать?"
+RULES_TEXT = "📜 Правила общения\n\n1️⃣ Запрещена реклама и спам\n2️⃣ Запрещены оскорбления и травля\n3️⃣ Запрещён запрещённый и нежелательный контент\n4️⃣ Не разглашай личные данные — свои и чужие\n5️⃣ Жалуйся на нарушителей кнопкой 🚩\n\nНарушение правил может привести к блокировке.\n\nНажимая кнопку ниже, ты подтверждаешь, что ознакомился с правилами. Сервис доступен только с 18 лет."
+TEXTS = {"WELCOME": WELCOME_TEXT, "GENDER": "👤 Укажи свой пол\n\nЭто поможет правильно подбирать собеседников.",
+         "AGE": "🎂 Сколько тебе лет?\n\nВыбери свой возраст:", "RULES": RULES_TEXT, "MENU": T.MENU_TEXT}
 
-1️⃣ Запрещена реклама и спам
-2️⃣ Запрещены оскорбления и травля
-3️⃣ Запрещён контент 18+ и насилие
-4️⃣ Не разглашай личные данные (свои и чужие)
-5️⃣ Жалуйся на нарушителей кнопкой 🚩
 
-Нарушение → бан от 1 дня до навсегда ⛔"""
+async def show_step(message, state, result, page=0):
+    if result.code == "BANNED":
+        until = result.data.get("until")
+        await message.answer("⛔ Ты заблокирован " + (f"до {until:%d.%m.%Y %H:%M} UTC." if until else "бессрочно."))
+        return
+    step = result.code
+    if step == "MENU":
+        await state.clear()
+    else:
+        await state.set_state(getattr(Onboarding, step))
+        await state.update_data(age_page=page)
+    await message.answer(result.data.get("error", TEXTS[step]), reply_markup=onboarding_kb(step, page))
 
 
 @start_router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     user = message.from_user
-    db_user = await get_or_create_user(
-        user.id,
-        username=user.username,
-        first_name=user.first_name,
-    )
-
-    if await check_ban(user.id):
-        await message.answer("⛔ Ты заблокирован за нарушение правил.")
-        return
-
-    await set_online(user.id)
-
-    # Process referral
-    if message.text and len(message.text.split()) > 1:
-        ref = message.text.split()[1]
-        if ref.startswith("ref_"):
-            try:
-                ref_id = int(ref[4:])
-                if ref_id != user.id:
-                    from handlers.referral import process_referral
-                    await process_referral(user.id, ref_id)
-            except ValueError:
-                pass
-
-    # Streak check
-    from handlers.streaks import check_and_update_streak
-    streak_info = await check_and_update_streak(user.id)
-    if streak_info["reward"]:
-        r = streak_info["reward"]
-        await message.answer(
-            f"🔥 Стрик {streak_info['streak']} дней!\n\n"
-            f"Ты получил скидку {r['discount']}% {r['badge']}\n"
-            f"Скидка применится автоматически к следующей покупке."
-        )
-
-    await message.answer(WELCOME_TEXT, reply_markup=start_kb())
+    payload = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
+    result = await OnboardingService().start(user.id, user.username, user.first_name, payload)
+    await show_step(message, state, result)
 
 
-@start_router.callback_query(F.data == "rules")
-async def cb_rules(callback: CallbackQuery):
-    await callback.message.edit_text(RULES_TEXT, reply_markup=rules_kb())
-    await callback.answer()
+@start_router.message(Command("rules"))
+async def cmd_rules(message: Message):
+    await message.answer(RULES_TEXT)
 
 
-@start_router.callback_query(F.data == "rules:ok")
-async def cb_rules_ok(callback: CallbackQuery):
-    await callback.message.edit_text("🏠 Главное меню\n\nСтатус: 🟢 Онлайн", reply_markup=menu_kb())
-    await callback.answer()
+@start_router.message(StateFilter(None), F.text.in_({T.BEGIN, T.MALE, T.FEMALE, T.ACCEPT, T.RULES}))
+@start_router.message(Onboarding.WELCOME)
+@start_router.message(Onboarding.GENDER)
+@start_router.message(Onboarding.AGE)
+@start_router.message(Onboarding.RULES)
+async def onboarding_input(message: Message, state: FSMContext):
+    text = message.text or ""
+    action, value = "invalid", None
+    if text == T.BEGIN:
+        action = "begin"
+    elif text in {T.MALE, T.FEMALE}:
+        action, value = "gender", "male" if text == T.MALE else "female"
+    elif text == T.ACCEPT:
+        action = "accept"
+    elif text.isascii() and text.isdigit():
+        action, value = "age", int(text)
+    result = await OnboardingService().advance(message.from_user.id, action, value)
+    page = (await state.get_data()).get("age_page", 0)
+    if text in {T.PAGE_NEXT, T.PAGE_PREV} and result.code == "AGE":
+        import config
+        page = min(max(0, page + (1 if text == T.PAGE_NEXT else -1)), (config.MAX_AGE-config.MIN_AGE)//config.AGE_PAGE_SIZE)
+    if text == T.RULES:
+        await message.answer(RULES_TEXT)
+    await show_step(message, state, result, page)
 
 
-@start_router.callback_query(F.data == "back:start")
-async def cb_back_start(callback: CallbackQuery):
-    await callback.message.edit_text(WELCOME_TEXT, reply_markup=start_kb())
-    await callback.answer()
-
-
-@start_router.callback_query(F.data == "menu")
-async def cb_menu(callback: CallbackQuery):
-    await callback.message.edit_text("🏠 Главное меню\n\nСтатус: 🟢 Онлайн", reply_markup=menu_kb())
+@start_router.callback_query(F.data.in_({"rules", "rules:ok", "back:start", "menu"}))
+async def cb_start_navigation(callback: CallbackQuery, state: FSMContext):
+    if callback.data == "rules":
+        await callback.message.answer(RULES_TEXT)
+    else:
+        actor = callback.from_user
+        result = await OnboardingService().start(actor.id, actor.username, actor.first_name)
+        await show_step(callback.message, state, result)
     await callback.answer()

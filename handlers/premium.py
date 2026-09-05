@@ -1,194 +1,94 @@
 from aiogram import F
-from aiogram.types import (
-    Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, SuccessfulPayment,
-)
-
+from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice, InlineKeyboardButton, InlineKeyboardMarkup
 from handlers import premium_router
-from keyboards.inline import premium_kb, menu_kb
-from utils.db import get_or_create_user, activate_premium, is_premium, add_payment
-import config
+from services.payments import PaymentService
+from keyboards import texts as T
+from keyboards.reply import main_menu_kb
+
+PREMIUM_TEXT = "⭐ Premium-подписка\n\n🎯 Фильтры по полу и возрасту\n❤️ Приоритетные запросы на взаимное раскрытие — без доплаты\n⚡ Приоритет в очереди поиска\n🔄 «Следующий» без задержки\n🖼 До 3 фото в профиле\n\nКонтакты всегда раскрываются только по взаимному согласию.\n\n💰 Тарифы:"
 
 
-PREMIUM_TEXT = """⭐ Premium-подписка
+async def product_keyboard(codes, session_id=None):
+    products = await PaymentService().products(codes)
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=f"{p.title} — {p.price_stars}⭐", style="primary",
+            callback_data=f"v1:buy:{p.code}" + (f":{session_id}" if session_id else ""))
+    ] for p in products])
 
-Что даёт Premium:
-🚫 Без рекламы
-🎯 Фильтр по полу и возрасту
-👀 Видеть, лайкнул ли тебя собеседник
-👤 Раскрытие собеседника без взаимности — бесплатно
-⚡ Мгновенный поиск без очереди
-🔄 «Следующий» без задержки
-🖼 До 3 фото в профиле
 
-💰 Тарифы:"""
+async def show_premium(message, user_id):
+    from repositories.users import UserRepository
+    from repositories.chats import premium_active
+    user = await UserRepository().get(user_id)
+    text = PREMIUM_TEXT
+    if user and premium_active(user):
+        text += f"\n\n✅ Активен до {user.premium_expires:%d.%m.%Y}"
+    await message.answer(text, reply_markup=await product_keyboard(["premium_1m", "premium_3m", "premium_12m"]))
+
+
+@premium_router.message(F.text == T.PREMIUM)
+async def cmd_premium(message: Message):
+    await show_premium(message, message.from_user.id)
 
 
 @premium_router.callback_query(F.data == "premium")
 async def cb_premium(callback: CallbackQuery):
-    premium = await is_premium(callback.from_user.id)
-    db_user = await get_or_create_user(callback.from_user.id)
-
-    text = PREMIUM_TEXT
-    if premium and db_user.premium_expires:
-        text += f"\n\n✅ Твой Premium активен до {db_user.premium_expires.strftime('%d.%m.%Y')}"
-    else:
-        text += f"\n\n💡 У тебя пока нет Premium"
-
-    await callback.message.edit_text(text, reply_markup=premium_kb())
     await callback.answer()
+    await show_premium(callback.message, callback.from_user.id)
 
 
-@premium_router.message(F.text == "⭐ Premium")
-async def cmd_premium(message: Message):
-    premium = await is_premium(message.from_user.id)
-    db_user = await get_or_create_user(message.from_user.id)
-
-    text = PREMIUM_TEXT
-    if premium and db_user.premium_expires:
-        text += f"\n\n✅ Твой Premium активен до {db_user.premium_expires.strftime('%d.%m.%Y')}"
-
-    await message.answer(text, reply_markup=premium_kb())
+@premium_router.callback_query(F.data.startswith("v1:buy:"))
+async def cb_buy(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) not in {3, 4}:
+        await callback.answer("Товар недоступен.")
+        return
+    result = await PaymentService().create(callback.from_user.id, parts[2], parts[3] if len(parts)==4 else None)
+    await callback.answer()
+    if not result.ok:
+        await callback.message.answer("Покупка уже оплачена или больше недоступна.")
+        return
+    p = result.data["payment"]
+    if not await PaymentService().claim_invoice(callback.from_user.id,p.id):
+        await callback.message.answer("Счёт уже отправлен выше или отправляется. Если он не появился, попробуй ещё раз через 30 секунд.")
+        return
+    invoice=await callback.bot.send_invoice(chat_id=callback.from_user.id, title=result.data["title"],
+        description="Улучшение анонимного чата. Приоритет не гарантирует наличие подходящего собеседника; контакты требуют взаимного согласия.",
+        payload=p.payload, currency="XTR", prices=[LabeledPrice(label=result.data["title"], amount=p.stars_amount)])
+    await PaymentService().invoice_sent(p.id,invoice.message_id)
+    if p.product=="instant_search":
+        from services.growth import track
+        await track(callback.from_user.id,"instant_search_invoice_created",f"invoice:{p.id}")
 
 
 @premium_router.callback_query(F.data.startswith("premium:buy:"))
-async def cb_premium_buy(callback: CallbackQuery):
-    plan = callback.data.split(":")[-1]
-    prices_map = {
-        "1m": config.STARS_PREMIUM_1M,
-        "3m": config.STARS_PREMIUM_3M,
-        "12m": config.STARS_PREMIUM_12M,
-    }
-    labels_map = {
-        "1m": "Premium 1 месяц",
-        "3m": "Premium 3 месяца",
-        "12m": "Premium 12 месяцев",
-    }
+async def cb_legacy_buy(callback: CallbackQuery):
+    await callback.answer("Выбери тариф в обновлённом меню.")
+    await show_premium(callback.message, callback.from_user.id)
 
-    stars = prices_map.get(plan, config.STARS_PREMIUM_1M)
-    label = labels_map.get(plan, "Premium")
-
-    await callback.bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title=label,
-        description=f"Premium-подписка: {label}",
-        payload=f"premium:{plan}:{callback.from_user.id}",
-        currency="XTR",
-        prices=[LabeledPrice(label=label, amount=stars)],
-    )
-    await callback.answer()
-
-
-# ── Soft upsell (every 3rd stop, max 1x/day) ────────────────────
-
-_upsell_counter: dict[int, int] = {}
-_upsell_last_shown: dict[int, int] = {}
-
-
-async def maybe_show_upsell(bot, user_id: int) -> bool:
-    import time
-    now = int(time.time())
-    today_start = now - (now % 86400)
-
-    last_shown = _upsell_last_shown.get(user_id, 0)
-    if last_shown > today_start:
-        return False
-
-    count = _upsell_counter.get(user_id, 0) + 1
-    _upsell_counter[user_id] = count
-
-    if count >= 3:
-        _upsell_counter[user_id] = 0
-        _upsell_last_shown[user_id] = now
-
-        from keyboards.inline import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⭐ Попробовать Premium — 99⭐/мес", callback_data="premium:buy:1m")],
-            [InlineKeyboardButton(text="Не сейчас", callback_data="menu")],
-        ])
-        try:
-            await bot.send_message(
-                user_id,
-                "🔥 Тебе нравится общаться в боте?\n\n"
-                "С Premium ты получишь:\n"
-                "⚡ Мгновенный поиск без очереди\n"
-                "🎯 Фильтр по полу и возрасту\n"
-                "🚫 Без задержек и рекламы",
-                reply_markup=kb,
-            )
-            return True
-        except Exception:
-            pass
-    return False
-
-
-# ── Stars payment handlers ───────────────────────────────────────
 
 @premium_router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
-    payload = query.invoice_payload
-    if (payload.startswith("premium:") or
-        payload.startswith("gender_filter:") or
-        payload.startswith("reveal:") or
-        payload.startswith("instant_search:")):
-        await query.answer(ok=True)
-    else:
-        await query.answer(ok=False, error_message="Неизвестный товар")
+    ok = await PaymentService().precheckout(query.from_user.id, query.invoice_payload, query.total_amount, query.currency,query.id)
+    await query.answer(ok=ok, **({} if ok else {"error_message": "Счёт устарел или недействителен. Создай новый счёт в боте."}))
 
 
 @premium_router.message(F.successful_payment)
 async def successful_payment(message: Message):
-    payment: SuccessfulPayment = message.successful_payment
-    payload = payment.invoice_payload
-    user_id = message.from_user.id
-
-    if payload.startswith("premium:"):
-        parts = payload.split(":")
-        plan = parts[1]
-        await add_payment(user_id, f"premium_{plan}", payment.total_amount, payment.telegram_payment_id)
-        await activate_premium(user_id, plan, payment.total_amount)
-        await message.answer(
-            f"🎉 Premium активирован!\n\n"
-            f"Тариф: {plan}\n"
-            f"Оплачено: {payment.total_amount}⭐\n\n"
-            f"Все преимущества доступны сразу!",
-            reply_markup=menu_kb(),
-        )
-
-    elif payload.startswith("gender_filter:"):
-        await add_payment(user_id, "gender_filter", payment.total_amount, payment.telegram_payment_id)
-        from utils.db import update_user
-        await update_user(user_id, settings_gender_filter="a")
-        await message.answer(
-            "✅ Фильтр по полу разблокирован!\n\n"
-            "Теперь ты можешь выбирать кого искать в настройках.",
-            reply_markup=menu_kb(),
-        )
-
-    elif payload.startswith("instant_search:"):
-        await add_payment(user_id, "instant_search", payment.total_amount, payment.telegram_payment_id)
+    p = message.successful_payment
+    result = await PaymentService().complete(message.from_user.id, p.invoice_payload, p.total_amount, p.currency, p.telegram_payment_charge_id)
+    if result.code == "ALREADY_PAID":
+        await message.answer("✅ Этот платёж уже учтён.")
+        return
+    if not result.ok:
+        import logging
+        logging.getLogger(__name__).error("event=payment_validation_failed user_id=%s", message.from_user.id)
+        await message.answer("Платёж требует проверки. Обратись в поддержку через /help.")
+        return
+    await message.answer("✅ Оплата получена. Возможность активирована.")
+    if result.data["product"] == "instant_search":
         from services.chat_manager import set_instant_search
-        await set_instant_search(user_id)
-        await message.answer(
-            "⚡ Мгновенный поиск активирован!",
-            reply_markup=menu_kb(),
-        )
-
-    elif payload.startswith("reveal:"):
-        parts = payload.split(":")
-        if len(parts) == 3:
-            paid_user_id = int(parts[1])
-            target_id = int(parts[2])
-            await add_payment(user_id, "reveal", payment.total_amount, payment.telegram_payment_id)
-
-            from utils.db import get_user_by_id
-            target_user = await get_user_by_id(target_id)
-            username = target_user.username if target_user and target_user.username else "скрыт"
-            await message.answer(
-                f"👤 Собеседник: @{username}",
-                reply_markup=menu_kb(),
-            )
-        else:
-            await message.answer("Платёж получен. Спасибо!", reply_markup=menu_kb())
-
-    else:
-        await message.answer("Платёж получен. Спасибо!", reply_markup=menu_kb())
+        await set_instant_search(message.from_user.id)
+    if result.data["product"] in {"reveal_priority_request", "reveal_status"}:
+        from handlers.reveal import paid_reveal
+        await paid_reveal(message, message.from_user.id, result.data["session_id"], result.data["product"])

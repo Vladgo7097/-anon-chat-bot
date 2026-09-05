@@ -1,0 +1,3 @@
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS precheckout_query_id VARCHAR(128);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS invoice_claimed_at TIMESTAMPTZ;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS invoice_message_id BIGINT;

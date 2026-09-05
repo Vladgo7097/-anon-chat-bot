@@ -10,7 +10,7 @@ for uid in os.getenv("ADMIN_IDS", "").split(","):
     if uid.isdigit():
         ADMIN_IDS.add(int(uid))
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://anon:anon_secret_2026@db:5432/anon_chat")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://localhost/anon_chat")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 # Пороговые значения
@@ -28,6 +28,9 @@ STARS_PREMIUM_1M = int(os.getenv("STARS_PREMIUM_1M", "99"))
 STARS_PREMIUM_3M = int(os.getenv("STARS_PREMIUM_3M", "249"))
 STARS_PREMIUM_12M = int(os.getenv("STARS_PREMIUM_12M", "799"))
 STARS_REVEAL_STATUS = int(os.getenv("STARS_REVEAL_STATUS", "10"))
+STARS_REVEAL_PRIORITY = int(os.getenv("STARS_REVEAL_PRIORITY", "10"))
+STARS_GENDER_FILTER_MONTH = int(os.getenv("STARS_GENDER_FILTER_MONTH", "49"))
+STARS_SKIP_NEXT_DELAY = int(os.getenv("STARS_SKIP_NEXT_DELAY", "25"))
 
 # Скидки
 REFERRAL_DISCOUNT = 20
@@ -39,3 +42,9 @@ STRIK_DISCOUNT_30D = 30
 MAX_PROFILE_PHOTOS = 3
 FREE_PROFILE_PHOTOS = 1
 STARS_EXTRA_PHOTO = 15
+
+MIN_AGE = 18
+MAX_AGE = 99
+CURRENT_RULES_VERSION = 1
+AGE_PAGE_SIZE = 12
+SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "")

@@ -1,147 +1,153 @@
 import asyncio
+import logging
 import time
+from weakref import WeakValueDictionary
 from aiogram import F
-from aiogram.types import CallbackQuery, LabeledPrice
-
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import search_router
-from keyboards.inline import search_kb, menu_kb
-from keyboards.reply import chat_kb_reply
-from utils.db import get_or_create_user, increment_chats, check_ban, is_premium
-from services.chat_manager import (
-    join_search, leave_search, search_with_timeout,
-    start_chat, set_online, get_search_queue_length,
-    get_online_count, set_instant_search,
-)
+from keyboards import texts as T
+from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
+from services.matching import MatchingService
+from services.chat_manager import get_redis, get_online_count
+from services.chats import ChatService
 import config
+
+logger = logging.getLogger(__name__)
+_tasks = {}
+_start_locks = WeakValueDictionary()
+
+
+def search_lock(user_id):
+    lock = _start_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _start_locks[user_id] = lock
+    return lock
+
+
+async def cancel_task(user_id):
+    task = _tasks.pop(user_id, None)
+    if task and task is not asyncio.current_task():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def begin_search(message, user_id):
+    async with search_lock(user_id):
+        await _begin_search(message, user_id)
+
+
+async def _begin_search(message, user_id):
+    result = await MatchingService().enqueue(user_id)
+    task = _tasks.get(user_id)
+    if result.code == "ALREADY_SEARCHING" and task and not task.done():
+        await message.answer("🔎 Поиск уже идёт.", reply_markup=search_kb_reply())
+        return
+    if not result.ok:
+        await message.answer({"BANNED": "⛔ Ты заблокирован.", "ALREADY_CHATTING": "Ты уже в диалоге. Нажми «Стоп».",
+                              "ONBOARDING_REQUIRED": "Сначала заверши регистрацию: /start"}[result.code])
+        return
+    await cancel_task(user_id)
+    await message.answer("🔎 Ищу собеседника...", reply_markup=search_kb_reply())
+    status = await message.answer(f"⏱ Прошло: 00:00\n👥 Онлайн сейчас: {await get_online_count()}")
+    task = asyncio.create_task(search_loop(status, user_id))
+    _tasks[user_id] = task
+
+
+async def search_loop(status, user_id, bot=None):
+    bot = bot or status.bot
+    try:
+        r = await get_redis()
+        queued_at = await r.get(f"search:user:{user_id}")
+        if queued_at is None:
+            await MatchingService().cancel(user_id)
+            return
+        started = time.monotonic() - max(0, time.time() - float(queued_at))
+        offer_tracked = False
+        while True:
+            r = await get_redis()
+            if await r.zscore("search_queue", str(user_id)) is None:
+                return
+            elapsed = int(time.monotonic()-started)
+            from services.settings import bot_value
+            if elapsed >= await bot_value("search_timeout", config.SEARCH_TIMEOUT):
+                await MatchingService().cancel(user_id)
+                await bot.send_message(user_id, "⏳ Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                return
+            chat = await MatchingService().find(user_id)
+            if chat:
+                for uid in (chat.user1_id, chat.user2_id):
+                    await cancel_task(uid)
+                return
+            try:
+                from handlers.premium import product_keyboard
+                from utils.db import is_premium
+                if status is not None:
+                    offer = await product_keyboard(["instant_search"]) if elapsed > 20 and not await is_premium(user_id) else None
+                    await status.edit_text(f"🔎 Ищу{'.' * (elapsed//2%3+1)}\n\n⏱ Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n👥 Онлайн сейчас: {await get_online_count()}", reply_markup=offer)
+                    if offer and not offer_tracked:
+                        from services.growth import track
+                        await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")
+                        offer_tracked=True
+            except TelegramBadRequest:
+                pass
+            await asyncio.sleep(2)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("event=search_failed user_id=%s", user_id)
+        await MatchingService().cancel(user_id)
+        await bot.send_message(user_id, "Поиск временно недоступен. Попробуй ещё раз.", reply_markup=main_menu_kb())
+    finally:
+        if _tasks.get(user_id) is asyncio.current_task():
+            _tasks.pop(user_id, None)
+
+
+@search_router.message(Command("search"))
+@search_router.message(F.text == T.SEARCH)
+async def cmd_search(message: Message):
+    await begin_search(message, message.from_user.id)
 
 
 @search_router.callback_query(F.data == "search:start")
 async def cb_search_start(callback: CallbackQuery):
-    user = callback.from_user
-    if await check_ban(user.id):
-        await callback.answer("⛔ Ты заблокирован.", show_alert=True)
-        return
-
-    await set_online(user.id)
-    db_user = await get_or_create_user(user.id)
-
-    gender = db_user.settings_gender_filter if db_user else "a"
-    await join_search(user.id, gender)
-
-    online = await get_online_count()
-    queue_len = await get_search_queue_length()
-
-    await callback.message.edit_text(
-        f"🔎 Ищу собеседника...\n\n"
-        f"⏱ Очередь: {queue_len} чел.\n"
-        f"👥 Онлайн сейчас: {online}\n\n"
-        f"Это может занять до минуты",
-        reply_markup=search_kb(),
-    )
     await callback.answer()
+    await begin_search(callback.message, callback.from_user.id)
 
-    asyncio.create_task(_search_loop(callback, user.id, db_user))
 
-
-async def _search_loop(callback: CallbackQuery, user_id: int, db_user):
-    start = time.time()
-    dots = 0
-    show_instant_after = 20
-
-    while time.time() - start < config.SEARCH_TIMEOUT:
-        await asyncio.sleep(2)
-
-        from services.chat_manager import get_partner
-        if await get_partner(user_id):
-            return
-
-        partner_id = await search_with_timeout(user_id, db_user.gender if db_user else None)
-        if partner_id:
-            await start_chat(user_id, partner_id)
-            await increment_chats(user_id)
-            await increment_chats(partner_id)
-
-            try:
-                await callback.message.edit_text("✅ Собеседник найден!\n\nПишите первым! 👋")
-                await callback.message.answer(
-                    "✅ Собеседник найден!\n\nПишите первым! 👋",
-                    reply_markup=chat_kb_reply(),
-                )
-            except Exception:
-                pass
-
-            try:
-                await callback.bot.send_message(
-                    partner_id,
-                    "✅ Собеседник найден!\n\nПишите первым! 👋",
-                    reply_markup=chat_kb_reply(),
-                )
-            except Exception:
-                pass
-            return
-
-        dots = (dots + 1) % 4
-        dots_str = "." * dots if dots > 0 else ""
-        elapsed = int(time.time() - start)
-        minutes = elapsed // 60
-        seconds = elapsed % 60
-        time_str = f"{minutes:02d}:{seconds:02d}"
-
-        online = await get_online_count()
-
-        kb = search_kb()
-        if elapsed > show_instant_after and not await is_premium(user_id):
-            from keyboards.inline import InlineKeyboardMarkup, InlineKeyboardButton
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Отменить поиск", callback_data="search:cancel")],
-                [InlineKeyboardButton(text=f"⚡ Найти мгновенно за {config.STARS_INSTANT_SEARCH}⭐", callback_data="search:instant")],
-            ])
-
-        try:
-            await callback.message.edit_text(
-                f"🔎 Ищу собеседника{dots_str}\n\n"
-                f"⏱ Прошло: {time_str}\n"
-                f"👥 Онлайн сейчас: {online}\n\n"
-                f"Это может занять до минуты",
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-
-    await leave_search(user_id)
-    try:
-        await callback.message.edit_text(
-            "⏳ Пока никого нет. Расширить критерии поиска?",
-            reply_markup=menu_kb(),
-        )
-    except Exception:
-        pass
+@search_router.message(F.text == T.CANCEL)
+async def cmd_cancel(message: Message):
+    async with search_lock(message.from_user.id):
+        await cancel_task(message.from_user.id)
+        await MatchingService().cancel(message.from_user.id)
+    await message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
 
 
 @search_router.callback_query(F.data == "search:cancel")
-async def cb_search_cancel(callback: CallbackQuery):
-    await leave_search(callback.from_user.id)
-    await callback.message.edit_text(
-        "🏠 Главное меню\n\nСтатус: 🟢 Онлайн",
-        reply_markup=menu_kb(),
-    )
+async def cb_cancel(callback: CallbackQuery):
+    async with search_lock(callback.from_user.id):
+        await cancel_task(callback.from_user.id)
+        await MatchingService().cancel(callback.from_user.id)
     await callback.answer("Поиск отменён")
+    await callback.message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
 
 
-@search_router.callback_query(F.data == "search:instant")
-async def cb_search_instant(callback: CallbackQuery):
-    user = callback.from_user
-    premium = await is_premium(user.id)
-    if premium:
-        await callback.answer("У тебя Premium — поиск и так мгновенный!", show_alert=True)
-        return
+async def restore_searches(bot):
+    r = await get_redis()
+    async for value, _ in r.zscan_iter("search_queue"):
+        user_id = int(value)
+        async with search_lock(user_id):
+            task = _tasks.get(user_id)
+            if task and not task.done():
+                continue
+            if not await r.exists(f"search:user:{user_id}"):
+                await MatchingService().cancel(user_id)
+                continue
+            _tasks[user_id] = asyncio.create_task(search_loop(None, user_id, bot))
 
-    await callback.bot.send_invoice(
-        chat_id=user.id,
-        title="Мгновенный поиск",
-        description="Найти собеседника мгновенно, минуя очередь",
-        payload=f"instant_search:{user.id}",
-        currency="XTR",
-        prices=[LabeledPrice(label="Мгновенный поиск", amount=config.STARS_INSTANT_SEARCH)],
-    )
-    await callback.answer()
+
+async def shutdown_searches():
+    for uid in list(_tasks):
+        await cancel_task(uid)

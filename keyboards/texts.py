@@ -1,0 +1,23 @@
+BEGIN = "💬 Начнём общение"
+MALE = "👨 Парень"
+FEMALE = "👩 Девушка"
+ACCEPT = "✅ Принимаю правила"
+RULES = "📜 Читать правила полностью"
+SEARCH = "🔍 Найти собеседника"
+PROFILE = "👤 Мой профиль"
+SETTINGS = "⚙️ Настройки поиска"
+PREMIUM = "⭐ Premium"
+STATS = "📊 Статистика"
+HELP = "❓ Помощь"
+MENU = "🏠 Меню"
+NEXT = "⏭ Следующий"
+STOP = "🛑 Стоп"
+REPORT = "🚩 Пожаловаться"
+REVEAL = "❤️ Раскрыть себя"
+CANCEL = "❌ Отменить поиск"
+PAGE_NEXT = "➡️ Дальше"
+PAGE_PREV = "⬅️ Назад"
+SYSTEM_TEXTS = {BEGIN, MALE, FEMALE, ACCEPT, RULES, SEARCH, PROFILE, SETTINGS,
+                PREMIUM, STATS, HELP, MENU, NEXT, STOP, REPORT, REVEAL, CANCEL,
+                PAGE_NEXT, PAGE_PREV}
+MENU_TEXT = "🏠 Главное меню\n\nНайди случайного собеседника и начинай общение 👋"

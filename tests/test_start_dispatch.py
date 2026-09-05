@@ -13,6 +13,7 @@ from aiogram.enums import MessageEntityType
 from aiogram.types import Chat, Message, MessageEntity, Update, User
 
 from handlers import load_routers
+from services.result import ServiceResult
 
 
 class StartDispatchTests(unittest.TestCase):
@@ -36,11 +37,8 @@ class StartDispatchTests(unittest.TestCase):
         telegram = AsyncMock(return_value=True)
         try:
             with (
-                patch("handlers.start.get_or_create_user", new_callable=AsyncMock),
-                patch("handlers.start.check_ban", new=AsyncMock(return_value=False)),
-                patch("handlers.start.set_online", new_callable=AsyncMock),
-                patch("handlers.streaks.check_and_update_streak",
-                      new=AsyncMock(return_value={"reward": None})),
+                patch("services.onboarding.OnboardingService.start",
+                      new=AsyncMock(return_value=ServiceResult(True, "WELCOME"))),
                 patch.object(bot.session, "make_request", new=telegram),
             ):
                 for index, text in enumerate(("/start", "/start@offline_test_bot")):
@@ -61,6 +59,16 @@ class StartDispatchTests(unittest.TestCase):
                     self.assertEqual(request.text, WELCOME_TEXT)
                     self.assertEqual(request.chat_id, 123)
                 self.assertEqual(telegram.await_count, 2)
+            from handlers.profile import ProfileEdit
+            from keyboards import texts as T
+            state=dp.fsm.get_context(bot=bot,chat_id=123,user_id=123)
+            await state.set_state(ProfileEdit.GENDER)
+            with patch("services.profile.ProfileService.edit",AsyncMock(return_value=ServiceResult(True,"SAVED"))) as edit, patch("handlers.profile.show_profile",AsyncMock()), patch.object(bot.session,"make_request",telegram):
+                await dp.feed_update(bot,Update(update_id=3,message=Message(
+                    message_id=3,date=datetime.now(timezone.utc),chat=Chat(id=123,type="private"),
+                    from_user=User(id=123,is_bot=False,first_name="Test"),text=T.MALE)))
+                edit.assert_awaited_once_with(123,"gender","male")
+                self.assertIsNone(await state.get_state())
         finally:
             await bot.session.close()
 

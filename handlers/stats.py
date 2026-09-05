@@ -2,7 +2,7 @@ from aiogram import F
 from aiogram.types import Message, CallbackQuery
 
 from handlers import stats_router
-from keyboards.inline import stats_kb, menu_kb
+from keyboards.inline import stats_kb
 from utils.db import get_user_stats
 
 

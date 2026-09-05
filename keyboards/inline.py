@@ -1,69 +1,18 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-def start_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔍 Начать поиск", callback_data="search:start")],
-        [InlineKeyboardButton(text="ℹ️ Правила", callback_data="rules")],
-    ])
 
 
-def rules_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Понятно, продолжить", callback_data="rules:ok")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back:start")],
-    ])
 
 
-def search_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отменить поиск", callback_data="search:cancel")],
-        [InlineKeyboardButton(text="⚡ Найти мгновенно за 15⭐", callback_data="search:instant")],
-    ])
 
 
-def chat_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="⏭ Следующий", callback_data="chat:next"),
-            InlineKeyboardButton(text="🛑 Стоп", callback_data="chat:stop"),
-        ],
-        [
-            InlineKeyboardButton(text="🚩 Пожаловаться", callback_data="chat:report"),
-            InlineKeyboardButton(text="❤️ Раскрыть себя", callback_data="chat:reveal"),
-        ],
-    ])
 
 
-def report_reasons_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔞 Контент 18+", callback_data="report:18plus")],
-        [InlineKeyboardButton(text="🤬 Оскорбления", callback_data="report:insult")],
-        [InlineKeyboardButton(text="📢 Спам/реклама", callback_data="report:spam")],
-        [InlineKeyboardButton(text="👶 Несовершеннолетний", callback_data="report:minor")],
-        [InlineKeyboardButton(text="❓ Другое", callback_data="report:other")],
-    ])
 
 
-def stop_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="👍 Понравилось", callback_data="rate:plus"),
-            InlineKeyboardButton(text="👎 Не понравилось", callback_data="rate:minus"),
-        ],
-        [
-            InlineKeyboardButton(text="🔍 Новый поиск", callback_data="search:start"),
-            InlineKeyboardButton(text="🏠 В меню", callback_data="menu"),
-        ],
-    ])
 
 
-def reveal_offer_kb(partner_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❤️ Раскрыться взаимно", callback_data="reveal:mutual")],
-        [InlineKeyboardButton(text=f"👤 Узнать за 25⭐", callback_data="reveal:pay")],
-        [InlineKeyboardButton(text="❌ Не сейчас", callback_data="chat:continue")],
-    ])
 
 
 def profile_kb() -> InlineKeyboardMarkup:
@@ -71,6 +20,7 @@ def profile_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="✏️ Заполнить о себе", callback_data="profile:edit")],
         [InlineKeyboardButton(text="🖼 Добавить фото", callback_data="profile:photo")],
         [InlineKeyboardButton(text="🔒 Приватность", callback_data="profile:privacy")],
+        [InlineKeyboardButton(text="🎁 Приглашения, стрик и награды", callback_data="profile:rewards",style="primary")],
         [InlineKeyboardButton(text="🗑 Удалить аккаунт", callback_data="profile:delete")],
     ])
 
@@ -97,23 +47,8 @@ def settings_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def premium_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="1 месяц — 99⭐", callback_data="premium:buy:1m")],
-        [InlineKeyboardButton(text="3 месяца — 249⭐ (-16%)", callback_data="premium:buy:3m")],
-        [InlineKeyboardButton(text="12 месяцев — 799⭐ (-33%)", callback_data="premium:buy:12m")],
-    ])
 
 
-def menu_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔍 Найти собеседника", callback_data="search:start")],
-        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
-        [InlineKeyboardButton(text="⚙️ Настройки поиска", callback_data="settings")],
-        [InlineKeyboardButton(text="⭐ Premium", callback_data="premium")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
-        [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
-    ])
 
 
 def stats_kb() -> InlineKeyboardMarkup:
@@ -145,13 +80,16 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📢 Рассылка", callback_data="admin:broadcast"),
         ],
         [
-            InlineKeyboardButton(text="⚙️ Настройки бота", callback_data="admin:settings"),
+            InlineKeyboardButton(text="📋 Рассылки (статус)", callback_data="admin:broadcasts"),
             InlineKeyboardButton(text="📈 Воронка", callback_data="admin:funnel"),
+        ],
+        [
+            InlineKeyboardButton(text="⚙️ Настройки бота", callback_data="admin:settings"),
         ],
     ])
 
 
-def admin_report_kb(report_id: int) -> InlineKeyboardMarkup:
+def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="⛔ Забанить на 1 день", callback_data=f"admin:ban1:{report_id}"),
@@ -159,7 +97,7 @@ def admin_report_kb(report_id: int) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="✅ Отклонить", callback_data=f"admin:dismiss:{report_id}"),
-            InlineKeyboardButton(text="⏭ Следующая", callback_data="admin:reports"),
+            InlineKeyboardButton(text="⏭ Следующая", callback_data=f"admin:reports:{offset}"),
         ],
     ])
 
@@ -171,3 +109,26 @@ def admin_broadcast_audience_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="😴 Неактивные 7+ дней", callback_data="bc:inactive")],
         [InlineKeyboardButton(text="🆓 Без покупок", callback_data="bc:nopay")],
     ])
+
+
+def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⛔ Забанить", callback_data=f"admin:uban:{telegram_id}", style="danger"),
+            InlineKeyboardButton(text="🎁 Выдать Premium", callback_data=f"admin:ugrant:{telegram_id}", style="success"),
+        ],
+        [
+            InlineKeyboardButton(text="💬 Написать от бота", callback_data=f"admin:message:{telegram_id}", style="primary"),
+        ],
+    ])
+
+
+def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
+    rows = []
+    for job in jobs:
+        status_icon = {"draft": "📝", "queued": "⏳", "sending": "📤", "completed": "✅"}.get(job.status, "❓")
+        rows.append([InlineKeyboardButton(
+            text=f"{status_icon} #{job.id} · {job.segment} · {job.sent}/{job.sent+job.failed+job.blocked}",
+            callback_data=f"admin:broadcast_detail:{job.id}")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

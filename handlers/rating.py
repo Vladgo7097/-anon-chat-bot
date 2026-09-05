@@ -1,40 +1,20 @@
 from aiogram import F
 from aiogram.types import CallbackQuery
-
 from handlers import rating_router
-from utils.db import add_rating
-from keyboards.inline import menu_kb
+from repositories.chats import ChatRepository
 
 
-_last_partner: dict[int, dict] = {}
-
-
-def store_last_partner(user_id: int, partner_id: int):
-    _last_partner[user_id] = {"partner_id": partner_id}
-
-
-def pop_last_partner(user_id: int) -> dict | None:
-    return _last_partner.pop(user_id, None)
+@rating_router.callback_query(F.data.startswith("v1:rate:"))
+async def cb_rate(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    ok = len(parts) == 4 and parts[3] in {"1", "-1"}
+    if ok:
+        ok = await ChatRepository().rate(parts[2], callback.from_user.id, int(parts[3]))
+    await callback.answer("Спасибо за оценку!" if ok else "Оценка уже учтена или диалог недоступен.")
+    if ok:
+        await callback.message.edit_text("✅ Спасибо за оценку!")
 
 
 @rating_router.callback_query(F.data.startswith("rate:"))
-async def cb_rate(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    data = callback.data
-    is_positive = data == "rate:plus"
-
-    info = pop_last_partner(user_id)
-    if info:
-        partner_id = info["partner_id"]
-        await add_rating(partner_id, is_positive)
-
-        from services.notifications import send_post_chat_rating
-        await send_post_chat_rating(callback.bot, partner_id, is_positive)
-
-        from handlers.referral import activate_referral
-        await activate_referral(user_id)
-        await activate_referral(partner_id)
-
-    text = "👍 Спасибо за оценку!" if is_positive else "👎 Принято. Постараемся лучше!"
-    await callback.message.edit_text(text, reply_markup=menu_kb())
-    await callback.answer()
+async def cb_old_rating(callback: CallbackQuery):
+    await callback.answer("Эта кнопка устарела. Оценка доступна у новых диалогов.")

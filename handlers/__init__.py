@@ -19,8 +19,8 @@ rating_router = Router(name="rating")
 def load_routers() -> tuple[Router, ...]:
     """Import handler modules so decorators populate routers before polling."""
     names = (
-        "start", "menu", "search", "chat", "profile", "settings", "report",
-        "premium", "admin", "stats", "help", "reveal", "rating",
+        "start", "menu", "search", "profile", "settings", "report",
+        "premium", "admin", "stats", "help", "reveal", "rating", "chat",
     )
     for name in names:
         import_module(f"{__name__}.{name}")
