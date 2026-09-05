@@ -1,6 +1,6 @@
 from aiogram import F
 from aiogram.types import (
-    Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, MessageSuccessfulPayment,
+    Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, SuccessfulPayment,
 )
 
 from handlers import premium_router
@@ -137,7 +137,7 @@ async def pre_checkout(query: PreCheckoutQuery):
 
 @premium_router.message(F.successful_payment)
 async def successful_payment(message: Message):
-    payment: MessageSuccessfulPayment = message.successful_payment
+    payment: SuccessfulPayment = message.successful_payment
     payload = payment.invoice_payload
     user_id = message.from_user.id
 

@@ -45,25 +45,9 @@ async def main():
     )
     dp = Dispatcher()
 
-    from handlers import (
-        start_router, menu_router, search_router, chat_router,
-        profile_router, settings_router, report_router, premium_router,
-        admin_router, stats_router, help_router, reveal_router, rating_router,
-    )
+    from handlers import load_routers
 
-    dp.include_router(start_router)
-    dp.include_router(menu_router)
-    dp.include_router(search_router)
-    dp.include_router(chat_router)
-    dp.include_router(profile_router)
-    dp.include_router(settings_router)
-    dp.include_router(report_router)
-    dp.include_router(premium_router)
-    dp.include_router(admin_router)
-    dp.include_router(stats_router)
-    dp.include_router(help_router)
-    dp.include_router(reveal_router)
-    dp.include_router(rating_router)
+    dp.include_routers(*load_routers())
 
     dp.message.middleware(AntiFloodMiddleware())
 
