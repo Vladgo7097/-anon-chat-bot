@@ -74,7 +74,7 @@ async def search_loop(status, user_id, bot=None):
             from services.settings import bot_value
             if elapsed >= await bot_value("search_timeout", config.SEARCH_TIMEOUT):
                 await MatchingService().cancel(user_id)
-                await bot.send_message(user_id, "<emoji document_id="5296482716567495148">⏳</emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                await bot.send_message(user_id, "<emoji document_id=\"5296482716567495148\">⏳</emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
                 return
             chat = await MatchingService().find(user_id)
             if chat:

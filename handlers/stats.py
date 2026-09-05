@@ -14,21 +14,21 @@ def format_stats(stats: dict) -> str:
     streak = stats.get("streak", 0)
     level = "Новичок"
     if stats.get("chats_count", 0) >= 100:
-        level = "<emoji document_id="5283130719806175947">🏆</emoji> Легенда"
+        level = "<emoji document_id=\"5283130719806175947\">🏆</emoji> Легенда"
     elif stats.get("chats_count", 0) >= 50:
         level = "<emoji document_id=\"5303040337059543238\">🔥</emoji> Активный собеседник"
     elif stats.get("chats_count", 0) >= 20:
-        level = "<emoji document_id="5224455462178549802">💬</emoji> Регулярный"
+        level = "<emoji document_id=\"5224455462178549802\">💬</emoji> Регулярный"
     elif stats.get("chats_count", 0) >= 5:
         level = "🌱 Начинающий"
 
     return (
         f"<emoji document_id=\"5884336303415236350\">📊</emoji> Твоя статистика\n\n"
-        f"<emoji document_id="5224455462178549802">💬</emoji> Всего диалогов: {stats.get('chats_count', 0)}\n"
-        f"<emoji document_id="5258258882022612173">⏱</emoji> Общее время: {time_str}\n"
-        f"<emoji document_id="5350417283783084711">👍</emoji> Рейтинг: {stats.get('rating_pct', 0)}% положительных\n"
+        f"<emoji document_id=\"5224455462178549802\">💬</emoji> Всего диалогов: {stats.get('chats_count', 0)}\n"
+        f"<emoji document_id=\"5258258882022612173\">⏱</emoji> Общее время: {time_str}\n"
+        f"<emoji document_id=\"5350417283783084711\">👍</emoji> Рейтинг: {stats.get('rating_pct', 0)}% положительных\n"
         f"<emoji document_id=\"5303040337059543238\">🔥</emoji> Дней подряд: {streak}\n"
-        f"<emoji document_id="5283130719806175947">🏆</emoji> Уровень: {level}\n"
+        f"<emoji document_id=\"5283130719806175947\">🏆</emoji> Уровень: {level}\n"
     )
 
 

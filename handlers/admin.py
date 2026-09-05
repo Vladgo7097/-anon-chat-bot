@@ -45,21 +45,21 @@ async def cmd_season(message: Message):
 
 def overview_text(s):
     metric=lambda key: f"{s[key]}%" if s.get(key) is not None else "— (недостаточно данных)"
-    return f"<emoji document_id="6129805886383723340">🛠</emoji> Админ-панель\n\n<emoji document_id="5215522595922779944">👥</emoji> Пользователей: {s['users']}\n<emoji document_id="5348232622898167572">👤</emoji> Новых за период: {s['new']}\n<emoji document_id="5224455462178549802">💬</emoji> Завершённых диалогов: {s['chats']}\n<emoji document_id="5258258882022612173">⏱</emoji> Средняя длительность: {s['avg_seconds']} сек.\n<emoji document_id="5312160339335347417">💰</emoji> Оплачено: {s['stars']}<emoji document_id="5920281855378068765">⭐</emoji>\n<emoji document_id="5283130719806175947">💎</emoji> Активных Premium: {s['premium']}\n<emoji document_id="5350417283783084711">👍</emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
+    return f"<emoji document_id=\"6129805886383723340\">🛠</emoji> Админ-панель\n\n<emoji document_id=\"5215522595922779944\">👥</emoji> Пользователей: {s['users']}\n<emoji document_id=\"5348232622898167572\">👤</emoji> Новых за период: {s['new']}\n<emoji document_id=\"5224455462178549802\">💬</emoji> Завершённых диалогов: {s['chats']}\n<emoji document_id=\"5258258882022612173\">⏱</emoji> Средняя длительность: {s['avg_seconds']} сек.\n<emoji document_id=\"5312160339335347417\">💰</emoji> Оплачено: {s['stars']}<emoji document_id=\"5920281855378068765\">⭐</emoji>\n<emoji document_id=\"5283130719806175947\">💎</emoji> Активных Premium: {s['premium']}\n<emoji document_id=\"5350417283783084711\">👍</emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
 
 
 @admin_router.message(Command("admin"))
 async def cmd_admin(message: Message,state: FSMContext):
     await state.clear()
     s=await StatsService().overview()
-    await message.answer(overview_text(s)+f"\n<emoji document_id="5215522595922779944">🟢</emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
+    await message.answer(overview_text(s)+f"\n<emoji document_id=\"5215522595922779944\">🟢</emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
 @admin_router.callback_query(F.data=="admin:back")
 async def cb_admin_back(callback: CallbackQuery):
     await callback.answer()
     s=await StatsService().overview()
-    await callback.message.answer(overview_text(s)+f"\n<emoji document_id="5215522595922779944">🟢</emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
+    await callback.message.answer(overview_text(s)+f"\n<emoji document_id=\"5215522595922779944\">🟢</emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
 @admin_router.callback_query(F.data.in_({"admin:stats","admin:money","admin:funnel"}))
@@ -106,11 +106,11 @@ async def cb_reports(callback: CallbackQuery):
     reports=await AdminService().reports(callback.from_user.id,offset)
     await callback.answer()
     if not reports:
-        await callback.message.answer("<emoji document_id="5280880410346152584">🚩</emoji> Жалоб нет.",reply_markup=admin_kb())
+        await callback.message.answer("<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоб нет.",reply_markup=admin_kb())
         return
     r=reports[0]
     names,previous,bans=await AdminService().report_details(callback.from_user.id,r)
-    await callback.message.answer(f"<emoji document_id="5280880410346152584">🚩</emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
+    await callback.message.answer(f"<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
 
 
 @admin_router.callback_query(F.data.startswith("admin:ban1:"))
@@ -131,7 +131,7 @@ async def cb_bans(callback: CallbackQuery):
     users=await AdminService().bans(callback.from_user.id)
     await callback.answer()
     text="\n".join(f"{u.anon_id} — "+(f"до {u.ban_expires:%d.%m.%Y}" if u.ban_expires else "навсегда") for u in users)
-    await callback.message.answer("<emoji document_id="5312229088876847138">🚫</emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID")
+    await callback.message.answer("<emoji document_id=\"5312229088876847138\">🚫</emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID")
 
 
 @admin_router.callback_query(F.data=="admin:users")
@@ -202,7 +202,7 @@ async def cb_admin_grant_user(callback: CallbackQuery):
     target_id=int(callback.data.split(":")[-1])
     await callback.answer()
     await callback.message.answer(
-        f"<emoji document_id="5312160339335347417">🎁</emoji> Выдать Premium {target_id}?\n"
+        f"<emoji document_id=\"5312160339335347417\">🎁</emoji> Выдать Premium {target_id}?\n"
         f"/grant {target_id} дни причина")
 
 
@@ -243,7 +243,7 @@ async def cmd_user_action(message: Message):
     await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Сохранено" if result.ok else "Проверь параметры.")
 
 
-@admin_router.message(F.text.func(lambda t: t and not t.startswith('/') and t not in {"<emoji document_id="6129805886383723340">🛠</emoji> Админ-панель","<emoji document_id=\"5931472654660800739\">📊</emoji> Статистика","<emoji document_id=\"5312160339335347417\">💰</emoji> Монетизация","<emoji document_id="5280880410346152584">🚩</emoji> Жалобы","<emoji document_id="5312229088876847138">🚫</emoji> Баны","<emoji document_id=\"5215522595922779944\">👥</emoji> Пользователи","<emoji document_id="5215668805199473901">📢</emoji> Рассылка","<emoji document_id="6129805886383723340">⚙️</emoji> Настройки бота","<emoji document_id="5283130719806175947">📈</emoji> Воронка","<emoji document_id="5460865451586250451">📋</emoji> Рассылки (статус)"}))
+@admin_router.message(F.text.func(lambda t: t and not t.startswith('/') and t not in {"<emoji document_id=\"6129805886383723340\">🛠</emoji> Админ-панель","<emoji document_id=\"5931472654660800739\">📊</emoji> Статистика","<emoji document_id=\"5312160339335347417\">💰</emoji> Монетизация","<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалобы","<emoji document_id=\"5312229088876847138\">🚫</emoji> Баны","<emoji document_id=\"5215522595922779944\">👥</emoji> Пользователи","<emoji document_id=\"5215668805199473901\">📢</emoji> Рассылка","<emoji document_id=\"6129805886383723340\">⚙️</emoji> Настройки бота","<emoji document_id=\"5283130719806175947\">📈</emoji> Воронка","<emoji document_id=\"5460865451586250451\">📋</emoji> Рассылки (статус)"}))
 async def admin_text_search(message: Message):
     text=message.text.strip()
     if text.isdigit() or text.startswith('#'):
@@ -284,7 +284,7 @@ async def cmd_setting(message: Message):
 @admin_router.callback_query(F.data=="admin:broadcast")
 async def cb_broadcast(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("<emoji document_id="5215668805199473901">📢</emoji> Выбери аудиторию:",reply_markup=admin_broadcast_audience_kb())
+    await callback.message.answer("<emoji document_id=\"5215668805199473901\">📢</emoji> Выбери аудиторию:",reply_markup=admin_broadcast_audience_kb())
 
 
 @admin_router.callback_query(F.data.startswith("bc:"))
@@ -308,9 +308,9 @@ async def broadcast_text(message: Message,state: FSMContext):
         return
     await state.clear()
     job=result.data['job']
-    await message.answer(f"<emoji document_id="5253959125838090076">👁</emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
+    await message.answer(f"<emoji document_id=\"5253959125838090076\">👁</emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="<emoji document_id="5188481279963715781">🚀</emoji> Запустить рассылку",callback_data=f"admin:send:{job.id}",style="danger")]]))
+            InlineKeyboardButton(text="<emoji document_id=\"5188481279963715781\">🚀</emoji> Запустить рассылку",callback_data=f"admin:send:{job.id}",style="danger")]]))
 
 
 @admin_router.callback_query(F.data.startswith("admin:send:"))
@@ -335,7 +335,7 @@ async def cb_broadcast_status(callback: CallbackQuery):
             return
         await callback.answer()
         await callback.message.answer(
-            f"<emoji document_id="5215668805199473901">📢</emoji> Рассылка #{job.id}\n"
+            f"<emoji document_id=\"5215668805199473901\">📢</emoji> Рассылка #{job.id}\n"
             f"Аудитория: {job.segment}\n"
             f"Статус: {job.status}\n"
             f"Отправлено: {job.sent}\n"
@@ -349,6 +349,6 @@ async def cb_broadcast_status(callback: CallbackQuery):
         jobs=await AdminService().broadcast_status(callback.from_user.id)
         await callback.answer()
         if not jobs:
-            await callback.message.answer("<emoji document_id="5215668805199473901">📢</emoji> Рассылок пока нет.",reply_markup=admin_kb())
+            await callback.message.answer("<emoji document_id=\"5215668805199473901\">📢</emoji> Рассылок пока нет.",reply_markup=admin_kb())
             return
-        await callback.message.answer("<emoji document_id="5215668805199473901">📢</emoji> Последние рассылки:",reply_markup=admin_broadcast_status_kb(jobs))
+        await callback.message.answer("<emoji document_id=\"5215668805199473901\">📢</emoji> Последние рассылки:",reply_markup=admin_broadcast_status_kb(jobs))
