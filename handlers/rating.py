@@ -9,8 +9,8 @@ from keyboards.inline import menu_kb
 _last_partner: dict[int, dict] = {}
 
 
-def store_last_partner(user_id: int, partner_id: int, chat_id: int = 0):
-    _last_partner[user_id] = {"partner_id": partner_id, "chat_id": chat_id}
+def store_last_partner(user_id: int, partner_id: int, chat_started: float = 0):
+    _last_partner[user_id] = {"partner_id": partner_id, "chat_started": chat_started}
 
 
 def pop_last_partner(user_id: int) -> dict | None:
@@ -26,14 +26,20 @@ async def cb_rate(callback: CallbackQuery):
     info = pop_last_partner(user_id)
     if info:
         partner_id = info["partner_id"]
-        await add_rating(partner_id, is_positive)
-        await save_chat(user_id, partner_id)
+        chat_started = info.get("chat_started", 0)
+        duration = int(__import__("time").time() - chat_started) if chat_started else 0
 
-        # Notify the rated user
+        await add_rating(partner_id, is_positive)
+        await save_chat(user_id, partner_id, duration)
+
+        # BUG FIX: update total_chat_seconds for both users
+        from utils.db import update_user
+        await update_user(user_id, total_chat_seconds=duration)
+        await update_user(partner_id, total_chat_seconds=duration)
+
         from services.notifications import send_post_chat_rating
         await send_post_chat_rating(callback.bot, partner_id, is_positive)
 
-        # BUG FIX: activate referral if this was the first chat for a referred user
         from handlers.referral import activate_referral
         await activate_referral(user_id)
         await activate_referral(partner_id)

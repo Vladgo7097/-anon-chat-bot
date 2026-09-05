@@ -104,6 +104,15 @@ async def save_chat(user1_id: int, user2_id: int, duration: int = 0) -> Chat:
             duration_seconds=duration,
         )
         session.add(chat)
+
+        # BUG FIX: increment total_chat_seconds for both users
+        for uid in (user1_id, user2_id):
+            user = (await session.execute(
+                select(User).where(User.telegram_id == uid)
+            )).scalar_one_or_none()
+            if user:
+                user.total_chat_seconds += duration
+
         await session.commit()
         await session.refresh(chat)
         return chat
@@ -257,8 +266,9 @@ async def get_user_stats(user_id: int) -> dict:
             "rating_pct": user.positive_rating_pct,
             "streak": user.streak_days,
             "is_premium": user.is_premium,
-            "premium_expires": user.premium_expires,  # BUG FIX: was missing
+            "premium_expires": user.premium_expires,
             "total_spent": user.total_stars_spent,
+            "total_chat_seconds": user.total_chat_seconds,
             "gender": user.gender,
             "age": user.age,
         }

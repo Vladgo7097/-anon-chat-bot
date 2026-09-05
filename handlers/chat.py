@@ -20,11 +20,13 @@ IGNORE_MESSAGES = {
 
 def _store_both_partners(user_a: int, user_b: int):
     from handlers.rating import store_last_partner
-    store_last_partner(user_a, user_b)
-    store_last_partner(user_b, user_a)
+    import time as _time
+    now = _time.time()
+    store_last_partner(user_a, user_b, chat_started=now)
+    store_last_partner(user_b, user_a, chat_started=now)
 
 
-# ── Reply keyboard handlers (non-inline) ────────────────────────
+# ── Reply keyboard handlers ─────────────────────────────────────
 
 @chat_router.message(F.text == "🛑 Стоп")
 async def cmd_stop(message: Message):
@@ -103,7 +105,6 @@ async def cmd_reveal(message: Message):
 
 @chat_router.message(F.text == "❌ Отменить поиск")
 async def cmd_cancel_search(message: Message):
-    # BUG FIX: reply keyboard "Отменить поиск" was not wired up
     await leave_search(message.from_user.id)
     await message.answer(
         "🏠 Главное меню\n\nСтатус: 🟢 Онлайн",
