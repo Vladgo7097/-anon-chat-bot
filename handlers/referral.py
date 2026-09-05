@@ -1,9 +1,6 @@
-from aiogram import F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 
-from handlers import menu_router
 from utils.db import get_or_create_user, update_user, get_user_by_id
-from keyboards.inline import menu_kb
 
 
 REFERRAL_TEXT = """👥 Приведи друга — получи скидку
@@ -20,7 +17,6 @@ REFERRAL_TEXT = """👥 Приведи друга — получи скидку
 
 
 def get_referral_link(bot_username: str, user_id: int) -> str:
-    # BUG FIX: was {{user_id}} (double braces = literal text)
     return f"t.me/{bot_username}?start=ref_{user_id}"
 
 
@@ -40,7 +36,6 @@ async def show_referral(message_or_callback, user_id: int, bot_username: str):
 
 
 async def process_referral(new_user_id: int, referrer_telegram_id: int):
-    """Called when a new user joins via referral link."""
     if new_user_id == referrer_telegram_id:
         return
 
@@ -50,7 +45,6 @@ async def process_referral(new_user_id: int, referrer_telegram_id: int):
 
 
 async def activate_referral(new_user_id: int):
-    """Called when referred user completes first chat. Finds referrer automatically."""
     user = await get_user_by_id(new_user_id)
     if not user or not user.referrer_id:
         return

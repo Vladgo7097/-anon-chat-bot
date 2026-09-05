@@ -1,5 +1,5 @@
 from aiogram import F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 
 from handlers import menu_router
 from keyboards.reply import main_menu_kb

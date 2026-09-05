@@ -1,10 +1,9 @@
 from aiogram import F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 
 from handlers import start_router
 from keyboards.inline import start_kb, rules_kb, menu_kb
-from keyboards.reply import main_menu_kb
 from utils.db import get_or_create_user, check_ban
 from services.chat_manager import set_online
 
