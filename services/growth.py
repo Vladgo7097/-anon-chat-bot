@@ -20,7 +20,7 @@ async def offer(s, user_id, code, percent, scope="premium", days=30):
     if not await s.scalar(select(Offer).where(Offer.code == code)):
         s.add(Offer(user_id=user_id, code=code, discount_percent=percent, product_scope=scope, ends_at=utcnow()+timedelta(days=days)))
         from services.notifications import enqueue
-        await enqueue(s,user_id,"reward",f"reward:{code}",f"🎁 Получена скидка {percent}%. Срок: {days} дней. Подробности в профиле.","profile:rewards")
+        await enqueue(s,user_id,"reward",f"reward:{code}",f"<emoji document_id=\"5312160339335347417\">🎁</emoji> Получена скидка {percent}%. Срок: {days} дней. Подробности в профиле.","profile:rewards")
 
 
 async def completed_chat(s, user):
@@ -99,9 +99,9 @@ class GrowthService:
             if not product or not product.is_active:
                 return None
             spent=await s.scalar(select(func.coalesce(func.sum(Payment.stars_amount),0)).where(Payment.user_id==user_id,Payment.status=="paid",Payment.paid_at>utcnow()-timedelta(days=30),Payment.product.in_(["instant_search","gender_filter_one_match","skip_next_delay"])))
-            text="⭐ С Premium доступны фильтры, приоритет поиска и «Следующий» без задержки."
+            text="<emoji document_id=\"5920281855378068765\">⭐</emoji> С Premium доступны фильтры, приоритет поиска и «Следующий» без задержки."
             if spent>product.price_stars:
-                text+=f"\nЗа последние 30 дней на эти улучшения потрачено {spent}⭐. Premium на месяц стоит {product.price_stars}⭐ — на {spent-product.price_stars}⭐ меньше."
+                text+=f"\nЗа последние 30 дней на эти улучшения потрачено {spent}<emoji document_id=\"5920281855378068765\">⭐</emoji>. Premium на месяц стоит {product.price_stars}<emoji document_id=\"5920281855378068765\">⭐</emoji> — на {spent-product.price_stars}<emoji document_id=\"5920281855378068765\">⭐</emoji> меньше."
             return text
 
 
@@ -130,4 +130,4 @@ class SeasonalService:
         await award(s,user_id,f"season:{data['code']}")
         s.add(Offer(user_id=user_id,code=code,discount_percent=data["discount"],product_scope="premium",ends_at=datetime.fromisoformat(data["ends_at"])))
         from services.notifications import enqueue
-        await enqueue(s,user_id,"reward",f"reward:{code}",f"🎉 Событие «{data['code']}»: получен бейдж и скидка {data['discount']}% на Premium до {data['ends_at']}.","profile:rewards")
+        await enqueue(s,user_id,"reward",f"reward:{code}",f"<emoji document_id=\"5994502837327892086\">🎉</emoji> Событие «{data['code']}»: получен бейдж и скидка {data['discount']}% на Premium до {data['ends_at']}.","profile:rewards")

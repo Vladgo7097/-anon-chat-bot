@@ -72,7 +72,7 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="<emoji document_id=\"5348076097110050117\">💰</emoji> Монетизация", callback_data="admin:money"),
         ],
         [
-            InlineKeyboardButton(text="🚩 Жалобы", callback_data="admin:reports"),
+            InlineKeyboardButton(text="<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалобы", callback_data="admin:reports"),
             InlineKeyboardButton(text="<emoji document_id=\"5258318620722733379\">🚫</emoji> Баны", callback_data="admin:bans"),
         ],
         [
@@ -84,7 +84,7 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="<emoji document_id=\"5399909394525737759\">📈</emoji> Воронка", callback_data="admin:funnel"),
         ],
         [
-            InlineKeyboardButton(text="⚙️ Настройки бота", callback_data="admin:settings"),
+            InlineKeyboardButton(text="<emoji document_id=\"6129805886383723340\">⚙️</emoji> Настройки бота", callback_data="admin:settings"),
         ],
     ])
 
@@ -106,8 +106,8 @@ def admin_broadcast_audience_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="<emoji document_id=\"5942877472163892475\">👥</emoji> Все", callback_data="bc:all")],
         [InlineKeyboardButton(text="<emoji document_id=\"5258165702707125574\">⭐</emoji> Premium", callback_data="bc:premium")],
-        [InlineKeyboardButton(text="😴 Неактивные 7+ дней", callback_data="bc:inactive")],
-        [InlineKeyboardButton(text="🆓 Без покупок", callback_data="bc:nopay")],
+        [InlineKeyboardButton(text="<emoji document_id=\"5949785428843302949\">😴</emoji> Неактивные 7+ дней", callback_data="bc:inactive")],
+        [InlineKeyboardButton(text="<emoji document_id=\"5271783639548441015\">🆓</emoji> Без покупок", callback_data="bc:nopay")],
     ])
 
 
@@ -126,7 +126,7 @@ def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
 def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
     rows = []
     for job in jobs:
-        status_icon = {"draft": "📝", "queued": "⏳", "sending": "📤", "completed": "✅"}.get(job.status, "❓")
+        status_icon = {"draft": "<emoji document_id=\"5460865451586250451\">📝</emoji>", "queued": "<emoji document_id=\"5296482716567495148\">⏳</emoji>", "sending": "<emoji document_id=\"5967432491684860012\">📤</emoji>", "completed": "<emoji document_id=\"5280880410346152584\">✅</emoji>"}.get(job.status, "<emoji document_id=\"5280880410346152584\">❓</emoji>")
         rows.append([InlineKeyboardButton(
             text=f"{status_icon} #{job.id} · {job.segment} · {job.sent}/{job.sent+job.failed+job.blocked}",
             callback_data=f"admin:broadcast_detail:{job.id}")])

@@ -14,21 +14,21 @@ def format_stats(stats: dict) -> str:
     streak = stats.get("streak", 0)
     level = "Новичок"
     if stats.get("chats_count", 0) >= 100:
-        level = "🏆 Легенда"
+        level = "<emoji document_id="5283130719806175947">🏆</emoji> Легенда"
     elif stats.get("chats_count", 0) >= 50:
-        level = "🔥 Активный собеседник"
+        level = "<emoji document_id=\"5303040337059543238\">🔥</emoji> Активный собеседник"
     elif stats.get("chats_count", 0) >= 20:
-        level = "💬 Регулярный"
+        level = "<emoji document_id="5224455462178549802">💬</emoji> Регулярный"
     elif stats.get("chats_count", 0) >= 5:
         level = "🌱 Начинающий"
 
     return (
-        f"📊 Твоя статистика\n\n"
-        f"💬 Всего диалогов: {stats.get('chats_count', 0)}\n"
-        f"⏱ Общее время: {time_str}\n"
-        f"👍 Рейтинг: {stats.get('rating_pct', 0)}% положительных\n"
-        f"🔥 Дней подряд: {streak}\n"
-        f"🏆 Уровень: {level}\n"
+        f"<emoji document_id=\"5884336303415236350\">📊</emoji> Твоя статистика\n\n"
+        f"<emoji document_id="5224455462178549802">💬</emoji> Всего диалогов: {stats.get('chats_count', 0)}\n"
+        f"<emoji document_id="5258258882022612173">⏱</emoji> Общее время: {time_str}\n"
+        f"<emoji document_id="5350417283783084711">👍</emoji> Рейтинг: {stats.get('rating_pct', 0)}% положительных\n"
+        f"<emoji document_id=\"5303040337059543238\">🔥</emoji> Дней подряд: {streak}\n"
+        f"<emoji document_id="5283130719806175947">🏆</emoji> Уровень: {level}\n"
     )
 
 
@@ -42,7 +42,7 @@ async def cb_stats(callback: CallbackQuery):
     await callback.answer()
 
 
-@stats_router.message(F.text == "📊 Статистика")
+@stats_router.message(F.text == "<emoji document_id=\"5884336303415236350\">📊</emoji> Статистика")
 async def cmd_stats(message: Message):
     stats = await get_user_stats(message.from_user.id)
     if not stats:

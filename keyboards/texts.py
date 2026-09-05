@@ -1,4 +1,4 @@
-BEGIN = "💬 Начнём общение"
+BEGIN = "<emoji document_id=\"5224455462178549802\">💬</emoji> Начнём общение"
 MALE = "<emoji document_id=\"5366121041426922772\">👨</emoji> Парень"
 FEMALE = "<emoji document_id=\"5366209534933089956\">👩</emoji> Девушка"
 ACCEPT = "<emoji document_id=\"5348404473129614535\">✅</emoji> Принимаю правила"
@@ -9,7 +9,7 @@ SETTINGS = "<emoji document_id=\"5348412779596365405\">⚙️</emoji> Настр
 PREMIUM = "<emoji document_id=\"5258165702707125574\">⭐</emoji> Premium"
 STATS = "<emoji document_id=\"5884336303415236350\">📊</emoji> Статистика"
 HELP = "<emoji document_id=\"5805362626619774793\">❓</emoji> Помощь"
-MENU = "🏠 Меню"
+MENU = "<emoji document_id=\"5257963315258204021\">🏠</emoji> Меню"
 NEXT = "<emoji document_id=\"5296587908906511469\">⏭</emoji> Следующий"
 STOP = "<emoji document_id=\"5398038979217989221\">🛑</emoji> Стоп"
 REPORT = "<emoji document_id=\"5460755126761312667\">🚩</emoji> Пожаловаться"
@@ -20,4 +20,4 @@ PAGE_PREV = "<emoji document_id=\"5258236805890710909\">⬅️</emoji> Наза�
 SYSTEM_TEXTS = {BEGIN, MALE, FEMALE, ACCEPT, RULES, SEARCH, PROFILE, SETTINGS,
                 PREMIUM, STATS, HELP, MENU, NEXT, STOP, REPORT, REVEAL, CANCEL,
                 PAGE_NEXT, PAGE_PREV}
-MENU_TEXT = "🏠 Главное меню\n\nНайди случайного собеседника и начинай общение <emoji document_id=\"5350596259365273418\">👋</emoji>"
+MENU_TEXT = "<emoji document_id=\"5257963315258204021\">🏠</emoji> Главное меню\n\nНайди случайного собеседника и начинай общение <emoji document_id=\"5350596259365273418\">👋</emoji>"

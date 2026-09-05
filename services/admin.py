@@ -157,7 +157,7 @@ class AdminService:
             await s.execute(update(Ban).where(Ban.user_id==uid, Ban.is_active.is_(True)).values(is_active=False))
             if before["is_banned"]:
                 from services.notifications import enqueue
-                await enqueue(s,uid,"unban",f"unban:{uid}:{utcnow().isoformat()}","✅ Блокировка снята, добро пожаловать обратно!", "menu")
+                await enqueue(s,uid,"unban",f"unban:{uid}:{utcnow().isoformat()}","<emoji document_id=\"5280880410346152584\">✅</emoji> Блокировка снята, добро пожаловать обратно!", "menu")
             audit(s,admin,"unban","user",uid,before,{"is_banned":False})
         return ServiceResult(True,"UNBANNED")
 
