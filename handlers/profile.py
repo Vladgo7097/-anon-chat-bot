@@ -46,7 +46,7 @@ async def show_profile(message, user_id):
         return
     gender = {"male": "Парень", "female": "Девушка"}.get(s['gender'], "Не указан")
     premium = f"до {s['premium_expires']:%d.%m.%Y}" if s['is_premium'] else "нет"
-    await message.answer(f"👤 Твой профиль\n\n🆔 ID: {s['anon_id']}\n👤 Пол: {gender}\n🎂 Возраст: {s['age']}\n📅 В боте с: {s['created_at']:%d.%m.%Y}\n\n💬 Диалогов проведено: {s['chats_count']}\n👍 Лайков: {s['likes']}   👎 Дизлайков: {s['dislikes']}\n⭐ Premium: {premium}", reply_markup=profile_kb())
+    await message.answer(f"👤 Твой профиль\n\n🆔 ID: {s['anon_id']}\n👤 Пол: {gender}\n<emoji document_id=\"5452055425690123301\">🎂</emoji> Возраст: {s['age']}\n📅 В боте с: {s['created_at']:%d.%m.%Y}\n\n💬 Диалогов проведено: {s['chats_count']}\n👍 Лайков: {s['likes']}   👎 Дизлайков: {s['dislikes']}\n⭐ Premium: {premium}", reply_markup=profile_kb())
 
 
 @profile_router.message(Command("profile"))
