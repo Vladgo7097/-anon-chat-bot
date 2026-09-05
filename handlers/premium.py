@@ -5,7 +5,6 @@ from aiogram.types import (
 
 from handlers import premium_router
 from keyboards.inline import premium_kb, menu_kb
-from keyboards.reply import main_menu_kb
 from utils.db import get_or_create_user, activate_premium, is_premium, add_payment
 import config
 
@@ -175,7 +174,6 @@ async def successful_payment(message: Message):
         )
 
     elif payload.startswith("reveal:"):
-        # BUG FIX: reveal payment was not handled
         parts = payload.split(":")
         if len(parts) == 3:
             paid_user_id = int(parts[1])

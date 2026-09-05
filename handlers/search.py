@@ -10,7 +10,7 @@ from utils.db import get_or_create_user, increment_chats, check_ban, is_premium
 from services.chat_manager import (
     join_search, leave_search, search_with_timeout,
     start_chat, set_online, get_search_queue_length,
-    get_online_count, set_instant_search, pop_instant_search,
+    get_online_count, set_instant_search,
 )
 import config
 

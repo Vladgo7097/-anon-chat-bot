@@ -11,10 +11,8 @@ Keys:
   reveal:{min}:{max}       -> Set of user_ids who requested reveal
   instant_search:{user_id}  -> "1" if paid for instant search
 """
-import json
 import time
 import asyncio
-from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -101,18 +99,15 @@ async def pop_from_search(my_id: int, my_gender: Optional[str] = None) -> Option
         if uid == my_id:
             continue
 
-        # Check not already in chat
         if await r.get(f"active_chat:{uid}"):
             await r.zrem("search_queue", user_id_str)
             continue
 
-        # Check gender filter (from partner's perspective)
         partner_gender_pref = await r.get(f"search_gender:{uid}")
         if partner_gender_pref and partner_gender_pref != "a" and my_gender:
             if partner_gender_pref != my_gender:
                 continue
 
-        # Match found!
         await r.zrem("search_queue", user_id_str)
         return uid
 
@@ -154,7 +149,6 @@ async def end_chat(user_id: int) -> Optional[int]:
         await r.delete(f"active_chat:{partner_id}")
         await r.delete(f"chat_started:{user_id}")
         await r.delete(f"chat_started:{partner_id}")
-        # BUG FIX: key is just "reveal:min:max", not "reveal_requests:reveal:min:max"
         await r.delete(self_chat_key(user_id, partner_id))
     return partner_id
 
@@ -197,8 +191,3 @@ async def check_reveal(user_id: int, partner_id: int) -> bool:
 async def set_instant_search(user_id: int):
     r = await get_redis()
     await r.set(f"instant_search:{user_id}", "1", ex=300)
-
-
-async def pop_instant_search(user_id: int) -> bool:
-    r = await get_redis()
-    return bool(await r.delete(f"instant_search:{user_id}"))

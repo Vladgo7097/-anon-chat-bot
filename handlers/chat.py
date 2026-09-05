@@ -1,11 +1,11 @@
 import time
-from aiogram import F, Bot
+from aiogram import F
 from aiogram.types import Message, CallbackQuery
 
 from handlers import chat_router
-from keyboards.inline import chat_kb, report_reasons_kb, stop_kb, reveal_offer_kb, menu_kb, search_kb
-from keyboards.reply import chat_kb_reply, search_kb_reply, main_menu_kb
-from services.chat_manager import get_partner, end_chat, refresh_chat_ttl
+from keyboards.inline import report_reasons_kb, stop_kb, reveal_offer_kb, menu_kb
+from keyboards.reply import chat_kb_reply, main_menu_kb
+from services.chat_manager import get_partner, end_chat, refresh_chat_ttl, leave_search
 from utils.db import get_or_create_user, check_ban, is_premium
 import config
 
@@ -19,11 +19,12 @@ IGNORE_MESSAGES = {
 
 
 def _store_both_partners(user_a: int, user_b: int):
-    """Store partner for both users so both can rate."""
     from handlers.rating import store_last_partner
     store_last_partner(user_a, user_b)
     store_last_partner(user_b, user_a)
 
+
+# ── Reply keyboard handlers (non-inline) ────────────────────────
 
 @chat_router.message(F.text == "🛑 Стоп")
 async def cmd_stop(message: Message):
@@ -50,6 +51,67 @@ async def cmd_stop(message: Message):
     except Exception:
         pass
 
+
+@chat_router.message(F.text == "⏭ Следующий")
+async def cmd_next(message: Message):
+    user_id = message.from_user.id
+    partner_id = await get_partner(user_id)
+    if not partner_id:
+        await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
+        return
+
+    premium = await is_premium(user_id)
+    if not premium:
+        now = time.time()
+        last = _last_next.get(user_id, 0)
+        remaining = config.CHAT_DELAY_NEXT - (now - last)
+        if remaining > 0:
+            await message.answer(f"⏳ Подожди {int(remaining)} сек. перед поиском нового собеседника.")
+            return
+        _last_next[user_id] = now
+
+    await end_chat(user_id)
+    from keyboards.inline import InlineKeyboardMarkup, InlineKeyboardButton
+    await message.answer(
+        "Нажми для нового поиска:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Найти собеседника", callback_data="search:start")],
+        ]),
+    )
+
+
+@chat_router.message(F.text == "🚩 Пожаловаться")
+async def cmd_report(message: Message):
+    partner_id = await get_partner(message.from_user.id)
+    if not partner_id:
+        await message.answer("Ты сейчас не в чате.")
+        return
+    await message.answer("🚩 На что жалуетесь?", reply_markup=report_reasons_kb())
+
+
+@chat_router.message(F.text == "❤️ Раскрыть себя")
+async def cmd_reveal(message: Message):
+    partner_id = await get_partner(message.from_user.id)
+    if not partner_id:
+        await message.answer("Ты сейчас не в чате.")
+        return
+    await message.answer(
+        "❤️ Предложить раскрыться взаимно?",
+        reply_markup=reveal_offer_kb(partner_id),
+    )
+
+
+@chat_router.message(F.text == "❌ Отменить поиск")
+async def cmd_cancel_search(message: Message):
+    # BUG FIX: reply keyboard "Отменить поиск" was not wired up
+    await leave_search(message.from_user.id)
+    await message.answer(
+        "🏠 Главное меню\n\nСтатус: 🟢 Онлайн",
+        reply_markup=main_menu_kb(),
+    )
+
+
+# ── Inline keyboard handlers ────────────────────────────────────
 
 @chat_router.callback_query(F.data == "chat:stop")
 async def cb_stop(callback: CallbackQuery):
@@ -108,56 +170,7 @@ async def cb_continue(callback: CallbackQuery):
     await callback.answer("Продолжай общаться!")
 
 
-# ── Message forwarding ───────────────────────────────────────────
-
-@chat_router.message(F.text == "⏭ Следующий")
-async def cmd_next(message: Message):
-    user_id = message.from_user.id
-    partner_id = await get_partner(user_id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
-        return
-
-    premium = await is_premium(user_id)
-    if not premium:
-        now = time.time()
-        last = _last_next.get(user_id, 0)
-        remaining = config.CHAT_DELAY_NEXT - (now - last)
-        if remaining > 0:
-            await message.answer(f"⏳ Подожди {int(remaining)} сек. перед поиском нового собеседника.")
-            return
-        _last_next[user_id] = now
-
-    await end_chat(user_id)
-    from keyboards.inline import InlineKeyboardMarkup, InlineKeyboardButton
-    await message.answer(
-        "Нажми для нового поиска:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Найти собеседника", callback_data="search:start")],
-        ]),
-    )
-
-
-@chat_router.message(F.text == "🚩 Пожаловаться")
-async def cmd_report(message: Message):
-    partner_id = await get_partner(message.from_user.id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.")
-        return
-    await message.answer("🚩 На что жалуетесь?", reply_markup=report_reasons_kb())
-
-
-@chat_router.message(F.text == "❤️ Раскрыть себя")
-async def cmd_reveal(message: Message):
-    partner_id = await get_partner(message.from_user.id)
-    if not partner_id:
-        await message.answer("Ты сейчас не в чате.")
-        return
-    await message.answer(
-        "❤️ Предложить раскрыться взаимно?",
-        reply_markup=reveal_offer_kb(partner_id),
-    )
-
+# ── Generic message forwarding ──────────────────────────────────
 
 @chat_router.message(F.content_type.in_({
     "text", "photo", "voice", "sticker", "video", "video_note", "animation",

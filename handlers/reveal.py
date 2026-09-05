@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 
 from handlers import reveal_router
 from services.chat_manager import get_partner, request_reveal, check_reveal
-from utils.db import get_or_create_user, is_premium, add_payment
+from utils.db import get_or_create_user, is_premium
 import config
 
 
@@ -55,7 +55,6 @@ async def cb_reveal_mutual(callback: CallbackQuery):
         except Exception:
             pass
     else:
-        # Queue notification for partner
         from services.notifications import queue_reveal_notification
         queue_reveal_notification(partner_id)
 
