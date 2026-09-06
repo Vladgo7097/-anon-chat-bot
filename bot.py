@@ -57,12 +57,19 @@ async def main():
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher(storage=RedisStorage.from_url(config.REDIS_URL))
+    from utils.telegram import RetryTelegramRequests
+    bot.session.middleware(RetryTelegramRequests())
+    from utils.storage import AvailableRedisStorage
+    dp = Dispatcher(storage=AvailableRedisStorage.from_url(config.REDIS_URL))
+    from utils.deduplication import UpdateDeduplication
+    dp.update.outer_middleware(UpdateDeduplication())
 
     from handlers import load_routers
 
     dp.include_routers(*load_routers())
 
+    from utils.albums import AlbumMiddleware
+    dp.message.middleware(AlbumMiddleware())
     dp.message.middleware(AntiFloodMiddleware())
     dp.callback_query.middleware(AntiFloodMiddleware())
     dp.message.outer_middleware(AccessMiddleware())

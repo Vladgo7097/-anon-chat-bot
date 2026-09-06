@@ -9,7 +9,7 @@ class JsonFormatter(logging.Formatter):
     def format(self,record):
         payload={"timestamp":datetime.fromtimestamp(record.created,timezone.utc).isoformat(),
             "level":record.levelname,"logger":record.name,"event":getattr(record,"event",record.getMessage())}
-        for field in ("user_id","anon_id","chat_session_id","payment_id","duration_ms","result","error_code"):
+        for field in ("user_id","anon_id","chat_session_id","payment_id","report_id","duration_ms","result","error_code"):
             if hasattr(record,field):
                 payload[field]=getattr(record,field)
         if record.exc_info:
@@ -29,4 +29,4 @@ class UpdateLoggingMiddleware(BaseMiddleware):
         finally:
             actor=getattr(event,"from_user",None)
             logging.getLogger("updates").info("update",extra={"event":"update_processed",
-                "user_id":actor.id if actor else None,"duration_ms":round((time.monotonic()-started)*1000),"result":result,"error_code":error})
+                "user_id":actor.id if actor else None,"anon_id":data.get("anon_id"),"duration_ms":round((time.monotonic()-started)*1000),"result":result,"error_code":error})

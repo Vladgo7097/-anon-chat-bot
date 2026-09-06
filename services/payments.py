@@ -1,4 +1,5 @@
 import uuid
+import logging
 from datetime import timedelta
 from sqlalchemy import select, or_
 from models.base import async_session
@@ -48,6 +49,46 @@ async def consume_delay_skip(user_id):
 
 
 class PaymentService:
+    async def refunded(self, user_id, payload, amount, currency, charge_id):
+        """Reconcile an actual Telegram refund event; does not initiate refunds."""
+        async with async_session.begin() as s:
+            p = await s.scalar(select(Payment).where(Payment.payload == payload).with_for_update())
+            if (not p or p.user_id != user_id or p.stars_amount != amount or currency != "XTR"
+                    or p.telegram_payment_charge_id != charge_id):
+                return ServiceResult(False, "INVALID_PAYMENT")
+            if p.status == "refunded":
+                return ServiceResult(False, "ALREADY_REFUNDED")
+            if p.status != "paid":
+                return ServiceResult(False, "INVALID_PAYMENT")
+            user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
+            now = utcnow()
+            entitlement = await s.scalar(select(Entitlement).where(Entitlement.source_payment_id == p.id).with_for_update())
+            if entitlement:
+                entitlement.remaining_uses = 0
+                entitlement.expires_at = now
+            subscription = await s.scalar(select(PremiumSubscription).where(
+                PremiumSubscription.source_payment_id == p.id).with_for_update())
+            if subscription and subscription.is_active:
+                remaining = max(timedelta(0), subscription.expires_at - max(now, subscription.started_at))
+                later = (await s.scalars(select(PremiumSubscription).where(
+                    PremiumSubscription.user_id == user_id, PremiumSubscription.id != subscription.id,
+                    PremiumSubscription.is_active.is_(True), PremiumSubscription.started_at >= subscription.expires_at)
+                    .with_for_update())).all()
+                for item in later:
+                    item.started_at -= remaining
+                    item.expires_at -= remaining
+                subscription.is_active = False
+                if user and user.premium_expires:
+                    user.premium_expires = max(now, user.premium_expires-remaining)
+                    user.is_premium = user.premium_expires > now
+            p.status = "refunded"
+            if user:
+                user.total_stars_spent = max(0, user.total_stars_spent-amount)
+            from services.growth import event
+            await event(s, user_id, "payment_refunded", f"refund:{p.id}")
+            logging.getLogger(__name__).info("payment_refunded", extra={"payment_id": p.id, "user_id": user_id})
+            return ServiceResult(True, "REFUNDED")
+
     async def products(self, kinds=None):
         async with async_session() as s:
             q = select(Product).where(Product.is_active.is_(True)).order_by(Product.price_stars)
@@ -165,4 +206,5 @@ class PaymentService:
             else:
                 s.add(Entitlement(user_id=user_id, kind=p.product, source_payment_id=p.id, target_session=p.target_session,
                     expires_at=now+timedelta(seconds=p.duration_seconds) if p.duration_seconds else None))
+            logging.getLogger(__name__).info("payment_completed", extra={"payment_id": p.id, "user_id": user_id})
             return ServiceResult(True, "PAID", {"product": p.product, "session_id": p.target_session})

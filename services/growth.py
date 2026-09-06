@@ -79,6 +79,8 @@ class GrowthService:
             return user,achievements,offers
 
     async def upsell(self, user_id):
+        from services.settings import bot_value
+        threshold = await bot_value("upsell_chat_count", 3)
         from models.payment import Payment,Product
         from repositories.chats import premium_active
         from models.chat import Chat
@@ -93,7 +95,7 @@ class GrowthService:
             ended=select(func.count(Chat.id)).where(Chat.status=="ended",or_(Chat.user1_id==user_id,Chat.user2_id==user_id))
             if last:
                 ended=ended.where(Chat.ended_at>last)
-            if await s.scalar(ended)<3:
+            if await s.scalar(ended)<threshold:
                 return None
             product=await s.get(Product,"premium_1m")
             if not product or not product.is_active:

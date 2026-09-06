@@ -101,3 +101,12 @@ async def successful_payment(message: Message):
     if result.data["product"] in {"reveal_priority_request", "reveal_status"}:
         from handlers.reveal import paid_reveal
         await paid_reveal(message, message.from_user.id, result.data["session_id"], result.data["product"])
+
+
+@premium_router.message(F.refunded_payment)
+async def refunded_payment(message: Message):
+    p = message.refunded_payment
+    result = await PaymentService().refunded(message.from_user.id, p.invoice_payload,
+        p.total_amount, p.currency, p.telegram_payment_charge_id)
+    if result.ok:
+        await message.answer("Возврат учтён. Доступ по возвращённой покупке отключён.")

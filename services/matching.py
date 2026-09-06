@@ -52,16 +52,33 @@ class MatchingService:
         r = await get_redis()
         if await r.zscore("search_queue", str(user_id)) is None:
             return None
-        candidates = await r.zrange("search_queue", 0, 199)
-        for value in candidates:
-            partner = int(value)
-            if partner == user_id:
-                continue
-            if not await r.exists(f"search:user:{partner}"):
-                await r.zrem("search_queue", value)
-                continue
-            chat = await ChatRepository().match(user_id, partner, r)
-            if chat:
-                await ChatService().sync(chat)
+        offset = 0
+        repo = ChatRepository()
+        while True:
+            page = await r.zrange("search_queue", offset, offset + 199)
+            if not page:
+                return None
+            # Entries whose lifetime marker expired are dropped here, otherwise
+            # they stay in the queue forever and every page has to skip them.
+            async with r.pipeline(transaction=False) as pipe:
+                for value in page:
+                    pipe.exists(f"search:user:{value}")
+                alive = await pipe.execute()
+            stale = [value for value, live in zip(page, alive) if not live]
+            if stale:
+                await r.zrem("search_queue", *stale)
+            live_ids = [int(value) for value, keep in zip(page, alive) if keep]
+            candidates = await repo.compatible_candidates(user_id, live_ids)
+            for partner in candidates:
+                if not await r.exists(f"search:user:{partner}"):
+                    continue
+                # At most one locking match attempt per tick; stale snapshots are
+                # retried on the next tick, not trusted for creating a session.
+                chat = await repo.match(user_id, partner, r)
+                if chat:
+                    await ChatService().sync(chat)
                 return chat
-        return None
+            if len(page) < 200:
+                return None
+            # Removed entries shift the tail down; advance only past what stays.
+            offset += len(page) - len(stale)

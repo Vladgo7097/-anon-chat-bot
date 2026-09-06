@@ -90,8 +90,8 @@ async def search_loop(status, user_id, bot=None):
                     return
                 from utils.db import is_premium
                 if await is_premium(user_id):
-                    # Spec 14.6: Premium search does not time out. Re-enqueue
-                    # with priority and keep waiting for another full window.
+                    # Preserve the current Premium behavior: keep searching
+                    # with priority for another window until explicitly cancelled.
                     requeued = await MatchingService().enqueue(user_id)
                     if requeued.code == "SEARCH_STARTED":
                         started = time.monotonic()
@@ -108,7 +108,7 @@ async def search_loop(status, user_id, bot=None):
                 from handlers.premium import product_keyboard
                 from utils.db import is_premium
                 if status is not None:
-                    offer = await product_keyboard(["instant_search"]) if elapsed > 20 and not await is_premium(user_id) else None
+                    offer = await product_keyboard(["instant_search"]) if elapsed > await bot_value("search_slow_offer_seconds", 20) and not await is_premium(user_id) else None
                     await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=offer)
                     if offer and not offer_tracked:
                         from services.growth import track

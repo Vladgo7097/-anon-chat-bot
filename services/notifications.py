@@ -20,42 +20,68 @@ async def enqueue(s, user_id, kind, key, content, callback=None, marketing=False
 class NotificationService:
     async def schedule(self):
         from services.settings import bot_value
-        marketing_enabled=await bot_value("marketing_enabled",1)
+        from models.ban import Ban
+        from sqlalchemy import text
+        marketing_enabled = await bot_value("marketing_enabled", 1)
+        now = utcnow()
+        cursor = 0
+        while True:
+            async with async_session.begin() as s:
+                # Independent of the matching lock; each transaction is bounded.
+                if s.bind.dialect.name == "postgresql":
+                    await s.execute(text("SELECT pg_advisory_xact_lock(8873771497)"))
+                users = (await s.scalars(select(User).where(User.id > cursor).order_by(User.id)
+                                        .limit(100).with_for_update())).all()
+                if not users:
+                    break
+                cursor = users[-1].id
+                ids = [u.telegram_id for u in users]
+                recent = set((await s.scalars(select(Notification.user_id).where(
+                    Notification.user_id.in_(ids), Notification.marketing.is_(True),
+                    Notification.scheduled_at > now-timedelta(hours=24)).distinct())).all())
+                # One grouped query for all inactive users in this batch.
+                counts = dict((await s.execute(select(User.telegram_id, func.count(Chat.id))
+                    .outerjoin(Chat, (Chat.started_at > User.last_online) & (Chat.status == "ended"))
+                    .where(User.telegram_id.in_(ids), User.last_online < now-timedelta(days=3))
+                    .group_by(User.telegram_id))).all())
+                notices = []
+                def notice(user, kind, key, content, callback=None, marketing=False):
+                    notices.append(dict(user_id=user.telegram_id, type=kind, dedupe_key=key,
+                        text=content, callback_data=callback, marketing=marketing))
+                for user in users:
+                    if user.is_banned and user.ban_expires and user.ban_expires <= now:
+                        notice(user, "unban", f"unban_expired:{user.telegram_id}:{user.ban_expires.isoformat()}",
+                               "✅ Срок блокировки истёк. Добро пожаловать обратно!", "menu")
+                        user.is_banned = False
+                    if user.is_premium and user.premium_expires and user.premium_expires <= now:
+                        user.is_premium = False
+                    if user.deleted_at or user.bot_blocked_at or not user.onboarding_completed or banned(user):
+                        continue
+                    if user.premium_expires and now < user.premium_expires <= now+timedelta(days=1):
+                        notice(user, "premium_expiry", f"expiry:{user.telegram_id}:{user.premium_expires.isoformat()}",
+                               "⏰ Твой Premium заканчивается завтра. Продлить?", "premium")
+                    if (marketing_enabled and json.loads(user.notification_settings or "{}").get("marketing", True)
+                            and user.telegram_id not in recent and user.telegram_id in counts):
+                        notice(user, "inactive", f"inactive:{user.telegram_id}:{now.date()}",
+                               f"👋 Скучаем! За это время в боте было {counts[user.telegram_id]} новых завершённых диалогов.",
+                               "search:start", True)
+                await s.execute(update(Ban).where(Ban.user_id.in_(ids), Ban.is_active.is_(True),
+                    Ban.expires_at <= now).values(is_active=False))
+                if notices:
+                    if s.bind.dialect.name == "postgresql":
+                        from sqlalchemy.dialects.postgresql import insert
+                    else:
+                        from sqlalchemy.dialects.sqlite import insert
+                    await s.execute(insert(Notification).values(notices).on_conflict_do_nothing(index_elements=["dedupe_key"]))
         async with async_session.begin() as s:
-            from repositories.chats import lock_matching
-            await lock_matching(s)
-            now = utcnow()
-            from models.ban import Ban
-            expired=(await s.scalars(select(User).where(User.is_banned.is_(True),User.ban_expires<=now).with_for_update())).all()
-            for user in expired:
-                await enqueue(s,user.telegram_id,"unban",f"unban_expired:{user.telegram_id}:{user.ban_expires.isoformat()}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Срок блокировки истёк. Добро пожаловать обратно!","menu")
-                user.is_banned=False
-            await s.execute(update(Ban).where(Ban.is_active.is_(True),Ban.expires_at<=now).values(is_active=False))
-            await s.execute(update(User).where(User.is_premium.is_(True),User.premium_expires<=now).values(is_premium=False))
-            users = (await s.scalars(select(User).where(User.deleted_at.is_(None), User.bot_blocked_at.is_(None),
-                User.onboarding_completed.is_(True)).order_by(User.id))).all()
-            for user in users:
-                if banned(user):
-                    continue
-                if user.premium_expires and now < user.premium_expires <= now+timedelta(days=1):
-                    await enqueue(s, user.telegram_id, "premium_expiry", f"expiry:{user.telegram_id}:{user.premium_expires.isoformat()}", "⏰ Твой Premium заканчивается завтра. Продлить?", "premium")
-                marketing = json.loads(user.notification_settings or "{}").get("marketing", True)
-                if not marketing or not marketing_enabled:
-                    continue
-                recent = await s.scalar(select(Notification.id).where(Notification.user_id==user.telegram_id, Notification.marketing.is_(True),
-                    Notification.scheduled_at>now-timedelta(hours=24)).limit(1))
-                if recent:
-                    continue
-                if user.last_online and user.last_online < now-timedelta(days=3):
-                    count = await s.scalar(select(func.count(Chat.id)).where(Chat.started_at > user.last_online, Chat.status=="ended"))
-                    await enqueue(s, user.telegram_id, "inactive", f"inactive:{user.telegram_id}:{now.date()}",
-                        f"<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Скучаем! За это время в боте было {count} новых завершённых диалогов.", "search:start", True)
-            offers = (await s.scalars(select(Offer).where(Offer.status=="reserved").with_for_update())).all()
+            if s.bind.dialect.name == "postgresql":
+                await s.execute(text("SELECT pg_advisory_xact_lock(8873771497)"))
+            offers = (await s.scalars(select(Offer).where(Offer.status == "reserved").with_for_update())).all()
             for offer in offers:
                 payment = await s.get(Payment, offer.reserved_payment_id)
-                if payment and payment.status=="created" and payment.expires_at <= now:
+                if payment and payment.status == "created" and payment.expires_at <= now:
                     payment.status = "failed"
-                    offer.status = "active" if offer.ends_at>now else "expired"
+                    offer.status = "active" if offer.ends_at > now else "expired"
                     offer.reserved_payment_id = None
 
     async def next(self):
@@ -65,6 +91,13 @@ class NotificationService:
                 .order_by(Notification.id).with_for_update(skip_locked=True).limit(1))
             if not n:
                 return None
+            if n.type == "reveal_request":
+                from models.chat import RevealRequest
+                request = await s.get(RevealRequest, n.callback_data)
+                current = await s.scalar(select(Chat.id).where(Chat.session_id == n.callback_data, Chat.status == "active"))
+                if not current or not request or request.status != "pending":
+                    n.status = "skipped"
+                    return None
             if n.type=="match" and not await s.scalar(select(Chat.id).where(Chat.session_id==n.callback_data,Chat.status=="active")):
                 n.status="skipped"
                 return None

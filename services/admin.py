@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from sqlalchemy import select, func, or_, update
 from models.base import async_session
@@ -156,6 +157,7 @@ class AdminService:
             audit(s,admin,"ban","user",uid,after={"reason":reason,"hours":hours})
         await MatchingService().cancel(uid)
         await ChatService().end_chat(uid,reason="ban")
+        logging.getLogger(__name__).info("user_banned", extra={"user_id": uid})
         return ServiceResult(True,"BANNED")
 
     async def unban(self,admin,uid):
@@ -210,7 +212,7 @@ class AdminService:
 
     async def setting(self,admin,key,value):
         authorize(admin)
-        limits={"chat_delay_next":(0,60),"search_timeout":(30,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1)}
+        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1)}
         if type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:

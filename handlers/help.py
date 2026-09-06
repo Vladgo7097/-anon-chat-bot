@@ -8,6 +8,8 @@ HELP_TEXT = "<tg-emoji emoji-id=\"5312464908351201524\">❓</tg-emoji> Помо�
 if config.SUPPORT_USERNAME:
     HELP_TEXT += f"\n\nПоддержка: @{config.SUPPORT_USERNAME.lstrip('@')}"
 
+HELP_TEXT += "\n\nРедактирование и удаление уже отправленного сообщения не изменяют копию у собеседника."
+
 
 @help_router.message(Command("help"))
 @help_router.message(F.text == "Помощь")

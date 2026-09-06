@@ -20,7 +20,7 @@ class AccessMiddleware(BaseMiddleware):
         from config import ADMIN_IDS
 
         actor = event.from_user
-        if not actor or getattr(event, "successful_payment", None):
+        if not actor or getattr(event, "successful_payment", None) or getattr(event, "refunded_payment", None):
             return await handler(event, data)
         chat = getattr(event, "chat", None) or getattr(getattr(event, "message", None), "chat", None)
         if chat and chat.type != "private":
@@ -40,6 +40,7 @@ class AccessMiddleware(BaseMiddleware):
         if actor.id in ADMIN_IDS and (action.startswith("admin:") or action.startswith("bc:")):
             return await handler(event, data)
         user = await UserRepository().get_or_create(actor.id, actor.username, actor.first_name)
+        data["anon_id"] = getattr(user, "anon_id", None)
         if banned(user):
             if callback:
                 await event.answer("⛔ Ты заблокирован.", show_alert=True)
@@ -48,7 +49,8 @@ class AccessMiddleware(BaseMiddleware):
             return
         await set_online(actor.id)
         step = step_for(user)
-        if step == "MENU":
+        from utils.time import utcnow
+        if step == "MENU" and getattr(user, "last_active_date", None) != utcnow().date():
             from services.growth import StreakService
             await StreakService().checkin(actor.id)
         if step != "MENU" and command != "/start":
@@ -88,7 +90,7 @@ class AntiFloodMiddleware(BaseMiddleware):
         event: Message,
         data: dict[str, Any],
     ) -> Any:
-        if getattr(event, "successful_payment", None):
+        if getattr(event, "successful_payment", None) or getattr(event, "refunded_payment", None):
             return await handler(event, data)
         if event.from_user and await check_flood(event.from_user.id):
             if hasattr(event, "data"):

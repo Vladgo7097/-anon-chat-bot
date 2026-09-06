@@ -22,6 +22,38 @@ class PaymentTests(DatabaseCase):
         self.addCleanup(p.stop)
         await seed_products()
 
+    async def test_refund_revokes_entitlement_once(self):
+        service = PaymentService()
+        p = (await service.create(1, "instant_search")).data["payment"]
+        await service.precheckout(1, p.payload, p.stars_amount, "XTR")
+        await service.complete(1, p.payload, p.stars_amount, "XTR", "refund-test")
+        self.assertFalse((await service.refunded(2, p.payload, p.stars_amount, "XTR", "refund-test")).ok)
+        self.assertTrue((await service.refunded(1, p.payload, p.stars_amount, "XTR", "refund-test")).ok)
+        self.assertEqual((await service.refunded(1, p.payload, p.stars_amount, "XTR", "refund-test")).code, "ALREADY_REFUNDED")
+        async with self.factory() as s:
+            self.assertEqual((await s.scalar(select(Entitlement))).remaining_uses, 0)
+            self.assertEqual((await s.scalar(select(User).where(User.telegram_id == 1))).total_stars_spent, 0)
+
+    async def test_refunding_stacked_premium_preserves_other_purchase(self):
+        service = PaymentService()
+        now = utcnow()
+        purchases = []
+        with patch("services.payments.utcnow", return_value=now):
+            for charge in ("one", "two"):
+                p = (await service.create(1, "premium_1m")).data["payment"]
+                await service.precheckout(1, p.payload, p.stars_amount, "XTR")
+                await service.complete(1, p.payload, p.stars_amount, "XTR", charge)
+                purchases.append((p, charge))
+        with patch("services.payments.utcnow", return_value=now+timedelta(days=5)):
+            p, charge = purchases[0]
+            await service.refunded(1, p.payload, p.stars_amount, "XTR", charge)
+            async with self.factory() as s:
+                self.assertEqual((await s.scalar(select(User).where(User.telegram_id == 1))).premium_expires, now+timedelta(days=35))
+            p, charge = purchases[1]
+            await service.refunded(1, p.payload, p.stars_amount, "XTR", charge)
+            async with self.factory() as s:
+                self.assertFalse((await s.scalar(select(User).where(User.telegram_id == 1))).is_premium)
+
     async def test_one_invoice_and_one_checkout_per_payment(self):
         service=PaymentService()
         p=(await service.create(1,'instant_search')).data['payment']

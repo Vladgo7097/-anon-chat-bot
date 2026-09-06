@@ -27,12 +27,7 @@ async def finish(message, user_id, reason="stop"):
         await message.answer("Ты сейчас не в чате.", reply_markup=main_menu_kb())
         return False
     chat = result.data["chat"]
-    for uid in (chat.user1_id, chat.user2_id):
-        try:
-            await message.bot.send_message(uid, "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Диалог завершён" if uid == user_id else "<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> Собеседник покинул чат.", reply_markup=main_menu_kb())
-            await message.bot.send_message(uid, "Оцени собеседника:", reply_markup=rating_keyboard(chat.session_id))
-        except TelegramForbiddenError:
-            pass
+    await message.answer("👋 Диалог завершён", reply_markup=main_menu_kb())
     if reason == "stop":
         from services.growth import GrowthService, track
         from handlers.premium import product_keyboard
@@ -80,7 +75,7 @@ async def cb_chat_control(callback: CallbackQuery):
 
 
 @chat_router.message()
-async def forward_message(message: Message):
+async def forward_message(message: Message, album=None):
     if message.text and (message.text.startswith("/") or message.text in T.SYSTEM_TEXTS):
         return
     from services.relay import RelayService
@@ -93,7 +88,27 @@ async def forward_message(message: Message):
         return
     partner = result.data["partner"]
     try:
-        await message.bot.copy_message(chat_id=partner, from_chat_id=message.chat.id, message_id=message.message_id)
+        if album:
+            if any(item.content_type not in service.SUPPORTED for item in album):
+                await message.answer("Этот тип альбома не поддерживается.")
+                return
+            copied = await message.bot.copy_messages(chat_id=partner, from_chat_id=message.chat.id,
+                message_ids=[item.message_id for item in album])
+            if len(copied) == len(album):
+                for source, target in zip(album, copied):
+                    await service.remember(result.data["session_id"], message.from_user.id, source.message_id, partner, target.message_id)
+        else:
+            params = {}
+            reply = getattr(message, "reply_to_message", None)
+            if reply:
+                target = await service.reply_target(result.data["session_id"], message.from_user.id, reply.message_id)
+                if target:
+                    from aiogram.types import ReplyParameters
+                    params["reply_parameters"] = ReplyParameters(message_id=target, allow_sending_without_reply=True)
+            copied = await message.bot.copy_message(chat_id=partner, from_chat_id=message.chat.id,
+                message_id=message.message_id, **params)
+            if isinstance(copied.message_id, int):
+                await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
     except TelegramForbiddenError:
         await finish(message, message.from_user.id, "unreachable")

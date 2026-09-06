@@ -67,10 +67,6 @@ async def cb_consent(callback: CallbackQuery):
                 pass
     else:
         await callback.message.answer("<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Запрос отправлен. Ждём согласия собеседника.")
-        try:
-            await callback.bot.send_message(result.data["partner"], "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Собеседник предложил взаимно раскрыть контакты.", reply_markup=reveal_keyboard(sid))
-        except TelegramForbiddenError:
-            await ChatService().end_chat(callback.from_user.id, sid, "unreachable")
 
 
 async def paid_reveal(message, user_id, session_id, kind):

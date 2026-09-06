@@ -34,6 +34,9 @@ class RevealService:
                     if count>=5:
                         await award(s,user.telegram_id,"reveal_5")
                 return ServiceResult(True, "MUTUAL", {"contacts": {u.telegram_id: u.username for u in users}, "partner": partner})
+            from services.notifications import enqueue
+            await enqueue(s, partner, "reveal_request", f"reveal:{session_id}:{partner}",
+                "❤️ Собеседник предложил взаимно раскрыть контакты.", session_id)
             return ServiceResult(True, "PENDING", {"partner": partner})
 
     async def status(self, user_id, session_id):

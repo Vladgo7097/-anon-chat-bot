@@ -41,3 +41,35 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         with patch("handlers.chat.finish",AsyncMock()) as finish:
             await forward_message(self.message)
         finish.assert_awaited_once_with(self.message,1,"unreachable")
+
+    async def test_reply_uses_partner_message_id(self):
+        self.message.reply_to_message = SimpleNamespace(message_id=9)
+        self.bot.copy_message.return_value = SimpleNamespace(message_id=20)
+        with patch("services.relay.RelayService.reply_target", AsyncMock(return_value=5)), \
+             patch("services.relay.RelayService.remember", AsyncMock()) as remember:
+            await forward_message(self.message)
+        self.assertEqual(self.bot.copy_message.await_args.kwargs["reply_parameters"].message_id, 5)
+        remember.assert_awaited_once_with("test-session", 1, 10, 2, 20)
+
+    async def test_album_is_copied_as_group(self):
+        self.message.content_type = "photo"
+        self.bot.copy_messages = AsyncMock(return_value=[SimpleNamespace(message_id=20), SimpleNamespace(message_id=21)])
+        album = [self.message, SimpleNamespace(content_type="photo", message_id=11)]
+        with patch("services.relay.RelayService.remember", AsyncMock()), patch("services.growth.track", AsyncMock()) as analytics:
+            await forward_message(self.message, album=album)
+            analytics.assert_not_awaited()
+        self.bot.copy_messages.assert_awaited_once_with(chat_id=2, from_chat_id=1, message_ids=[10, 11])
+        self.bot.copy_message.assert_not_awaited()
+
+    async def test_next_ends_chat_before_starting_search(self):
+        from handlers.chat import next_chat
+        order = []
+        async def ended(*args):
+            order.append("ended")
+            return True
+        async def started(*args):
+            order.append("search")
+        with patch("handlers.chat.get_redis", AsyncMock()), patch("services.settings.bot_value", AsyncMock(return_value=0)), \
+             patch("handlers.chat.finish", AsyncMock(side_effect=ended)), patch("handlers.search.begin_search", AsyncMock(side_effect=started)):
+            await next_chat(self.message, 1)
+        self.assertEqual(order, ["ended", "search"])

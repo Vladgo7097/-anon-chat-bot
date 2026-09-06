@@ -1,3 +1,4 @@
+import logging
 from sqlalchemy import select, or_
 from models.base import async_session
 from models.chat import Chat, Block
@@ -34,4 +35,5 @@ class ReportService:
             await s.flush()
             report_id = report.id
         await ChatService().end_chat(user_id, session_id, "report")
+        logging.getLogger(__name__).info("report_created", extra={"user_id": user_id, "chat_session_id": session_id, "report_id": report_id})
         return ServiceResult(True, "REPORTED", {"partner": partner, "report_id": report_id})

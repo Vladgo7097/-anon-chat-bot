@@ -2,6 +2,22 @@
 import time
 import redis.asyncio as aioredis
 import config
+import logging
+from functools import wraps
+from redis.exceptions import RedisError
+
+
+def redis_fallback(default):
+    def decorate(fn):
+        @wraps(fn)
+        async def call(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except RedisError:
+                logging.getLogger(__name__).warning("redis_unavailable", extra={"error_code": "RedisError"})
+                return default
+        return call
+    return decorate
 
 _pool = None
 
@@ -20,6 +36,7 @@ async def close_redis():
         _pool = None
 
 
+@redis_fallback(None)
 async def set_online(user_id):
     r = await get_redis()
     now = time.time()
@@ -29,11 +46,13 @@ async def set_online(user_id):
         await p.execute()
 
 
+@redis_fallback("—")
 async def get_online_count():
     r = await get_redis()
     return await r.zcount("online:heartbeats", time.time()-config.ONLINE_UPDATE_INTERVAL*3, "+inf")
 
 
+@redis_fallback(False)
 async def check_flood(user_id):
     r = await get_redis()
     return not await r.set(f"rate:message:{user_id}", "1", nx=True, px=int(config.ANTI_FLOOD_DELAY*1000))

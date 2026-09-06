@@ -42,6 +42,12 @@ async def run(bot):
                     markup=None
                     if notification.type=="match":
                         markup=chat_kb_reply()
+                    elif notification.type == "reveal_request":
+                        from handlers.reveal import reveal_keyboard
+                        markup = reveal_keyboard(notification.callback_data)
+                    elif notification.type == "rating_prompt":
+                        from handlers.chat import rating_keyboard
+                        markup = rating_keyboard(notification.callback_data)
                     elif notification.type=="chat_ended":
                         markup=main_menu_kb()
                     elif notification.callback_data:
@@ -51,7 +57,7 @@ async def run(bot):
                     await service.finish(notification.id,"sent")
                 except TelegramForbiddenError:
                     await service.finish(notification.id,"failed","forbidden")
-                    if notification.type=="match":
+                    if notification.type in {"match", "reveal_request"}:
                         await ChatService().end_chat(notification.user_id,notification.callback_data,"unreachable")
                 except TelegramRetryAfter as error:
                     await service.finish(notification.id,"queued","rate_limit",error.retry_after)

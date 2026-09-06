@@ -1,4 +1,5 @@
 import uuid
+import logging
 from datetime import timedelta
 from sqlalchemy import select, update, delete, or_, and_, text
 from models.base import async_session
@@ -6,13 +7,12 @@ from models.user import User
 from models.chat import Chat, ActiveParticipant, Block, Rating, RevealRequest
 from services.onboarding import step_for, banned
 from utils.time import utcnow
-
-
-def premium_active(user):
-    return bool(user.premium_expires and user.premium_expires > utcnow())
+from services.premium import premium_active
 
 
 def compatible(a, b, gender_access=()):
+    if any(step_for(u) != "MENU" or banned(u) or u.deleted_at or u.bot_blocked_at for u in (a, b)):
+        return False
     for own, other in ((a, b), (b, a)):
         if step_for(own) != "MENU" or banned(own) or own.deleted_at or own.bot_blocked_at:
             return False
@@ -31,6 +31,27 @@ async def lock_matching(session):
 
 
 class ChatRepository:
+    async def compatible_candidates(self, user_id, candidate_ids):
+        """Cheap snapshot selection. match() rechecks everything under its lock."""
+        from models.payment import Entitlement
+        async with async_session() as s:
+            ids = [user_id, *candidate_ids]
+            users = {u.telegram_id: u for u in (await s.scalars(select(User).where(User.telegram_id.in_(ids)))).all()}
+            own = users.get(user_id)
+            if own is None:
+                return []
+            active = set((await s.scalars(select(ActiveParticipant.user_id).where(ActiveParticipant.user_id.in_(ids)))).all())
+            if user_id in active:
+                return []
+            access = set((await s.scalars(select(Entitlement.user_id).where(
+                Entitlement.user_id.in_(ids), Entitlement.kind.in_(["gender_filter_one_match", "gender_filter_1m"]),
+                Entitlement.remaining_uses > 0, or_(Entitlement.expires_at.is_(None), Entitlement.expires_at > utcnow())))).all())
+            blocks = (await s.execute(select(Block.blocker_id, Block.blocked_id).where(
+                or_(Block.blocker_id == user_id, Block.blocked_id == user_id)))).all()
+            blocked = {b if a == user_id else a for a, b in blocks}
+            return [uid for uid in candidate_ids if uid != user_id and uid in users and uid not in active
+                    and uid not in blocked and compatible(own, users[uid], access)]
+
     async def active(self, user_id):
         async with async_session() as s:
             return await s.scalar(select(Chat).join(ActiveParticipant, ActiveParticipant.session_id == Chat.session_id)
@@ -83,6 +104,7 @@ class ChatRepository:
                 priority = await available_entitlement(s, user.telegram_id, ["instant_search"])
                 if priority and not premium_active(user):
                     priority.remaining_uses -= 1
+        logging.getLogger(__name__).info("chat_matched", extra={"chat_session_id": chat.session_id, "user_id": a_id})
         return chat
 
     async def end(self, user_id, session_id=None, reason="stop"):
@@ -108,15 +130,25 @@ class ChatRepository:
             for user in users:
                 await completed_chat(s, user)
                 await event(s, user.telegram_id, "chat_ended", f"chat_ended:{chat.session_id}:{user.telegram_id}")
-                if reason in {"ban","account_deleted","unreachable","timeout"}:
-                    # The actor already got a direct message from the handler for
-                    # unreachable; queueing one for them too would duplicate it.
-                    targets = [chat.user1_id, chat.user2_id]
-                    if reason == "unreachable":
-                        targets = [uid for uid in targets if uid != user_id]
-                    for uid in targets:
-                        from services.notifications import enqueue
-                        await enqueue(s,uid,"chat_ended",f"ended:{chat.session_id}:{uid}","Диалог завершён по неактивности." if reason=="timeout" else "Диалог завершён. Можно начать новый поиск.","menu")
+            if reason in {"ban","account_deleted","unreachable","timeout"}:
+                # The actor already got a direct message from the handler for
+                # unreachable; queueing one for them too would duplicate it.
+                targets = [chat.user1_id, chat.user2_id]
+                if reason == "unreachable":
+                    targets = [uid for uid in targets if uid != user_id]
+                for uid in targets:
+                    from services.notifications import enqueue
+                    await enqueue(s,uid,"chat_ended",f"ended:{chat.session_id}:{uid}","Диалог завершён по неактивности." if reason=="timeout" else "Диалог завершён. Можно начать новый поиск.","menu")
+            if reason in {"stop", "next", "unreachable"}:
+                from services.notifications import enqueue
+                if reason != "unreachable":
+                    partner = chat.user2_id if chat.user1_id == user_id else chat.user1_id
+                    await enqueue(s, partner, "chat_ended", f"ended:{chat.session_id}:{partner}",
+                                  "😢 Собеседник покинул чат.", "menu")
+                for uid in (chat.user1_id, chat.user2_id):
+                    await enqueue(s, uid, "rating_prompt", f"rate_prompt:{chat.session_id}:{uid}",
+                                  "Оцени собеседника:", chat.session_id)
+        logging.getLogger(__name__).info("chat_ended", extra={"chat_session_id": chat.session_id, "user_id": user_id})
         return chat
 
     async def touch(self, session_id):

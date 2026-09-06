@@ -1,13 +1,15 @@
 from utils.time import utcnow
 from datetime import datetime
-from sqlalchemy import BigInteger, Integer, DateTime, String, Text, Boolean, ForeignKey, UniqueConstraint, CheckConstraint
+from sqlalchemy import BigInteger, Integer, DateTime, String, Text, Boolean, ForeignKey, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base, UTCDateTime as DateTime
 
 
 class Chat(Base):
     __tablename__ = "chats"
-    __table_args__ = (CheckConstraint("user1_id <> user2_id", name="ck_chat_distinct_users"),)
+    __table_args__ = (CheckConstraint("user1_id <> user2_id", name="ck_chat_distinct_users"),
+                      Index("ix_chats_user1_started", "user1_id", "started_at"),
+                      Index("ix_chats_user2_started", "user2_id", "started_at"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
