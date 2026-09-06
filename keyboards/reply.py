@@ -3,10 +3,16 @@ from keyboards import texts as T
 import config
 
 
+def kb_button(text):
+    return KeyboardButton(
+        text=text,
+        icon_custom_emoji_id=T.EMOJI_IDS.get(text),
+        style="danger" if text in {T.STOP, T.REPORT, T.CANCEL} else "primary"
+    )
+
+
 def keyboard(rows):
-    return ReplyKeyboardMarkup(keyboard=[[
-        KeyboardButton(text=text, style="danger" if text in {T.STOP, T.REPORT, T.CANCEL} else "primary")
-        for text in row] for row in rows], resize_keyboard=True, is_persistent=True)
+    return ReplyKeyboardMarkup(keyboard=[[kb_button(text) for text in row] for row in rows], resize_keyboard=True, is_persistent=True)
 
 
 def main_menu_kb():
