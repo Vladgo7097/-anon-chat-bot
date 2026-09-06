@@ -99,8 +99,66 @@ class StartDispatchTests(unittest.TestCase):
                         from_user=User(id=99, is_bot=False, first_name="Admin"), text=text,
                     )))
                     find_user.assert_awaited_with(99, text.lstrip("#"))
+            await self.check_input_flows(dp, bot, telegram)
         finally:
             await bot.session.close()
+
+    async def check_input_flows(self, dp, bot, telegram):
+        from handlers.admin import AdminBroadcast, AdminMessage
+        from handlers.profile import ProfileEdit
+        from handlers.report import ReportFlow
+        from handlers.start import Onboarding
+        from handlers.help import HELP_TEXT
+        from keyboards import texts as T
+
+        async def dispatch(text):
+            telegram.reset_mock()
+            entities = ([MessageEntity(type=MessageEntityType.BOT_COMMAND, offset=0, length=len(text))]
+                        if text.startswith("/") else [])
+            await dp.feed_update(bot, Update(update_id=20, message=Message(
+                message_id=20, date=datetime.now(timezone.utc), chat=Chat(id=99, type="private"),
+                from_user=User(id=99, is_bot=False, first_name="Admin"), text=text, entities=entities,
+            )))
+
+        state = dp.fsm.get_context(bot=bot, chat_id=99, user_id=99)
+        with (
+            patch("config.ADMIN_IDS", {99}),
+            patch.object(bot.session, "make_request", telegram),
+            patch("handlers.menu.set_online", AsyncMock()),
+            patch("services.admin.AdminService.send_message_to_user", AsyncMock()) as send,
+            patch("services.admin.AdminService.find_user", AsyncMock()) as find,
+            patch("services.admin.AdminService.broadcast",
+                  AsyncMock(return_value=ServiceResult(False, "INVALID"))) as broadcast,
+            patch("handlers.stats.get_user_stats", AsyncMock(return_value={"chats_count": 1})),
+        ):
+            for flow in (ProfileEdit.PHOTO, ReportFlow.DETAILS, AdminMessage.CONTENT, AdminBroadcast.CONTENT):
+                for action in (T.MENU, "/cancel"):
+                    await state.set_state(flow)
+                    await state.update_data(target_id=123, report_session="old")
+                    await dispatch(action)
+                    self.assertIsNone(await state.get_state())
+                    self.assertEqual(await state.get_data(), {})
+                    telegram.assert_awaited_once()
+            for flow in (Onboarding.AGE, ProfileEdit.AGE, ReportFlow.DETAILS, AdminMessage.CONTENT):
+                for action in (T.HELP, "/help"):
+                    await state.set_state(flow)
+                    await dispatch(action)
+                    telegram.assert_awaited_once()
+                    self.assertEqual(telegram.await_args.args[1].text, HELP_TEXT)
+            for flow in (AdminMessage.CONTENT, AdminBroadcast.CONTENT):
+                await state.set_state(flow)
+                await state.update_data(target_id=123)
+                await dispatch(T.STATS)
+                self.assertIn("Твоя статистика", telegram.await_args.args[1].text)
+            send.assert_not_awaited()
+            broadcast.assert_not_awaited()
+            for text in ("123", "#новости"):
+                await state.set_state(AdminBroadcast.CONTENT)
+                await state.update_data(audience="all")
+                await dispatch(text)
+                broadcast.assert_awaited_with(99, "all", text)
+            find.assert_not_awaited()
+            await state.clear()
 
 
 if __name__ == "__main__":

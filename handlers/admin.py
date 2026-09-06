@@ -1,11 +1,12 @@
 from html import escape
 import config
 from aiogram import F, BaseMiddleware
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from handlers import admin_router
+from keyboards import texts as T
 from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb
 from services.admin import AdminService, StatsService, authorize
 from services.payments import PaymentService
@@ -171,7 +172,7 @@ async def cb_message_user(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Введи текст сообщения для пользователя {target_id}:")
 
 
-@admin_router.message(AdminMessage.CONTENT, F.text)
+@admin_router.message(AdminMessage.CONTENT, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
 async def send_message_to_user(message: Message, state: FSMContext):
     data=await state.get_data()
     target_id=data.get("target_id")
@@ -245,6 +246,7 @@ async def cmd_user_action(message: Message):
 
 
 @admin_router.message(
+    StateFilter(None),
     F.from_user.id.func(lambda user_id: user_id in config.ADMIN_IDS),
     F.text.func(lambda text: bool(text) and (text.strip().isdigit() or text.strip().startswith("#"))),
 )
@@ -303,7 +305,7 @@ async def cb_audience(callback: CallbackQuery,state: FSMContext):
     await callback.message.answer("Введи текст. Перед отправкой будет предпросмотр и подтверждение.")
 
 
-@admin_router.message(AdminBroadcast.CONTENT,F.text)
+@admin_router.message(AdminBroadcast.CONTENT, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
 async def broadcast_text(message: Message,state: FSMContext):
     audience=(await state.get_data()).get("audience","all")
     result=await AdminService().broadcast(message.from_user.id,audience,message.text)
