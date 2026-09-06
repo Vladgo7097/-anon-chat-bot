@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 def rating_keyboard(session_id):
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='<emoji document_id=\"5350417283783084711\">👍</emoji> Понравилось', callback_data=f"v1:rate:{session_id}:1", style="success"),
-        InlineKeyboardButton(text='<emoji document_id=\"5348132683304156113\">👎</emoji> Не понравилось', callback_data=f"v1:rate:{session_id}:-1", style="danger"),
+        InlineKeyboardButton(text='<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Понравилось', callback_data=f"v1:rate:{session_id}:1", style="success"),
+        InlineKeyboardButton(text='<tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Не понравилось', callback_data=f"v1:rate:{session_id}:-1", style="danger"),
     ]])
 
 
@@ -29,7 +29,7 @@ async def finish(message, user_id, reason="stop"):
     chat = result.data["chat"]
     for uid in (chat.user1_id, chat.user2_id):
         try:
-            await message.bot.send_message(uid, "<emoji document_id=\"5350596259365273418\">👋</emoji> Диалог завершён" if uid == user_id else "<emoji document_id=\"5927208490870248283\">😢</emoji> Собеседник покинул чат.", reply_markup=main_menu_kb())
+            await message.bot.send_message(uid, "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Диалог завершён" if uid == user_id else "<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> Собеседник покинул чат.", reply_markup=main_menu_kb())
             await message.bot.send_message(uid, "Оцени собеседника:", reply_markup=rating_keyboard(chat.session_id))
         except TelegramForbiddenError:
             pass
@@ -56,7 +56,7 @@ async def next_chat(message, user_id):
     r = await get_redis()
     delay = await bot_value("chat_delay_next", config.CHAT_DELAY_NEXT)
     if delay > 0 and not await is_premium(user_id) and not await r.set(f"cooldown:next:{user_id}", "1", ex=delay, nx=True) and not await consume_delay_skip(user_id):
-        await message.answer(f"<emoji document_id=\"5296482716567495148\">⏳</emoji> Подожди {max(1, await r.ttl(f'cooldown:next:{user_id}'))} сек.")
+        await message.answer(f"<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Подожди {max(1, await r.ttl(f'cooldown:next:{user_id}'))} сек.")
         from handlers.premium import product_keyboard
         await message.answer("Можно продолжить без задержки:", reply_markup=await product_keyboard(["skip_next_delay", "premium_1m"]))
         return

@@ -28,7 +28,7 @@ class NotificationService:
             from models.ban import Ban
             expired=(await s.scalars(select(User).where(User.is_banned.is_(True),User.ban_expires<=now).with_for_update())).all()
             for user in expired:
-                await enqueue(s,user.telegram_id,"unban",f"unban_expired:{user.telegram_id}:{user.ban_expires.isoformat()}","<emoji document_id=\"5280880410346152584\">✅</emoji> Срок блокировки истёк. Добро пожаловать обратно!","menu")
+                await enqueue(s,user.telegram_id,"unban",f"unban_expired:{user.telegram_id}:{user.ban_expires.isoformat()}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Срок блокировки истёк. Добро пожаловать обратно!","menu")
                 user.is_banned=False
             await s.execute(update(Ban).where(Ban.is_active.is_(True),Ban.expires_at<=now).values(is_active=False))
             await s.execute(update(User).where(User.is_premium.is_(True),User.premium_expires<=now).values(is_premium=False))
@@ -49,7 +49,7 @@ class NotificationService:
                 if user.last_online and user.last_online < now-timedelta(days=3):
                     count = await s.scalar(select(func.count(Chat.id)).where(Chat.started_at > user.last_online, Chat.status=="ended"))
                     await enqueue(s, user.telegram_id, "inactive", f"inactive:{user.telegram_id}:{now.date()}",
-                        f"<emoji document_id=\"5350596259365273418\">👋</emoji> Скучаем! За это время в боте было {count} новых завершённых диалогов.", "search:start", True)
+                        f"<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Скучаем! За это время в боте было {count} новых завершённых диалогов.", "search:start", True)
             offers = (await s.scalars(select(Offer).where(Offer.status=="reserved").with_for_update())).all()
             for offer in offers:
                 payment = await s.get(Payment, offer.reserved_payment_id)

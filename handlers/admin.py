@@ -40,26 +40,26 @@ async def cmd_season(message: Message):
         await message.answer("/season код начало_ISO конец_ISO скидка\nДаты с часовым поясом, например 2026-10-01T00:00:00+00:00. Включение: /setting seasonal_enabled 1")
         return
     result=await AdminService().seasonal(message.from_user.id,parts[1],parts[2],parts[3],int(parts[4]))
-    await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Событие сохранено. Оно действует только в заданный период и при seasonal_enabled=1." if result.ok else "Проверь код, даты с часовым поясом и скидку 1–90%.")
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Событие сохранено. Оно действует только в заданный период и при seasonal_enabled=1." if result.ok else "Проверь код, даты с часовым поясом и скидку 1–90%.")
 
 
 def overview_text(s):
     metric=lambda key: f"{s[key]}%" if s.get(key) is not None else "— (недостаточно данных)"
-    return f"<emoji document_id=\"6129805886383723340\">🛠</emoji> Админ-панель\n\n<emoji document_id=\"5215522595922779944\">👥</emoji> Пользователей: {s['users']}\n<emoji document_id=\"5348232622898167572\">👤</emoji> Новых за период: {s['new']}\n<emoji document_id=\"5224455462178549802\">💬</emoji> Завершённых диалогов: {s['chats']}\n<emoji document_id=\"5258258882022612173\">⏱</emoji> Средняя длительность: {s['avg_seconds']} сек.\n<emoji document_id=\"5312160339335347417\">💰</emoji> Оплачено: {s['stars']}<emoji document_id=\"5920281855378068765\">⭐</emoji>\n<emoji document_id=\"5283130719806175947\">💎</emoji> Активных Premium: {s['premium']}\n<emoji document_id=\"5350417283783084711\">👍</emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
+    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Оплачено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
 
 
 @admin_router.message(Command("admin"))
 async def cmd_admin(message: Message,state: FSMContext):
     await state.clear()
     s=await StatsService().overview()
-    await message.answer(overview_text(s)+f"\n<emoji document_id=\"5215522595922779944\">🟢</emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
+    await message.answer(overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
 @admin_router.callback_query(F.data=="admin:back")
 async def cb_admin_back(callback: CallbackQuery):
     await callback.answer()
     s=await StatsService().overview()
-    await callback.message.answer(overview_text(s)+f"\n<emoji document_id=\"5215522595922779944\">🟢</emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
+    await callback.message.answer(overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
 @admin_router.callback_query(F.data.in_({"admin:stats","admin:money","admin:funnel"}))
@@ -72,7 +72,7 @@ async def cb_stats(callback: CallbackQuery):
     s=await StatsService().overview(days)
     text=overview_text(s)
     if callback.data=="admin:money":
-        text+="\n\nПо продуктам:\n"+"\n".join(f"{k}: {v}<emoji document_id=\"5920281855378068765\">⭐</emoji>" for k,v in s['products'].items())
+        text+="\n\nПо продуктам:\n"+"\n".join(f"{k}: {v}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for k,v in s['products'].items())
     if callback.data=="admin:funnel":
         text+="\n\nУникальные пользователи за период:\n"+"\n".join(f"{k}: {v}" for k,v in s['funnel'].items())
     await callback.answer()
@@ -106,11 +106,11 @@ async def cb_reports(callback: CallbackQuery):
     reports=await AdminService().reports(callback.from_user.id,offset)
     await callback.answer()
     if not reports:
-        await callback.message.answer("<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоб нет.",reply_markup=admin_kb())
+        await callback.message.answer("<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб нет.",reply_markup=admin_kb())
         return
     r=reports[0]
     names,previous,bans=await AdminService().report_details(callback.from_user.id,r)
-    await callback.message.answer(f"<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
+    await callback.message.answer(f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
 
 
 @admin_router.callback_query(F.data.startswith("admin:ban1:"))
@@ -131,13 +131,13 @@ async def cb_bans(callback: CallbackQuery):
     users=await AdminService().bans(callback.from_user.id)
     await callback.answer()
     text="\n".join(f"{u.anon_id} — "+(f"до {u.ban_expires:%d.%m.%Y}" if u.ban_expires else "навсегда") for u in users)
-    await callback.message.answer("<emoji document_id=\"5312229088876847138\">🚫</emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID")
+    await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID")
 
 
 @admin_router.callback_query(F.data=="admin:users")
 async def cb_users(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("<emoji document_id=\"5215522595922779944\">👥</emoji> Введи anon_id или telegram_id пользователя:")
+    await callback.message.answer("<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Введи anon_id или telegram_id пользователя:")
 
 
 @admin_router.callback_query(F.data.startswith("admin:user_card:"))
@@ -151,13 +151,13 @@ async def cb_user_card(callback: CallbackQuery):
     premium=f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
     await callback.answer()
     await callback.message.answer(
-        f"<emoji document_id=\"5348232622898167572\">👤</emoji> {esc(user.anon_id or '?')}\n"
+        f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {esc(user.anon_id or '?')}\n"
         f"Telegram ID: {user.telegram_id}\n"
-        f"<emoji document_id=\"5258105663359294787\">📅</emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
-        f"<emoji document_id=\"5224455462178549802\">💬</emoji> Диалогов: {user.chats_count}\n"
-        f"<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоб на него: —\n"
-        f"<emoji document_id=\"5920281855378068765\">⭐</emoji> Premium: {premium}\n"
-        f"<emoji document_id=\"5312160339335347417\">💰</emoji> Всего потратил: {user.total_stars_spent}<emoji document_id=\"5920281855378068765\">⭐</emoji>",
+        f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
+        f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
+        f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: —\n"
+        f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
+        f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>",
         reply_markup=admin_user_card_kb(user.telegram_id))
 
 
@@ -167,7 +167,7 @@ async def cb_message_user(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminMessage.CONTENT)
     await state.update_data(target_id=target_id)
     await callback.answer()
-    await callback.message.answer(f"<emoji document_id=\"5224455462178549802\">💬</emoji> Введи текст сообщения для пользователя {target_id}:")
+    await callback.message.answer(f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Введи текст сообщения для пользователя {target_id}:")
 
 
 @admin_router.message(AdminMessage.CONTENT, F.text)
@@ -182,7 +182,7 @@ async def send_message_to_user(message: Message, state: FSMContext):
     request_key=f"msg:{message.chat.id}:{message.message_id}:{uuid.uuid4().hex[:8]}"
     result=await AdminService().send_message_to_user(message.from_user.id,target_id,message.text,request_key=request_key)
     if result.ok:
-        await message.answer(f"<emoji document_id=\"5280880410346152584\">✅</emoji> Сообщение отправлено пользователю {target_id}.")
+        await message.answer(f"<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сообщение отправлено пользователю {target_id}.")
     else:
         await message.answer(f"❌ Ошибка: {result.code}")
 
@@ -202,7 +202,7 @@ async def cb_admin_grant_user(callback: CallbackQuery):
     target_id=int(callback.data.split(":")[-1])
     await callback.answer()
     await callback.message.answer(
-        f"<emoji document_id=\"5312160339335347417\">🎁</emoji> Выдать Premium {target_id}?\n"
+        f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Выдать Premium {target_id}?\n"
         f"/grant {target_id} дни причина")
 
 
@@ -221,13 +221,13 @@ async def cmd_user_action(message: Message):
         from html import escape as esc
         premium=f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
         await message.answer(
-            f"<emoji document_id=\"5348232622898167572\">👤</emoji> {esc(user.anon_id or '?')}\n"
+            f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {esc(user.anon_id or '?')}\n"
             f"Telegram ID: {user.telegram_id}\n"
-            f"<emoji document_id=\"5258105663359294787\">📅</emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
-            f"<emoji document_id=\"5224455462178549802\">💬</emoji> Диалогов: {user.chats_count}\n"
-            f"<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоб на него: —\n"
-            f"<emoji document_id=\"5920281855378068765\">⭐</emoji> Premium: {premium}\n"
-            f"<emoji document_id=\"5312160339335347417\">💰</emoji> Всего потратил: {user.total_stars_spent}<emoji document_id=\"5920281855378068765\">⭐</emoji>",
+            f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
+            f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
+            f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: —\n"
+            f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
+            f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>",
             reply_markup=admin_user_card_kb(user.telegram_id))
         return
     if command=="/unban":
@@ -240,10 +240,10 @@ async def cmd_user_action(message: Message):
     else:
         await message.answer("Укажи ID, длительность числом и причину.")
         return
-    await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Сохранено" if result.ok else "Проверь параметры.")
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено" if result.ok else "Проверь параметры.")
 
 
-@admin_router.message(F.text.func(lambda t: t and not t.startswith('/') and t not in {"<emoji document_id=\"6129805886383723340\">🛠</emoji> Админ-панель","<emoji document_id=\"5931472654660800739\">📊</emoji> Статистика","<emoji document_id=\"5312160339335347417\">💰</emoji> Монетизация","<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалобы","<emoji document_id=\"5312229088876847138\">🚫</emoji> Баны","<emoji document_id=\"5215522595922779944\">👥</emoji> Пользователи","<emoji document_id=\"5215668805199473901\">📢</emoji> Рассылка","<emoji document_id=\"6129805886383723340\">⚙️</emoji> Настройки бота","<emoji document_id=\"5283130719806175947\">📈</emoji> Воронка","<emoji document_id=\"5460865451586250451\">📋</emoji> Рассылки (статус)"}))
+@admin_router.message(F.text.func(lambda t: t and not t.startswith('/') and t not in {"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель","<tg-emoji emoji-id=\"5931472654660800739\">📊</tg-emoji> Статистика","<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Монетизация","<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалобы","<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Баны","<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователи","<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылка","<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Настройки бота","<tg-emoji emoji-id=\"5283130719806175947\">📈</tg-emoji> Воронка","<tg-emoji emoji-id=\"5460865451586250451\">📋</tg-emoji> Рассылки (статус)"}))
 async def admin_text_search(message: Message):
     text=message.text.strip()
     if text.isdigit() or text.startswith('#'):
@@ -252,13 +252,13 @@ async def admin_text_search(message: Message):
             from html import escape as esc
             premium=f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
             await message.answer(
-                f"<emoji document_id=\"5348232622898167572\">👤</emoji> {esc(user.anon_id or '?')}\n"
+                f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {esc(user.anon_id or '?')}\n"
                 f"Telegram ID: {user.telegram_id}\n"
-                f"<emoji document_id=\"5258105663359294787\">📅</emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
-                f"<emoji document_id=\"5224455462178549802\">💬</emoji> Диалогов: {user.chats_count}\n"
-                f"<emoji document_id=\"5280880410346152584\">🚩</emoji> Жалоб на него: —\n"
-                f"<emoji document_id=\"5920281855378068765\">⭐</emoji> Premium: {premium}\n"
-                f"<emoji document_id=\"5312160339335347417\">💰</emoji> Всего потратил: {user.total_stars_spent}<emoji document_id=\"5920281855378068765\">⭐</emoji>",
+                f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
+                f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
+                f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: —\n"
+                f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
+                f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>",
                 reply_markup=admin_user_card_kb(user.telegram_id))
 
 
@@ -266,7 +266,7 @@ async def admin_text_search(message: Message):
 async def cb_settings(callback: CallbackQuery):
     products=await PaymentService().products()
     await callback.answer()
-    await callback.message.answer("<emoji document_id=\"6129805886383723340\">⚙️</emoji> Цены:\n"+"\n".join(f"{p.code}: {p.price_stars}<emoji document_id=\"5920281855378068765\">⭐</emoji>" for p in products)+
+    await callback.message.answer("<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Цены:\n"+"\n".join(f"{p.code}: {p.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for p in products)+
         "\n\n/price код цена\n/setting chat_delay_next 7\n/setting search_timeout 60\n/setting inactive_chat_ttl 300\n/setting marketing_enabled 0")
 
 
@@ -278,13 +278,13 @@ async def cmd_setting(message: Message):
         return
     service=AdminService()
     result=await (service.price(message.from_user.id,p[1],int(p[2])) if p[0].split('@')[0]=="/price" else service.setting(message.from_user.id,p[1],int(p[2])))
-    await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Сохранено" if result.ok else "Недопустимое значение.")
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено" if result.ok else "Недопустимое значение.")
 
 
 @admin_router.callback_query(F.data=="admin:broadcast")
 async def cb_broadcast(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("<emoji document_id=\"5215668805199473901\">📢</emoji> Выбери аудиторию:",reply_markup=admin_broadcast_audience_kb())
+    await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Выбери аудиторию:",reply_markup=admin_broadcast_audience_kb())
 
 
 @admin_router.callback_query(F.data.startswith("bc:"))
@@ -308,9 +308,9 @@ async def broadcast_text(message: Message,state: FSMContext):
         return
     await state.clear()
     job=result.data['job']
-    await message.answer(f"<emoji document_id=\"5253959125838090076\">👁</emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
+    await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="<emoji document_id=\"5188481279963715781\">🚀</emoji> Запустить рассылку",callback_data=f"admin:send:{job.id}",style="danger")]]))
+            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5188481279963715781\">🚀</tg-emoji> Запустить рассылку",callback_data=f"admin:send:{job.id}",style="danger")]]))
 
 
 @admin_router.callback_query(F.data.startswith("admin:send:"))
@@ -335,7 +335,7 @@ async def cb_broadcast_status(callback: CallbackQuery):
             return
         await callback.answer()
         await callback.message.answer(
-            f"<emoji document_id=\"5215668805199473901\">📢</emoji> Рассылка #{job.id}\n"
+            f"<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылка #{job.id}\n"
             f"Аудитория: {job.segment}\n"
             f"Статус: {job.status}\n"
             f"Отправлено: {job.sent}\n"
@@ -349,6 +349,6 @@ async def cb_broadcast_status(callback: CallbackQuery):
         jobs=await AdminService().broadcast_status(callback.from_user.id)
         await callback.answer()
         if not jobs:
-            await callback.message.answer("<emoji document_id=\"5215668805199473901\">📢</emoji> Рассылок пока нет.",reply_markup=admin_kb())
+            await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылок пока нет.",reply_markup=admin_kb())
             return
-        await callback.message.answer("<emoji document_id=\"5215668805199473901\">📢</emoji> Последние рассылки:",reply_markup=admin_broadcast_status_kb(jobs))
+        await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Последние рассылки:",reply_markup=admin_broadcast_status_kb(jobs))

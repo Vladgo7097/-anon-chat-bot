@@ -25,7 +25,7 @@ async def cmd_report(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=label, callback_data=f"v1:report:{chat.session_id}:{reason}", style="danger")
     ] for reason, label in REASONS.items()])
-    await message.answer("<emoji document_id=\"5280880410346152584\">🚩</emoji> На что жалуетесь?", reply_markup=keyboard)
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> На что жалуетесь?", reply_markup=keyboard)
 
 
 @report_router.callback_query(F.data.startswith("v1:report:"))
@@ -45,9 +45,9 @@ async def cb_report(callback: CallbackQuery, state: FSMContext):
     if not result.ok:
         await callback.message.answer("Жалоба уже отправлена или диалог завершён.")
         return
-    await callback.message.edit_text("<emoji document_id=\"5280880410346152584\">✅</emoji> Жалоба отправлена модераторам.\nСобеседник заблокирован для тебя.")
+    await callback.message.edit_text("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Жалоба отправлена модераторам.\nСобеседник заблокирован для тебя.")
     try:
-        await callback.bot.send_message(result.data["partner"], "<emoji document_id=\"5927208490870248283\">😢</emoji> Собеседник покинул чат.", reply_markup=main_menu_kb())
+        await callback.bot.send_message(result.data["partner"], "<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> Собеседник покинул чат.", reply_markup=main_menu_kb())
     except TelegramForbiddenError:
         pass
     from handlers.search import begin_search
@@ -69,9 +69,9 @@ async def report_details(message: Message,state: FSMContext):
     if not result.ok:
         await message.answer("Жалоба уже отправлена или диалог завершён.")
         return
-    await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Жалоба отправлена модераторам. Собеседник заблокирован для тебя.")
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Жалоба отправлена модераторам. Собеседник заблокирован для тебя.")
     try:
-        await message.bot.send_message(result.data["partner"],"<emoji document_id=\"5927208490870248283\">😢</emoji> Собеседник покинул чат.",reply_markup=main_menu_kb())
+        await message.bot.send_message(result.data["partner"],"<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> Собеседник покинул чат.",reply_markup=main_menu_kb())
     except TelegramForbiddenError:
         pass
     from handlers.search import begin_search

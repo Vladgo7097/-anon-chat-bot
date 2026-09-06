@@ -12,7 +12,7 @@ async def cb_rate(callback: CallbackQuery):
         ok = await ChatRepository().rate(parts[2], callback.from_user.id, int(parts[3]))
     await callback.answer("Спасибо за оценку!" if ok else "Оценка уже учтена или диалог недоступен.")
     if ok:
-        await callback.message.edit_text("<emoji document_id=\"5280880410346152584\">✅</emoji> Спасибо за оценку!")
+        await callback.message.edit_text("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Спасибо за оценку!")
 
 
 @rating_router.callback_query(F.data.startswith("rate:"))

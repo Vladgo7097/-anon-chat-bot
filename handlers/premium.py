@@ -6,21 +6,21 @@ from keyboards import texts as T
 from keyboards.reply import main_menu_kb
 
 PREMIUM_TEXT = (
-    '<emoji document_id="5920281855378068765">⭐</emoji> Premium-подписка\n\n'
-    '<emoji document_id="5976560705938133794">🎯</emoji> Фильтры по полу и возрасту\n'
-    '<emoji document_id="5348232622898167572">❤️</emoji> Приоритетные запросы на взаимное раскрытие — без доплаты\n'
-    '<emoji document_id="5350618807943576963">⚡</emoji> Приоритет в очереди поиска\n'
-    '<emoji document_id="5260450573768990626">🔄</emoji> «Следующий» без задержки\n'
-    '<emoji document_id="5442949339108366200">🖼</emoji> До 3 фото в профиле\n\n'
+    '<tg-emoji emoji-id="5920281855378068765">⭐</tg-emoji> Premium-подписка\n\n'
+    '<tg-emoji emoji-id="5976560705938133794">🎯</tg-emoji> Фильтры по полу и возрасту\n'
+    '<tg-emoji emoji-id="5348232622898167572">❤️</tg-emoji> Приоритетные запросы на взаимное раскрытие — без доплаты\n'
+    '<tg-emoji emoji-id="5350618807943576963">⚡</tg-emoji> Приоритет в очереди поиска\n'
+    '<tg-emoji emoji-id="5260450573768990626">🔄</tg-emoji> «Следующий» без задержки\n'
+    '<tg-emoji emoji-id="5442949339108366200">🖼</tg-emoji> До 3 фото в профиле\n\n'
     'Контакты всегда раскрываются только по взаимному согласию.\n\n'
-    '<emoji document_id="5312160339335347417">💰</emoji> Тарифы:'
+    '<tg-emoji emoji-id="5312160339335347417">💰</tg-emoji> Тарифы:'
 )
 
 
 async def product_keyboard(codes, session_id=None):
     products = await PaymentService().products(codes)
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f'{p.title} — {p.price_stars}<emoji document_id=\"5920281855378068765\">⭐</emoji>', style="primary",
+        InlineKeyboardButton(text=f'{p.title} — {p.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>', style="primary",
             callback_data=f"v1:buy:{p.code}" + (f":{session_id}" if session_id else ""))
     ] for p in products])
 
@@ -31,7 +31,7 @@ async def show_premium(message, user_id):
     user = await UserRepository().get(user_id)
     text = PREMIUM_TEXT
     if user and premium_active(user):
-        text += f"\n\n<emoji document_id=\"5280880410346152584\">✅</emoji> Активен до {user.premium_expires:%d.%m.%Y}"
+        text += f"\n\n<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Активен до {user.premium_expires:%d.%m.%Y}"
     await message.answer(text, reply_markup=await product_keyboard(["premium_1m", "premium_3m", "premium_12m"]))
 
 
@@ -87,14 +87,14 @@ async def successful_payment(message: Message):
     p = message.successful_payment
     result = await PaymentService().complete(message.from_user.id, p.invoice_payload, p.total_amount, p.currency, p.telegram_payment_charge_id)
     if result.code == "ALREADY_PAID":
-        await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Этот платёж уже учтён.")
+        await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Этот платёж уже учтён.")
         return
     if not result.ok:
         import logging
         logging.getLogger(__name__).error("event=payment_validation_failed user_id=%s", message.from_user.id)
         await message.answer("Платёж требует проверки. Обратись в поддержку через /help.")
         return
-    await message.answer("<emoji document_id=\"5280880410346152584\">✅</emoji> Оплата получена. Возможность активирована.")
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Оплата получена. Возможность активирована.")
     if result.data["product"] == "instant_search":
         from services.chat_manager import set_instant_search
         await set_instant_search(message.from_user.id)

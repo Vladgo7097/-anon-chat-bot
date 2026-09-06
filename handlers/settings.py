@@ -11,7 +11,7 @@ from services.settings import SettingsService
 async def show_settings(message, user_id):
     user = await UserRepository().get(user_id)
     gender = {"m": "Мужчин", "f": "Женщин", "a": "Всех"}.get(user.settings_gender_filter, "Всех")
-    await message.answer(f"<emoji document_id=\"6129805886383723340\">⚙️</emoji> Кого искать\n\nФильтр: {gender}\nВозраст: {user.settings_age_min}–{user.settings_age_max}\n\nФильтр по полу требует Premium или отдельной покупки; возрастной диапазон — Premium. После истечения доступа настройки сохраняются, но не применяются.", reply_markup=settings_kb())
+    await message.answer(f"<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Кого искать\n\nФильтр: {gender}\nВозраст: {user.settings_age_min}–{user.settings_age_max}\n\nФильтр по полу требует Premium или отдельной покупки; возрастной диапазон — Premium. После истечения доступа настройки сохраняются, но не применяются.", reply_markup=settings_kb())
 
 
 @settings_router.message(F.text == T.SETTINGS)

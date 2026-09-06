@@ -73,7 +73,7 @@ class ChatRepository:
             for uid in (a_id, b_id):
                 await event(s, uid, "chat_started", f"chat_started:{chat.session_id}:{uid}")
                 from services.notifications import enqueue
-                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}","<emoji document_id=\"5280880410346152584\">✅</emoji> Собеседник найден!\n\nПишите первым! <emoji document_id=\"5350596259365273418\">👋</emoji>",chat.session_id)
+                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>",chat.session_id)
             for user in users:
                 entitlement = filters.get(user.telegram_id)
                 if entitlement and entitlement.kind == "gender_filter_one_match" and not premium_active(user) and user.settings_gender_filter != "a":
@@ -136,5 +136,5 @@ class ChatRepository:
                 user.dislikes_received += 1
             user.positive_rating_pct = round(100 * user.likes_received / (user.likes_received + user.dislikes_received), 1)
             from services.notifications import enqueue
-            await enqueue(s, partner, "rating", f"rating:{session_id}:{user_id}", "<emoji document_id=\"5350417283783084711\">👍</emoji> Тебя оценили после последнего диалога!" if value==1 else "<emoji document_id=\"5348132683304156113\">👎</emoji> Получена оценка после диалога.", "profile")
+            await enqueue(s, partner, "rating", f"rating:{session_id}:{user_id}", "<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Тебя оценили после последнего диалога!" if value==1 else "<tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Получена оценка после диалога.", "profile")
         return True

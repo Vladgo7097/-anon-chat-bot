@@ -43,15 +43,15 @@ async def _begin_search(message, user_id):
     result = await MatchingService().enqueue(user_id)
     task = _tasks.get(user_id)
     if result.code == "ALREADY_SEARCHING" and task and not task.done():
-        await message.answer("<emoji document_id=\"5976789958407493804\">🔎</emoji> Поиск уже идёт.", reply_markup=search_kb_reply())
+        await message.answer("<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Поиск уже идёт.", reply_markup=search_kb_reply())
         return
     if not result.ok:
         await message.answer({"BANNED": "⛔ Ты заблокирован.", "ALREADY_CHATTING": "Ты уже в диалоге. Нажми «Стоп».",
                               "ONBOARDING_REQUIRED": "Сначала заверши регистрацию: /start"}[result.code])
         return
     await cancel_task(user_id)
-    await message.answer("<emoji document_id=\"5976789958407493804\">🔎</emoji> Ищу собеседника...", reply_markup=search_kb_reply())
-    status = await message.answer(f"<emoji document_id=\"5258258882022612173\">⏱</emoji> Прошло: 00:00\n<emoji document_id=\"5215522595922779944\">👥</emoji> Онлайн сейчас: {await get_online_count()}")
+    await message.answer("<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу собеседника...", reply_markup=search_kb_reply())
+    status = await message.answer(f"<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: 00:00\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}")
     task = asyncio.create_task(search_loop(status, user_id))
     _tasks[user_id] = task
 
@@ -74,7 +74,7 @@ async def search_loop(status, user_id, bot=None):
             from services.settings import bot_value
             if elapsed >= await bot_value("search_timeout", config.SEARCH_TIMEOUT):
                 await MatchingService().cancel(user_id)
-                await bot.send_message(user_id, "<emoji document_id=\"5296482716567495148\">⏳</emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
                 return
             chat = await MatchingService().find(user_id)
             if chat:
@@ -86,7 +86,7 @@ async def search_loop(status, user_id, bot=None):
                 from utils.db import is_premium
                 if status is not None:
                     offer = await product_keyboard(["instant_search"]) if elapsed > 20 and not await is_premium(user_id) else None
-                    await status.edit_text(f"<emoji document_id=\"5976789958407493804\">🔎</emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<emoji document_id=\"5258258882022612173\">⏱</emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<emoji document_id=\"5215522595922779944\">👥</emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=offer)
+                    await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=offer)
                     if offer and not offer_tracked:
                         from services.growth import track
                         await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")

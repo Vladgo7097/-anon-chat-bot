@@ -10,7 +10,7 @@ from keyboards import texts as T
 
 def reveal_keyboard(sid):
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="<emoji document_id=\"5348232622898167572\">❤️</emoji> Предложить раскрыться", callback_data=f"v1:reveal:{sid}", style="primary")]])
+        InlineKeyboardButton(text="<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Предложить раскрыться", callback_data=f"v1:reveal:{sid}", style="primary")]])
 
 
 async def show_reveal(message, user_id):
@@ -18,15 +18,15 @@ async def show_reveal(message, user_id):
     if not chat:
         await message.answer("Ты сейчас не в чате.")
         return
-    await message.answer("<emoji document_id=\"5348232622898167572\">👤</emoji> Хочешь продолжить общение открыто?\n\nКонтакт станет виден только после согласия обоих собеседников.", reply_markup=reveal_keyboard(chat.session_id))
+    await message.answer("<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Хочешь продолжить общение открыто?\n\nКонтакт станет виден только после согласия обоих собеседников.", reply_markup=reveal_keyboard(chat.session_id))
     from handlers.premium import product_keyboard
     from utils.db import is_premium
     if not await is_premium(user_id):
         await message.answer("Дополнительные возможности запроса:", reply_markup=await product_keyboard(["reveal_priority_request", "reveal_status"], chat.session_id))
     else:
         await message.answer("Включено в Premium:",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="<emoji document_id=\"5350618807943576963\">⚡</emoji> Приоритетный запрос",callback_data=f"v1:rp:{chat.session_id}"),
-            InlineKeyboardButton(text="<emoji document_id=\"5350427505805238170\">👀</emoji> Статус",callback_data=f"v1:rs:{chat.session_id}")]]))
+            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Приоритетный запрос",callback_data=f"v1:rp:{chat.session_id}"),
+            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5350427505805238170\">👀</tg-emoji> Статус",callback_data=f"v1:rs:{chat.session_id}")]]))
 
 
 @reveal_router.callback_query(F.data.startswith("v1:rp:"))
@@ -62,13 +62,13 @@ async def cb_consent(callback: CallbackQuery):
             other = next(value for key, value in contacts.items() if key != uid)
             text = f"@{escape(other)}" if other else "контакт в Telegram не настроен"
             try:
-                await callback.bot.send_message(uid, f"<emoji document_id=\"5994502837327892086\">🎉</emoji> Вы оба хотите общаться открыто!\n\n<emoji document_id=\"5348232622898167572\">👤</emoji> Собеседник: {text}")
+                await callback.bot.send_message(uid, f"<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> Вы оба хотите общаться открыто!\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Собеседник: {text}")
             except TelegramForbiddenError:
                 pass
     else:
-        await callback.message.answer("<emoji document_id=\"5348232622898167572\">❤️</emoji> Запрос отправлен. Ждём согласия собеседника.")
+        await callback.message.answer("<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Запрос отправлен. Ждём согласия собеседника.")
         try:
-            await callback.bot.send_message(result.data["partner"], "<emoji document_id=\"5348232622898167572\">❤️</emoji> Собеседник предложил взаимно раскрыть контакты.", reply_markup=reveal_keyboard(sid))
+            await callback.bot.send_message(result.data["partner"], "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Собеседник предложил взаимно раскрыть контакты.", reply_markup=reveal_keyboard(sid))
         except TelegramForbiddenError:
             await ChatService().end_chat(callback.from_user.id, sid, "unreachable")
 
@@ -81,6 +81,6 @@ async def paid_reveal(message, user_id, session_id, kind):
         await message.answer("Диалог уже завершён; контакт не раскрывается.")
         return
     if kind == "reveal_status":
-        await message.answer({"MUTUAL": "<emoji document_id=\"5348232622898167572\">❤️</emoji> Согласие взаимно.", "PENDING": "<emoji document_id=\"5296482716567495148\">⏳</emoji> Ожидается ответ.", "NOT_REQUESTED": "Запрос ещё не отправлен."}.get(result.code, "Запрос завершён."))
+        await message.answer({"MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Согласие взаимно.", "PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Ожидается ответ.", "NOT_REQUESTED": "Запрос ещё не отправлен."}.get(result.code, "Запрос завершён."))
     else:
-        await message.answer("<emoji document_id=\"5350618807943576963\">⚡</emoji> Приоритетный запрос доступен. Подтверди своё согласие:", reply_markup=reveal_keyboard(session_id))
+        await message.answer("<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Приоритетный запрос доступен. Подтверди своё согласие:", reply_markup=reveal_keyboard(session_id))
