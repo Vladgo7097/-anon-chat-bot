@@ -34,6 +34,19 @@ class OperationsTests(DatabaseCase):
         async with self.factory() as s:
             self.assertEqual(await s.scalar(select(func.count(AdminAudit.id))),1)
 
+    async def test_privacy_setting_persists_without_losing_other_preferences(self):
+        import json
+        from services.profile import ProfileService
+        async with self.factory.begin() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.notification_settings = '{"other": true}'
+        for enabled in (False, True):
+            self.assertTrue((await ProfileService().marketing(1, enabled)).ok)
+            async with self.factory() as s:
+                user = await s.scalar(select(User).where(User.telegram_id == 1))
+                self.assertEqual(json.loads(user.notification_settings), {"other": True, "marketing": enabled})
+        self.assertFalse((await ProfileService().marketing(999999, False)).ok)
+
     async def test_find_user_accepts_anon_id_and_rejects_oversized_number(self):
         for value in ("#test1", "test1", "#TEST1", "1"):
             self.assertEqual((await AdminService().find_user(99, value)).telegram_id, 1)

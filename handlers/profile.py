@@ -3,6 +3,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
+import json
 from handlers import profile_router
 from keyboards.inline import profile_kb, profile_edit_kb
 from keyboards.reply import onboarding_kb, main_menu_kb
@@ -138,11 +140,40 @@ async def cb_confirm_delete(callback: CallbackQuery, state: FSMContext):
 
 
 @profile_router.callback_query(F.data.in_({"profile:privacy", "profile:push:on", "profile:push:off"}))
-async def cb_privacy(callback: CallbackQuery):
+async def cb_privacy(callback: CallbackQuery, state: FSMContext):
+    from repositories.users import UserRepository
+    user = await UserRepository().get(callback.from_user.id)
+    if not user:
+        await callback.answer("Профиль не найден. Открой /start.", show_alert=True)
+        return
+    enabled = json.loads(user.notification_settings or "{}").get("marketing", True)
     if callback.data != "profile:privacy":
-        await ProfileService().marketing(callback.from_user.id, callback.data.endswith(":on"))
-    await callback.answer()
-    await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🔒</tg-emoji> Telegram ID скрыт. Контакт раскрывается только после взаимного согласия.\nНастрой маркетинговые уведомления:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Включить", callback_data="profile:push:on", style="success"),
-            InlineKeyboardButton(text="Выключить", callback_data="profile:push:off")]]))
+        enabled = callback.data.endswith(":on")
+        result = await ProfileService().marketing(callback.from_user.id, enabled)
+        if not result.ok:
+            await callback.answer("Не удалось сохранить настройку. Открой /start.", show_alert=True)
+            return
+    await state.clear()
+    await callback.answer("Сохранено" if callback.data != "profile:privacy" else None)
+    text = (
+        "🔒 Приватность\n\n"
+        "Собеседник не видит твой Telegram ID, имя и username. "
+        "Username раскрывается только после согласия обоих участников. "
+        "Фото профиля автоматически не отправляется.\n\n"
+        "Данные, которые ты сам отправляешь в сообщениях, видны собеседнику.\n\n"
+        f"Рекомендации и предложения: {'включены' if enabled else 'выключены'}.\n"
+        "Этот переключатель управляет рекламными и маркетинговыми уведомлениями. "
+        "Сообщения о диалогах, оплатах и другие служебные уведомления остаются."
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Выключить уведомления" if enabled else "Включить уведомления",
+            callback_data="profile:push:off" if enabled else "profile:push:on", style="primary"),
+    ], [InlineKeyboardButton(text="Назад в профиль", callback_data="profile")]])
+    if callback.data == "profile:privacy":
+        await callback.message.answer(text, reply_markup=keyboard)
+    else:
+        try:
+            await callback.message.edit_text(text, reply_markup=keyboard)
+        except TelegramBadRequest as error:
+            if "message is not modified" not in error.message:
+                raise

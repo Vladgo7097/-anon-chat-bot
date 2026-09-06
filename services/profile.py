@@ -76,6 +76,8 @@ class ProfileService:
     async def marketing(self, user_id, enabled):
         async with async_session.begin() as s:
             user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
+            if not user:
+                return ServiceResult(False, "NOT_FOUND")
             settings = json.loads(user.notification_settings or "{}")
             settings["marketing"] = enabled
             user.notification_settings = json.dumps(settings)
