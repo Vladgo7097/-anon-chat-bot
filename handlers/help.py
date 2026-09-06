@@ -10,7 +10,7 @@ if config.SUPPORT_USERNAME:
 
 
 @help_router.message(Command("help"))
-@help_router.message(F.text == "<tg-emoji emoji-id=\"5312464908351201524\">❓</tg-emoji> Помощь")
+@help_router.message(F.text == "Помощь")
 async def cmd_help(message: Message):
     await message.answer(HELP_TEXT)
 

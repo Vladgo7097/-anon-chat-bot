@@ -6,7 +6,7 @@ from keyboards.reply import main_menu_kb
 from services.chat_manager import set_online
 
 
-@menu_router.message(F.text == "<tg-emoji emoji-id=\"5257963315258204021\">🏠</tg-emoji> Меню")
+@menu_router.message(F.text == "Меню")
 async def cmd_menu(message: Message):
     await set_online(message.from_user.id)
     await message.answer(

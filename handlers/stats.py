@@ -20,7 +20,7 @@ def format_stats(stats: dict) -> str:
     elif stats.get("chats_count", 0) >= 20:
         level = "<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Регулярный"
     elif stats.get("chats_count", 0) >= 5:
-        level = "🌱 Начинающий"
+        level = "Начинающий"
 
     return (
         f"<tg-emoji emoji-id=\"5884336303415236350\">📊</tg-emoji> Твоя статистика\n\n"
@@ -42,7 +42,7 @@ async def cb_stats(callback: CallbackQuery):
     await callback.answer()
 
 
-@stats_router.message(F.text == "<tg-emoji emoji-id=\"5884336303415236350\">📊</tg-emoji> Статистика")
+@stats_router.message(F.text == "Статистика")
 async def cmd_stats(message: Message):
     stats = await get_user_stats(message.from_user.id)
     if not stats:
