@@ -109,8 +109,14 @@ class ChatRepository:
                 await completed_chat(s, user)
                 await event(s, user.telegram_id, "chat_ended", f"chat_ended:{chat.session_id}:{user.telegram_id}")
                 if reason in {"ban","account_deleted","unreachable","timeout"}:
-                    from services.notifications import enqueue
-                    await enqueue(s,user.telegram_id,"chat_ended",f"ended:{chat.session_id}:{user.telegram_id}","Диалог завершён по неактивности." if reason=="timeout" else "Диалог завершён. Можно начать новый поиск.","menu")
+                    # The actor already got a direct message from the handler for
+                    # unreachable; queueing one for them too would duplicate it.
+                    targets = [chat.user1_id, chat.user2_id]
+                    if reason == "unreachable":
+                        targets = [uid for uid in targets if uid != user_id]
+                    for uid in targets:
+                        from services.notifications import enqueue
+                        await enqueue(s,uid,"chat_ended",f"ended:{chat.session_id}:{uid}","Диалог завершён по неактивности." if reason=="timeout" else "Диалог завершён. Можно начать новый поиск.","menu")
         return chat
 
     async def touch(self, session_id):

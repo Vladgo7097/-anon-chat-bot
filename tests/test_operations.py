@@ -69,6 +69,18 @@ class OperationsTests(DatabaseCase):
             self.assertEqual((await s.get(Notification, notice_id)).status, "skipped")
         self.assertEqual((await self.repo.active(1)).session_id, new.session_id)
 
+    async def test_unreachable_end_queues_notice_for_partner_only(self):
+        chat = await self.repo.match(1, 2, self.redis)
+        await self.repo.end(1, chat.session_id, "unreachable")
+        async with self.factory() as s:
+            ended = (await s.scalars(select(Notification).where(Notification.type == "chat_ended"))).all()
+            self.assertEqual([item.user_id for item in ended], [2])
+        second = await self.repo.match(1, 2, self.redis)
+        await self.repo.end(2, second.session_id, "timeout")
+        async with self.factory() as s:
+            ended = (await s.scalars(select(Notification).where(Notification.type == "chat_ended"))).all()
+            self.assertEqual(sorted(item.user_id for item in ended), [1, 2, 2])
+
     async def test_invalid_numeric_referral_does_not_break_registration(self):
         from services.onboarding import OnboardingService
         for value in ("9" * 32, "²"):
