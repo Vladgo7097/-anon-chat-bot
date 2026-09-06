@@ -104,7 +104,7 @@ async def save_field(message: Message, state: FSMContext):
             await state.update_data(age_page=page)
             await message.answer("🎂 Выбери возраст:", reply_markup=onboarding_kb("AGE", page))
             return
-        result = await ProfileService().edit(message.from_user.id, "age", int(text) if text.isdigit() else None)
+        result = await ProfileService().edit(message.from_user.id, "age", int(text) if text.isascii() and text.isdigit() else None)
     if result.ok:
         await state.clear()
         await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено", reply_markup=main_menu_kb())

@@ -80,6 +80,28 @@ class PaymentTests(DatabaseCase):
             offer.ends_at=utcnow()-timedelta(seconds=1)
         self.assertFalse(await service.precheckout(1,first.payload,first.stars_amount,'XTR'))
 
+    async def test_monthly_filter_preserves_older_single_use(self):
+        service = PaymentService()
+        for code in ("gender_filter_one_match", "gender_filter_1m"):
+            p = (await service.create(1, code)).data["payment"]
+            self.assertTrue(await service.precheckout(1, p.payload, p.stars_amount, "XTR"))
+            self.assertTrue((await service.complete(1, p.payload, p.stars_amount, "XTR", code)).ok)
+        async with self.factory.begin() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.settings_gender_filter = "f"
+        chat = await self.repo.match(1, 2, self.redis)
+        self.assertIsNotNone(chat)
+        async with self.factory.begin() as s:
+            single = await s.scalar(select(Entitlement).where(Entitlement.kind == "gender_filter_one_match"))
+            self.assertEqual(single.remaining_uses, 1)
+            monthly = await s.scalar(select(Entitlement).where(Entitlement.kind == "gender_filter_1m"))
+            monthly.expires_at = utcnow() - timedelta(seconds=1)
+        await self.repo.end(1, chat.session_id)
+        self.assertIsNotNone(await self.repo.match(1, 2, self.redis))
+        async with self.factory() as s:
+            single = await s.scalar(select(Entitlement).where(Entitlement.kind == "gender_filter_one_match"))
+            self.assertEqual(single.remaining_uses, 0)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

@@ -73,7 +73,7 @@ class AccessMiddleware(BaseMiddleware):
             "/search", "/stop", "/report", "search:start", "search:cancel",
             "chat:stop", "chat:next", "chat:reveal",
         }
-        if action in chat_controls:
+        if action in chat_controls or action in navigation:
             await data["state"].clear()
             # FSM middleware loaded this snapshot before access checks.
             data["raw_state"] = None

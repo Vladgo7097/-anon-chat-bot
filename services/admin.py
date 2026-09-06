@@ -129,8 +129,15 @@ class AdminService:
 
     async def find_user(self,admin,value):
         authorize(admin)
+        value = value.strip()
+        if not value:
+            return None
+        anon_id = "#" + value.lstrip("#")
+        telegram_id = int(value) if value.isascii() and value.isdigit() and len(value) <= 19 else -1
+        if telegram_id > 9223372036854775807:
+            telegram_id = -1
         async with async_session() as s:
-            q=select(User).where(or_(User.anon_id==value,User.telegram_id==(int(value) if value.isdigit() else -1)))
+            q=select(User).where(or_(func.lower(User.anon_id)==anon_id.lower(),User.telegram_id==telegram_id))
             return await s.scalar(q)
 
     async def ban(self,admin,uid,reason,hours=None):

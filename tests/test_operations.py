@@ -34,6 +34,37 @@ class OperationsTests(DatabaseCase):
         async with self.factory() as s:
             self.assertEqual(await s.scalar(select(func.count(AdminAudit.id))),1)
 
+    async def test_find_user_accepts_anon_id_and_rejects_oversized_number(self):
+        for value in ("#test1", "test1", "#TEST1", "1"):
+            self.assertEqual((await AdminService().find_user(99, value)).telegram_id, 1)
+        for value in ("9" * 4000, "²", "", "#missing"):
+            self.assertIsNone(await AdminService().find_user(99, value))
+
+    async def test_old_end_notification_does_not_interrupt_new_chat(self):
+        old = await self.repo.match(1, 2, self.redis)
+        await self.repo.end(1, old.session_id, "timeout")
+        new = await self.repo.match(1, 3, self.redis)
+        async with self.factory.begin() as s:
+            items = (await s.scalars(select(Notification))).all()
+            for item in items:
+                if item.type == "chat_ended" and item.user_id == 1:
+                    notice_id = item.id
+                else:
+                    item.status = "sent"
+        self.assertIsNone(await NotificationService().next())
+        async with self.factory() as s:
+            self.assertEqual((await s.get(Notification, notice_id)).status, "skipped")
+        self.assertEqual((await self.repo.active(1)).session_id, new.session_id)
+
+    async def test_invalid_numeric_referral_does_not_break_registration(self):
+        from services.onboarding import OnboardingService
+        for value in ("9" * 32, "²"):
+            result = await OnboardingService().start(4, payload="ref_" + value)
+            self.assertEqual(result.code, "WELCOME")
+        async with self.factory() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 4))
+            self.assertIsNone(user.referrer_id)
+
     async def test_duplicate_admin_grant_does_not_extend_twice(self):
         admin=AdminService()
         self.assertTrue((await admin.grant(99,1,30,"support","grant:99:1")).ok)

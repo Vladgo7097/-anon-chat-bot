@@ -10,7 +10,7 @@ from keyboards import texts as T
 from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb
 from services.admin import AdminService, StatsService, authorize
 from services.payments import PaymentService
-from services.chat_manager import get_online_count
+from services.chat_manager import get_online_count, get_partner
 
 
 class AdminOnly(BaseMiddleware):
@@ -245,10 +245,15 @@ async def cmd_user_action(message: Message):
     await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено" if result.ok else "Проверь параметры.")
 
 
+async def outside_chat(message: Message):
+    return await get_partner(message.from_user.id) is None
+
+
 @admin_router.message(
     StateFilter(None),
     F.from_user.id.func(lambda user_id: user_id in config.ADMIN_IDS),
     F.text.func(lambda text: bool(text) and (text.strip().isdigit() or text.strip().startswith("#"))),
+    outside_chat,
 )
 async def admin_text_search(message: Message):
     text=message.text.strip()

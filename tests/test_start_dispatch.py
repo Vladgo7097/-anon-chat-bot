@@ -69,6 +69,16 @@ class StartDispatchTests(unittest.TestCase):
                     from_user=User(id=123,is_bot=False,first_name="Test"),text=T.MALE)))
                 edit.assert_awaited_once_with(123,"gender","male")
                 self.assertIsNone(await state.get_state())
+            with (
+                patch("services.profile.ProfileService.edit", AsyncMock(return_value=ServiceResult(False, "INVALID"))) as edit,
+                patch.object(bot.session, "make_request", telegram),
+            ):
+                await state.set_state(ProfileEdit.AGE)
+                await dp.feed_update(bot, Update(update_id=4, message=Message(
+                    message_id=4, date=datetime.now(timezone.utc), chat=Chat(id=123, type="private"),
+                    from_user=User(id=123, is_bot=False, first_name="Test"), text="²")))
+                edit.assert_awaited_once_with(123, "age", None)
+                await state.clear()
             from handlers.help import HELP_TEXT
             from handlers.stats import format_stats
             stats = {"chats_count": 7, "total_chat_seconds": 3660, "rating_pct": 80}
@@ -76,6 +86,7 @@ class StartDispatchTests(unittest.TestCase):
                 patch("config.ADMIN_IDS", {99}),
                 patch("handlers.stats.get_user_stats", AsyncMock(return_value=stats)) as get_stats,
                 patch("services.admin.AdminService.find_user", AsyncMock(return_value=None)) as find_user,
+                patch("handlers.admin.get_partner", AsyncMock(return_value=None)),
                 patch.object(bot.session, "make_request", telegram),
             ):
                 for user_id in (123, 99):
@@ -101,6 +112,7 @@ class StartDispatchTests(unittest.TestCase):
                     find_user.assert_awaited_with(99, text.lstrip("#"))
             await self.check_input_flows(dp, bot, telegram)
             await self.check_chat_controls(dp, bot, telegram)
+            await self.check_payment_in_forms(dp, bot, telegram)
         finally:
             await bot.session.close()
 
@@ -187,12 +199,15 @@ class StartDispatchTests(unittest.TestCase):
             patch("services.onboarding.banned", return_value=False),
             patch("services.onboarding.step_for", return_value="MENU") as step,
             patch("services.chat_manager.set_online", AsyncMock()),
-            patch("services.chat_manager.get_partner", AsyncMock(return_value=456)),
+            patch("services.chat_manager.get_partner", AsyncMock(return_value=456)) as partner,
             patch("services.growth.StreakService.checkin", AsyncMock()),
             patch("handlers.search.begin_search", AsyncMock()) as search,
             patch("handlers.chat.finish", AsyncMock()) as finish,
             patch("handlers.chat.next_chat", AsyncMock()) as next_chat,
             patch("handlers.profile.show_profile", AsyncMock()) as profile,
+            patch("handlers.settings.show_settings", AsyncMock()) as settings,
+            patch("handlers.premium.show_premium", AsyncMock()) as premium,
+            patch("handlers.stats.get_user_stats", AsyncMock(return_value={"chats_count": 1})) as stats,
         ):
             for action in (T.SEARCH, "/search"):
                 await state.set_state(ProfileEdit.PHOTO)
@@ -211,9 +226,67 @@ class StartDispatchTests(unittest.TestCase):
             await dispatch("/profile@offline_test_bot")
             profile.assert_not_awaited()
             self.assertIn("Ты сейчас в диалоге", telegram.await_args.args[1].text)
+            partner.return_value = None
+            for action, called in ((T.PROFILE, profile), (T.SETTINGS, settings),
+                                   (T.PREMIUM, premium), (T.STATS, stats)):
+                await state.set_state(ProfileEdit.PHOTO)
+                called.reset_mock()
+                await dispatch(action)
+                called.assert_awaited_once()
+                self.assertIsNone(await state.get_state())
             step.return_value = "AGE"
             await dispatch("/help@offline_test_bot")
             self.assertEqual(telegram.await_args.args[1].text, HELP_TEXT)
+
+        with (
+            patch.object(bot.session, "make_request", telegram),
+            patch("config.ADMIN_IDS", {123}),
+            patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=SimpleNamespace())),
+            patch("services.onboarding.banned", return_value=False),
+            patch("services.onboarding.step_for", return_value="MENU"),
+            patch("services.chat_manager.set_online", AsyncMock()),
+            patch("services.growth.StreakService.checkin", AsyncMock()),
+            patch("handlers.admin.get_partner", AsyncMock(return_value=456)),
+            patch("services.admin.AdminService.find_user", AsyncMock()) as find,
+            patch("services.relay.RelayService.prepare", AsyncMock(return_value=
+                  ServiceResult(False, "NOT_CHATTING"))) as relay,
+        ):
+            for text in ("123", "#привет"):
+                await dispatch(text)
+                relay.assert_awaited_with(123, "text")
+            find.assert_not_awaited()
+
+
+    async def check_payment_in_forms(self, dp, bot, telegram):
+        from aiogram.types import SuccessfulPayment
+        from handlers.start import Onboarding
+        from handlers.profile import ProfileEdit
+        from handlers.report import ReportFlow
+        from handlers.admin import AdminMessage, AdminBroadcast
+        from utils.middleware import AntiFloodMiddleware
+
+        dp.message.middleware(AntiFloodMiddleware())
+        state = dp.fsm.get_context(bot=bot, chat_id=123, user_id=123)
+        with (
+            patch.object(bot.session, "make_request", telegram),
+            patch("utils.middleware.check_flood", AsyncMock(return_value=True)) as flood,
+            patch("services.payments.PaymentService.complete", AsyncMock(return_value=
+                  ServiceResult(True, "PAID", {"product": "premium_1m"}))) as complete,
+        ):
+            for flow in (None, Onboarding.AGE, ProfileEdit.PHOTO, ReportFlow.DETAILS,
+                         AdminMessage.CONTENT, AdminBroadcast.CONTENT):
+                await state.set_state(flow)
+                complete.reset_mock()
+                await dp.feed_update(bot, Update(update_id=40, message=Message(
+                    message_id=40, date=datetime.now(timezone.utc), chat=Chat(id=123, type="private"),
+                    from_user=User(id=123, is_bot=False, first_name="Test"),
+                    successful_payment=SuccessfulPayment(currency="XTR", total_amount=100,
+                        invoice_payload="offline", telegram_payment_charge_id="offline-charge",
+                        provider_payment_charge_id=""),
+                )))
+                complete.assert_awaited_once_with(123, "offline", 100, "XTR", "offline-charge")
+            flood.assert_not_awaited()
+            await state.clear()
 
 
 if __name__ == "__main__":

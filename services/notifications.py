@@ -6,7 +6,7 @@ from models.base import async_session
 from models.operations import Notification, Broadcast, Offer
 from models.payment import Payment
 from models.user import User
-from models.chat import Chat
+from models.chat import Chat, ActiveParticipant
 from utils.time import utcnow
 from services.onboarding import banned
 
@@ -67,6 +67,9 @@ class NotificationService:
                 return None
             if n.type=="match" and not await s.scalar(select(Chat.id).where(Chat.session_id==n.callback_data,Chat.status=="active")):
                 n.status="skipped"
+                return None
+            if n.type == "chat_ended" and await s.get(ActiveParticipant, n.user_id):
+                n.status = "skipped"
                 return None
             user = await s.scalar(select(User).where(User.telegram_id==n.user_id))
             marketing_disabled = n.marketing and not json.loads(user.notification_settings or "{}").get("marketing", True) if user else True

@@ -54,7 +54,9 @@ class ChatRepository:
             from services.payments import available_entitlement
             filters = {}
             for uid in (a_id, b_id):
-                entitlement = await available_entitlement(s, uid, ["gender_filter_one_match", "gender_filter_1m"])
+                entitlement = await available_entitlement(s, uid, ["gender_filter_1m"])
+                if not entitlement:
+                    entitlement = await available_entitlement(s, uid, ["gender_filter_one_match"])
                 if entitlement:
                     filters[uid] = entitlement
             if len(users) != 2 or not compatible(*users, gender_access=filters):
