@@ -1,7 +1,10 @@
+import logging
 from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import Message
 from services.chat_manager import check_flood
+
+logger = logging.getLogger(__name__)
 
 
 class AccessMiddleware(BaseMiddleware):
@@ -26,6 +29,7 @@ class AccessMiddleware(BaseMiddleware):
         text = getattr(event, "text", "") or ""
         callback = isinstance(event, CallbackQuery)
         action = event.data if callback else text
+        logger.info("MW action=%s callback=%s user=%s", action, callback, actor.id)
         if action in {"/help", "/rules", T.HELP, T.RULES, "rules", "help"}:
             return await handler(event, data)
         admin_commands = {"/admin", "/user", "/ban_user", "/unban", "/grant", "/price", "/setting", "/season"}
