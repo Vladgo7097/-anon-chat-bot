@@ -20,7 +20,7 @@ PREMIUM_TEXT = (
 async def product_keyboard(codes, session_id=None):
     products = await PaymentService().products(codes)
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f'{p.title} — {p.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>', style="primary",
+        InlineKeyboardButton(text=f'{p.title} — {p.price_stars}⭐', icon_custom_emoji_id="5920281855378068765", style="primary",
             callback_data=f"v1:buy:{p.code}" + (f":{session_id}" if session_id else ""))
     ] for p in products])
 

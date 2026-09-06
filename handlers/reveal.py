@@ -10,7 +10,7 @@ from keyboards import texts as T
 
 def reveal_keyboard(sid):
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Предложить раскрыться", callback_data=f"v1:reveal:{sid}", style="primary")]])
+        InlineKeyboardButton(text="❤️ Предложить раскрыться", icon_custom_emoji_id="5348232622898167572", callback_data=f"v1:reveal:{sid}", style="primary")]])
 
 
 async def show_reveal(message, user_id):
@@ -25,8 +25,8 @@ async def show_reveal(message, user_id):
         await message.answer("Дополнительные возможности запроса:", reply_markup=await product_keyboard(["reveal_priority_request", "reveal_status"], chat.session_id))
     else:
         await message.answer("Включено в Premium:",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Приоритетный запрос",callback_data=f"v1:rp:{chat.session_id}"),
-            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5350427505805238170\">👀</tg-emoji> Статус",callback_data=f"v1:rs:{chat.session_id}")]]))
+            InlineKeyboardButton(text="⚡ Приоритетный запрос", icon_custom_emoji_id="5350618807943576963",callback_data=f"v1:rp:{chat.session_id}"),
+            InlineKeyboardButton(text="👀 Статус", icon_custom_emoji_id="5350427505805238170",callback_data=f"v1:rs:{chat.session_id}")]]))
 
 
 @reveal_router.callback_query(F.data.startswith("v1:rp:"))

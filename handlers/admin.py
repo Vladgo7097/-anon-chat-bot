@@ -310,7 +310,7 @@ async def broadcast_text(message: Message,state: FSMContext):
     job=result.data['job']
     await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5188481279963715781\">🚀</tg-emoji> Запустить рассылку",callback_data=f"admin:send:{job.id}",style="danger")]]))
+            InlineKeyboardButton(text="🚀 Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
 
 
 @admin_router.callback_query(F.data.startswith("admin:send:"))

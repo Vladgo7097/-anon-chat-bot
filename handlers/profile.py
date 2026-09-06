@@ -35,8 +35,8 @@ async def cb_rewards(callback: CallbackQuery):
     text+="\n".join(f"−{o.discount_percent}% · {escape(o.product_scope)} · до {o.ends_at:%d.%m.%Y %H:%M} UTC" for o in offers) or "Пока нет активных скидок."
     await callback.answer()
     await callback.message.answer(text,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="<tg-emoji emoji-id=\"5967432491684860012\">📤</tg-emoji> Поделиться ссылкой",url="https://t.me/share/url?url="+quote(link,safe="")),
-        InlineKeyboardButton(text="<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium",callback_data="premium")]]))
+        InlineKeyboardButton(text="📤 Поделиться ссылкой", icon_custom_emoji_id="5967432491684860012",url="https://t.me/share/url?url="+quote(link,safe="")),
+        InlineKeyboardButton(text="⭐ Premium", icon_custom_emoji_id="5920281855378068765",callback_data="premium")]]))
 
 
 async def show_profile(message, user_id):
@@ -122,7 +122,7 @@ async def cb_delete(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🗑</tg-emoji> Удалить профиль и фотографии? Premium будет отключён. Платёжные записи, жалобы и служебный аудит сохраняются для учёта и рассмотрения обращений.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="<tg-emoji emoji-id=\"5312229088876847138\">🗑</tg-emoji> Да, удалить", callback_data="profile:delete:confirm", style="danger"),
+            InlineKeyboardButton(text="🗑 Да, удалить", icon_custom_emoji_id="5312229088876847138", callback_data="profile:delete:confirm", style="danger"),
             InlineKeyboardButton(text="⬅️ Отмена", callback_data="profile")]]))
 
 
