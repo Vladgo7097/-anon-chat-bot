@@ -27,6 +27,15 @@ def search_lock(user_id):
     return lock
 
 
+async def has_active_participation(user_id):
+    from sqlalchemy import select
+    from models.base import async_session
+    from models.chat import ActiveParticipant
+    async with async_session() as s:
+        return bool(await s.scalar(select(ActiveParticipant.session_id)
+            .where(ActiveParticipant.user_id == user_id)))
+
+
 async def cancel_task(user_id):
     task = _tasks.pop(user_id, None)
     if task and task is not asyncio.current_task():
@@ -73,8 +82,12 @@ async def search_loop(status, user_id, bot=None):
             elapsed = int(time.monotonic()-started)
             from services.settings import bot_value
             if elapsed >= await bot_value("search_timeout", config.SEARCH_TIMEOUT):
+                # cancel() takes the matching lock, so any concurrent match has
+                # committed by now and is visible below; one that starts after
+                # it cannot include this user anymore.
                 await MatchingService().cancel(user_id)
-                await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                if not await has_active_participation(user_id):
+                    await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
                 return
             chat = await MatchingService().find(user_id)
             if chat:

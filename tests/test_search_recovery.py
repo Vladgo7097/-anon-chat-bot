@@ -61,11 +61,18 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restart_keeps_original_timeout(self):
         self.redis.get.return_value = str(time.time() - 120)
-        await search.search_loop(None, 1, self.bot)
+        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)):
+            await search.search_loop(None, 1, self.bot)
         self.service.find.assert_not_awaited()
         self.service.cancel.assert_awaited_once_with(1)
         self.bot.send_message.assert_awaited_once()
         self.assertIn("Пока никого нет", self.bot.send_message.await_args.args[1])
+
+    async def test_timeout_after_concurrent_match_sends_no_failure(self):
+        with patch("handlers.search.has_active_participation", AsyncMock(return_value=True)):
+            await search.search_loop(None, 1, self.bot)
+        self.service.cancel.assert_awaited_once_with(1)
+        self.bot.send_message.assert_not_awaited()
 
     async def test_missing_lifetime_marker_never_matches(self):
         self.redis.get.return_value = None
