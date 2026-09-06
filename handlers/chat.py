@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 def rating_keyboard(session_id):
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='👍 Понравилось', icon_custom_emoji_id="5350417283783084711", callback_data=f"v1:rate:{session_id}:1", style="success"),
-        InlineKeyboardButton(text='👎 Не понравилось', icon_custom_emoji_id="5348132683304156113", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
+        InlineKeyboardButton(text='Понравилось', icon_custom_emoji_id="5350417283783084711", callback_data=f"v1:rate:{session_id}:1", style="success"),
+        InlineKeyboardButton(text='Не понравилось', icon_custom_emoji_id="5348132683304156113", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
     ]])
 
 

@@ -310,7 +310,7 @@ async def broadcast_text(message: Message,state: FSMContext):
     job=result.data['job']
     await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🚀 Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
+            InlineKeyboardButton(text="Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
 
 
 @admin_router.callback_query(F.data.startswith("admin:send:"))
@@ -344,7 +344,7 @@ async def cb_broadcast_status(callback: CallbackQuery):
             f"Создана: {job.created_at:%d.%m.%Y %H:%M UTC}\n"
             f"Завершена: {job.finished_at or '—'}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:broadcasts")]]))
+                InlineKeyboardButton(text="Назад", callback_data="admin:broadcasts")]]))
     else:
         jobs=await AdminService().broadcast_status(callback.from_user.id)
         await callback.answer()
