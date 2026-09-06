@@ -100,6 +100,7 @@ class StartDispatchTests(unittest.TestCase):
                     )))
                     find_user.assert_awaited_with(99, text.lstrip("#"))
             await self.check_input_flows(dp, bot, telegram)
+            await self.check_chat_controls(dp, bot, telegram)
         finally:
             await bot.session.close()
 
@@ -159,6 +160,60 @@ class StartDispatchTests(unittest.TestCase):
                 broadcast.assert_awaited_with(99, "all", text)
             find.assert_not_awaited()
             await state.clear()
+
+    async def check_chat_controls(self, dp, bot, telegram):
+        from types import SimpleNamespace
+        from utils.middleware import AccessMiddleware
+        from handlers.profile import ProfileEdit
+        from handlers.report import ReportFlow
+        from handlers.help import HELP_TEXT
+        from keyboards import texts as T
+
+        dp.message.outer_middleware(AccessMiddleware())
+        state = dp.fsm.get_context(bot=bot, chat_id=123, user_id=123)
+
+        async def dispatch(text):
+            telegram.reset_mock()
+            entities = ([MessageEntity(type=MessageEntityType.BOT_COMMAND, offset=0, length=len(text))]
+                        if text.startswith("/") else [])
+            await dp.feed_update(bot, Update(update_id=30, message=Message(
+                message_id=30, date=datetime.now(timezone.utc), chat=Chat(id=123, type="private"),
+                from_user=User(id=123, is_bot=False, first_name="Test"), text=text, entities=entities,
+            )))
+
+        with (
+            patch.object(bot.session, "make_request", telegram),
+            patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=SimpleNamespace())),
+            patch("services.onboarding.banned", return_value=False),
+            patch("services.onboarding.step_for", return_value="MENU") as step,
+            patch("services.chat_manager.set_online", AsyncMock()),
+            patch("services.chat_manager.get_partner", AsyncMock(return_value=456)),
+            patch("services.growth.StreakService.checkin", AsyncMock()),
+            patch("handlers.search.begin_search", AsyncMock()) as search,
+            patch("handlers.chat.finish", AsyncMock()) as finish,
+            patch("handlers.chat.next_chat", AsyncMock()) as next_chat,
+            patch("handlers.profile.show_profile", AsyncMock()) as profile,
+        ):
+            for action in (T.SEARCH, "/search"):
+                await state.set_state(ProfileEdit.PHOTO)
+                await state.update_data(age_page=2)
+                await dispatch(action)
+                search.assert_awaited()
+                self.assertIsNone(await state.get_state())
+                self.assertEqual(await state.get_data(), {})
+            for action, called in ((T.STOP, finish), ("/stop", finish), (T.NEXT, next_chat)):
+                await state.set_state(ReportFlow.DETAILS)
+                await state.update_data(report_session="old")
+                called.reset_mock()
+                await dispatch(action)
+                called.assert_awaited_once()
+                self.assertIsNone(await state.get_state())
+            await dispatch("/profile@offline_test_bot")
+            profile.assert_not_awaited()
+            self.assertIn("Ты сейчас в диалоге", telegram.await_args.args[1].text)
+            step.return_value = "AGE"
+            await dispatch("/help@offline_test_bot")
+            self.assertEqual(telegram.await_args.args[1].text, HELP_TEXT)
 
 
 if __name__ == "__main__":

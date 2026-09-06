@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import time
+import re
+from html import escape
 from pathlib import Path
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,6 +11,18 @@ from services.chats import ChatService
 from keyboards.reply import main_menu_kb, chat_kb_reply
 
 logger = logging.getLogger(__name__)
+
+
+def notification_content(notification):
+    if notification.type not in {"match", "rating", "unban", "inactive", "reward"}:
+        return notification.text, None
+    # Escape dynamic text, then restore only the supported custom emoji markup.
+    text = escape(notification.text)
+    text = re.sub(
+        r'&lt;tg-emoji emoji-id=&quot;(\d+)&quot;&gt;(.*?)&lt;/tg-emoji&gt;',
+        r'<tg-emoji emoji-id="\1">\2</tg-emoji>', text,
+    )
+    return text, "HTML"
 
 
 async def run(bot):
@@ -32,7 +46,8 @@ async def run(bot):
                         markup=main_menu_kb()
                     elif notification.callback_data:
                         markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть",callback_data=notification.callback_data,style="primary")]])
-                    await bot.send_message(notification.user_id,notification.text,reply_markup=markup,parse_mode=None)
+                    text, parse_mode = notification_content(notification)
+                    await bot.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)
                     await service.finish(notification.id,"sent")
                 except TelegramForbiddenError:
                     await service.finish(notification.id,"failed","forbidden")

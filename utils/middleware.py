@@ -28,7 +28,8 @@ class AccessMiddleware(BaseMiddleware):
             return
         text = getattr(event, "text", "") or ""
         callback = isinstance(event, CallbackQuery)
-        action = event.data if callback else text
+        command = text.split(maxsplit=1)[0].split("@")[0] if text.startswith("/") else ""
+        action = event.data if callback else command or text
         logger.info("MW action=%s callback=%s user=%s", action, callback, actor.id)
         if action in {"/help", "/rules", T.HELP, T.RULES, "rules", "help"}:
             return await handler(event, data)
@@ -49,7 +50,7 @@ class AccessMiddleware(BaseMiddleware):
         if step == "MENU":
             from services.growth import StreakService
             await StreakService().checkin(actor.id)
-        if step != "MENU" and not text.startswith("/start"):
+        if step != "MENU" and command != "/start":
             if callback:
                 await event.answer("Сначала заверши регистрацию.")
                 await show_step(event.message, data["state"], ServiceResult(False, step))
@@ -60,13 +61,22 @@ class AccessMiddleware(BaseMiddleware):
         if step == "MENU" and (await data["state"].get_state() or "").startswith("Onboarding:"):
             await data["state"].clear()
         navigation = {T.MENU, T.PROFILE, T.SETTINGS, T.PREMIUM, T.STATS, "menu", "profile", "settings", "premium", "stats", "/profile"}
-        if action in navigation or text.startswith("/start"):
+        if action in navigation or command == "/start":
             if await get_partner(actor.id):
                 if callback:
                     await event.answer("Сначала заверши текущий диалог.", show_alert=True)
                 else:
                     await event.answer("Ты сейчас в диалоге. Нажми «Стоп», чтобы открыть меню.", reply_markup=chat_kb_reply())
                 return
+        chat_controls = {
+            T.SEARCH, T.CANCEL, T.STOP, T.NEXT, T.REVEAL, T.REPORT,
+            "/search", "/stop", "/report", "search:start", "search:cancel",
+            "chat:stop", "chat:next", "chat:reveal",
+        }
+        if action in chat_controls:
+            await data["state"].clear()
+            # FSM middleware loaded this snapshot before access checks.
+            data["raw_state"] = None
         return await handler(event, data)
 
 
