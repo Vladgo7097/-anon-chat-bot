@@ -1,20 +1,15 @@
-import logging
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from keyboards import texts as T
 import config
 
-logger = logging.getLogger(__name__)
-
 
 def kb_button(text):
     emoji_id = T.EMOJI_IDS.get(text)
-    btn = KeyboardButton(
+    return KeyboardButton(
         text=text,
         icon_custom_emoji_id=emoji_id,
         style="danger" if text in {T.STOP, T.REPORT, T.CANCEL} else "primary"
     )
-    logger.debug("kb_button text=%s emoji_id=%s", text, emoji_id)
-    return btn
 
 
 def keyboard(rows):

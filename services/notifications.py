@@ -110,7 +110,8 @@ class NotificationService:
                 n.scheduled_at=utcnow()+timedelta(seconds=retry_after)
             if error=="forbidden":
                 user=await s.scalar(select(User).where(User.telegram_id==n.user_id))
-                user.bot_blocked_at=utcnow()
+                if user:
+                    user.bot_blocked_at=utcnow()
             if n.broadcast_id and status in {"sent","failed"} and retry_after is None:
                 job=await s.get(Broadcast,n.broadcast_id,with_for_update=True)
                 if status=="sent":

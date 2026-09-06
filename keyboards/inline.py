@@ -113,6 +113,6 @@ def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(
             text=f"#{job.id} · {job.segment} · {job.sent}/{job.sent+job.failed+job.blocked}",
             icon_custom_emoji_id=emoji_id,
-            callback_data=f"admin:broadcast_detail:{job.id}")])
+            callback_data=f"admin:broadcasts:{job.id}")])
     rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

@@ -58,8 +58,8 @@ async def cb_consent(callback: CallbackQuery):
         return
     if result.code == "MUTUAL":
         contacts = result.data["contacts"]
-        for uid, name in contacts.items():
-            other = next(value for key, value in contacts.items() if key != uid)
+        for uid in contacts:
+            other = next((value for key, value in contacts.items() if key != uid), None)
             text = f"@{escape(other)}" if other else "контакт в Telegram не настроен"
             try:
                 await callback.bot.send_message(uid, f"<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> Вы оба хотите общаться открыто!\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Собеседник: {text}")

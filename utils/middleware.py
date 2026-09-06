@@ -30,7 +30,8 @@ class AccessMiddleware(BaseMiddleware):
         callback = isinstance(event, CallbackQuery)
         command = text.split(maxsplit=1)[0].split("@")[0] if text.startswith("/") else ""
         action = event.data if callback else command or text
-        logger.info("MW action=%s callback=%s user=%s", action, callback, actor.id)
+        # Never log message text: relayed content must not reach container logs.
+        logger.debug("event=access_check callback=%s user_id=%s", callback, actor.id)
         if action in {"/help", "/rules", T.HELP, T.RULES, "rules", "help"}:
             return await handler(event, data)
         admin_commands = {"/admin", "/user", "/ban_user", "/unban", "/grant", "/price", "/setting", "/season"}

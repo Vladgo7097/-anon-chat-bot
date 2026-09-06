@@ -78,10 +78,13 @@ async def main():
         import traceback
         logger.error("event=update_failed error_code=%s\n%s", type(event.exception).__name__, "".join(traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__)))
         update = event.update
-        if update.callback_query:
-            await update.callback_query.answer("Не удалось выполнить действие. Попробуй ещё раз.")
-        elif update.message:
-            await update.message.answer("Не удалось выполнить действие. Попробуй ещё раз чуть позже.")
+        try:
+            if update.callback_query:
+                await update.callback_query.answer("Не удалось выполнить действие. Попробуй ещё раз.")
+            elif update.message:
+                await update.message.answer("Не удалось выполнить действие. Попробуй ещё раз чуть позже.")
+        except Exception:
+            logger.warning("event=error_reply_failed update_id=%s", update.update_id)
         return True
 
     logger.info("Bot starting...")

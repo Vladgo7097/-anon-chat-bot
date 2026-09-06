@@ -1,12 +1,9 @@
-import logging
 from aiogram import F
 from aiogram.types import Message, CallbackQuery
 
 from handlers import stats_router
 from keyboards.inline import stats_kb
 from utils.db import get_user_stats
-
-logger = logging.getLogger(__name__)
 
 
 def format_stats(stats: dict) -> str:
@@ -47,7 +44,6 @@ async def cb_stats(callback: CallbackQuery):
 
 @stats_router.message(F.text == "Статистика")
 async def cmd_stats(message: Message):
-    logger.info("STATS HANDLER HIT user=%s text=%s", message.from_user.id, message.text)
     stats = await get_user_stats(message.from_user.id)
     if not stats:
         await message.answer("Профиль не найден.")
