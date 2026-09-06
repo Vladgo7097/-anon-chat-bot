@@ -75,7 +75,8 @@ async def main():
 
     @dp.errors()
     async def on_error(event):
-        logger.error("event=update_failed error_code=%s", type(event.exception).__name__)
+        import traceback
+        logger.error("event=update_failed error_code=%s\n%s", type(event.exception).__name__, "".join(traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__)))
         update = event.update
         if update.callback_query:
             await update.callback_query.answer("Не удалось выполнить действие. Попробуй ещё раз.")
