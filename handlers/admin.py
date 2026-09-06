@@ -142,6 +142,19 @@ async def cb_users(callback: CallbackQuery):
     await callback.message.answer("<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Введи anon_id или telegram_id пользователя:")
 
 
+async def user_card_text(admin_id, user):
+    reports_count = await AdminService().reports_against(admin_id, user.telegram_id)
+    premium = f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
+    return (
+        f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {escape(user.anon_id or '?')}\n"
+        f"Telegram ID: {user.telegram_id}\n"
+        f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
+        f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
+        f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: {reports_count}\n"
+        f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
+        f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>")
+
+
 @admin_router.callback_query(F.data.startswith("admin:user_card:"))
 async def cb_user_card(callback: CallbackQuery):
     value=callback.data.split(":")[-1]
@@ -149,17 +162,8 @@ async def cb_user_card(callback: CallbackQuery):
     if not user:
         await callback.answer("Пользователь не найден",show_alert=True)
         return
-    from html import escape as esc
-    premium=f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
     await callback.answer()
-    await callback.message.answer(
-        f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {esc(user.anon_id or '?')}\n"
-        f"Telegram ID: {user.telegram_id}\n"
-        f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
-        f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
-        f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: —\n"
-        f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
-        f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>",
+    await callback.message.answer(await user_card_text(callback.from_user.id, user),
         reply_markup=admin_user_card_kb(user.telegram_id))
 
 
@@ -220,16 +224,7 @@ async def cmd_user_action(message: Message):
         return
     command=parts[0].split('@')[0]
     if command=="/user":
-        from html import escape as esc
-        premium=f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
-        await message.answer(
-            f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {esc(user.anon_id or '?')}\n"
-            f"Telegram ID: {user.telegram_id}\n"
-            f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
-            f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
-            f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: —\n"
-            f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
-            f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>",
+        await message.answer(await user_card_text(message.from_user.id, user),
             reply_markup=admin_user_card_kb(user.telegram_id))
         return
     if command=="/unban":
@@ -260,16 +255,7 @@ async def admin_text_search(message: Message):
     if text.isdigit() or text.startswith('#'):
         user=await AdminService().find_user(message.from_user.id,text.lstrip('#'))
         if user:
-            from html import escape as esc
-            premium=f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
-            await message.answer(
-                f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {esc(user.anon_id or '?')}\n"
-                f"Telegram ID: {user.telegram_id}\n"
-                f"<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> Регистрация: {user.created_at:%d.%m.%Y}\n"
-                f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
-                f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: —\n"
-                f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
-                f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>",
+            await message.answer(await user_card_text(message.from_user.id, user),
                 reply_markup=admin_user_card_kb(user.telegram_id))
 
 

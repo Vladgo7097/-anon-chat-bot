@@ -83,6 +83,11 @@ class AdminService:
         async with async_session() as s:
             return list((await s.scalars(select(Report).where(Report.status=="pending").order_by(Report.id).offset(offset).limit(10))).all())
 
+    async def reports_against(self, admin, uid):
+        authorize(admin)
+        async with async_session() as s:
+            return await s.scalar(select(func.count(Report.id)).where(Report.reported_id == uid))
+
     async def report_details(self,admin,report):
         authorize(admin)
         async with async_session() as s:

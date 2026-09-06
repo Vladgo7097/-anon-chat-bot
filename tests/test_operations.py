@@ -53,6 +53,15 @@ class OperationsTests(DatabaseCase):
         for value in ("9" * 4000, "²", "", "#missing"):
             self.assertIsNone(await AdminService().find_user(99, value))
 
+    async def test_user_card_counts_reports(self):
+        from handlers.admin import user_card_text
+        async with self.factory.begin() as s:
+            s.add(Report(reporter_id=2, reported_id=1, chat_session_id="sess-card", reason="Спам/реклама"))
+        user = await AdminService().find_user(99, "#test1")
+        text = await user_card_text(99, user)
+        self.assertIn("Жалоб на него: 1", text)
+        self.assertNotIn("Жалоб на него: —", text)
+
     async def test_old_end_notification_does_not_interrupt_new_chat(self):
         old = await self.repo.match(1, 2, self.redis)
         await self.repo.end(1, old.session_id, "timeout")
