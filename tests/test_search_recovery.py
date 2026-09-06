@@ -61,7 +61,8 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restart_keeps_original_timeout(self):
         self.redis.get.return_value = str(time.time() - 120)
-        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)):
+        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+             patch("utils.db.is_premium", AsyncMock(return_value=False)):
             await search.search_loop(None, 1, self.bot)
         self.service.find.assert_not_awaited()
         self.service.cancel.assert_awaited_once_with(1)
@@ -72,6 +73,40 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch("handlers.search.has_active_participation", AsyncMock(return_value=True)):
             await search.search_loop(None, 1, self.bot)
         self.service.cancel.assert_awaited_once_with(1)
+        self.bot.send_message.assert_not_awaited()
+
+    async def test_timeout_ends_search_for_free_user(self):
+        self.redis.get.return_value = str(time.time() - 120)
+        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+             patch("utils.db.is_premium", AsyncMock(return_value=False)):
+            await search.search_loop(None, 1, self.bot)
+        self.service.cancel.assert_awaited_once_with(1)
+        self.service.enqueue.assert_not_awaited()
+        self.bot.send_message.assert_awaited_once()
+
+    async def test_premium_search_survives_timeout(self):
+        from services.result import ServiceResult
+        self.service.enqueue = AsyncMock(return_value=ServiceResult(True, "SEARCH_STARTED"))
+        self.service.find = AsyncMock(return_value=SimpleNamespace(user1_id=1, user2_id=2))
+        self.redis.get.return_value = str(time.time() - 120)
+        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+             patch("utils.db.is_premium", AsyncMock(return_value=True)), \
+             patch("handlers.search.asyncio.sleep", AsyncMock()):
+            await search.search_loop(None, 1, self.bot)
+        self.service.cancel.assert_awaited_once_with(1)
+        self.service.enqueue.assert_awaited_once_with(1)
+        self.service.find.assert_awaited_once_with(1)
+        self.bot.send_message.assert_not_awaited()
+
+    async def test_premium_search_exits_when_reenqueue_rejected(self):
+        from services.result import ServiceResult
+        self.service.enqueue = AsyncMock(return_value=ServiceResult(False, "BANNED"))
+        self.redis.get.return_value = str(time.time() - 120)
+        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+             patch("utils.db.is_premium", AsyncMock(return_value=True)), \
+             patch("handlers.search.asyncio.sleep", AsyncMock()):
+            await search.search_loop(None, 1, self.bot)
+        self.service.enqueue.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
     async def test_missing_lifetime_marker_never_matches(self):

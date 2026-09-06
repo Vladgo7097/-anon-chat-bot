@@ -86,8 +86,18 @@ async def search_loop(status, user_id, bot=None):
                 # committed by now and is visible below; one that starts after
                 # it cannot include this user anymore.
                 await MatchingService().cancel(user_id)
-                if not await has_active_participation(user_id):
-                    await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                if await has_active_participation(user_id):
+                    return
+                from utils.db import is_premium
+                if await is_premium(user_id):
+                    # Spec 14.6: Premium search does not time out. Re-enqueue
+                    # with priority and keep waiting for another full window.
+                    requeued = await MatchingService().enqueue(user_id)
+                    if requeued.code == "SEARCH_STARTED":
+                        started = time.monotonic()
+                        continue
+                    return
+                await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
                 return
             chat = await MatchingService().find(user_id)
             if chat:
