@@ -1,4 +1,5 @@
 from html import escape
+import config
 from aiogram import F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -243,7 +244,10 @@ async def cmd_user_action(message: Message):
     await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено" if result.ok else "Проверь параметры.")
 
 
-@admin_router.message(F.text.func(lambda t: t and not t.startswith('/') and t not in {"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель","<tg-emoji emoji-id=\"5931472654660800739\">📊</tg-emoji> Статистика","<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Монетизация","<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалобы","<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Баны","<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователи","<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылка","<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Настройки бота","<tg-emoji emoji-id=\"5283130719806175947\">📈</tg-emoji> Воронка","<tg-emoji emoji-id=\"5460865451586250451\">📋</tg-emoji> Рассылки (статус)"}))
+@admin_router.message(
+    F.from_user.id.func(lambda user_id: user_id in config.ADMIN_IDS),
+    F.text.func(lambda text: bool(text) and (text.strip().isdigit() or text.strip().startswith("#"))),
+)
 async def admin_text_search(message: Message):
     text=message.text.strip()
     if text.isdigit() or text.startswith('#'):

@@ -69,6 +69,36 @@ class StartDispatchTests(unittest.TestCase):
                     from_user=User(id=123,is_bot=False,first_name="Test"),text=T.MALE)))
                 edit.assert_awaited_once_with(123,"gender","male")
                 self.assertIsNone(await state.get_state())
+            from handlers.help import HELP_TEXT
+            from handlers.stats import format_stats
+            stats = {"chats_count": 7, "total_chat_seconds": 3660, "rating_pct": 80}
+            with (
+                patch("config.ADMIN_IDS", {99}),
+                patch("handlers.stats.get_user_stats", AsyncMock(return_value=stats)) as get_stats,
+                patch("services.admin.AdminService.find_user", AsyncMock(return_value=None)) as find_user,
+                patch.object(bot.session, "make_request", telegram),
+            ):
+                for user_id in (123, 99):
+                    for text, expected in ((T.STATS, format_stats(stats)), (T.HELP, HELP_TEXT)):
+                        telegram.reset_mock()
+                        await dp.feed_update(bot, Update(update_id=10, message=Message(
+                            message_id=10, date=datetime.now(timezone.utc),
+                            chat=Chat(id=user_id, type="private"),
+                            from_user=User(id=user_id, is_bot=False, first_name="Test"),
+                            text=text,
+                        )))
+                        telegram.assert_awaited_once()
+                        self.assertEqual(telegram.await_args.args[1].text, expected)
+                        self.assertEqual(telegram.await_args.args[1].chat_id, user_id)
+                self.assertEqual(get_stats.await_count, 2)
+                find_user.assert_not_awaited()
+                for text in ("123", "#ABC123"):
+                    await dp.feed_update(bot, Update(update_id=11, message=Message(
+                        message_id=11, date=datetime.now(timezone.utc),
+                        chat=Chat(id=99, type="private"),
+                        from_user=User(id=99, is_bot=False, first_name="Admin"), text=text,
+                    )))
+                    find_user.assert_awaited_with(99, text.lstrip("#"))
         finally:
             await bot.session.close()
 
