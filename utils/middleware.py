@@ -39,7 +39,7 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
         if actor.id in ADMIN_IDS and (action.startswith("admin:") or action.startswith("bc:")):
             return await handler(event, data)
-        user = await UserRepository().get_or_create(actor.id, actor.username, actor.first_name)
+        user, _ = await UserRepository().get_or_create(actor.id, actor.username, actor.first_name)
         data["anon_id"] = getattr(user, "anon_id", None)
         if banned(user):
             if callback:

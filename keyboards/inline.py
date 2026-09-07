@@ -67,6 +67,7 @@ def admin_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="Настройки бота", icon_custom_emoji_id="6129805886383723340", callback_data="admin:settings"),
+            InlineKeyboardButton(text="Реклама", icon_custom_emoji_id="5215668805199473901", callback_data="admin:ads"),
         ],
     ])
 
@@ -84,12 +85,18 @@ def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
     ])
 
 
-def admin_broadcast_audience_kb() -> InlineKeyboardMarkup:
+def admin_broadcast_audience_kb(sizes=None) -> InlineKeyboardMarkup:
+    sizes = sizes or {}
+
+    def label(text, segment):
+        size = sizes.get(segment)
+        return text if size is None else f"{text} ({size:,})".replace(",", " ")
+
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Все", icon_custom_emoji_id="5942877472163892475", callback_data="bc:all")],
-        [InlineKeyboardButton(text="Premium", icon_custom_emoji_id="5258165702707125574", callback_data="bc:premium")],
-        [InlineKeyboardButton(text="Неактивные 7+ дней", icon_custom_emoji_id="5949785428843302949", callback_data="bc:inactive")],
-        [InlineKeyboardButton(text="Без покупок", icon_custom_emoji_id="5271783639548441015", callback_data="bc:nopay")],
+        [InlineKeyboardButton(text=label("Все", "all"), icon_custom_emoji_id="5942877472163892475", callback_data="bc:all")],
+        [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data="bc:premium")],
+        [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bc:inactive")],
+        [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bc:nopay")],
     ])
 
 
@@ -110,9 +117,58 @@ def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
     for job in jobs:
         status_info = {"draft": ("5460865451586250451", "Черновик"), "queued": ("5296482716567495148", "Ожидает"), "sending": ("5967432491684860012", "Отправка"), "completed": ("5280880410346152584", "Готово")}.get(job.status, ("5280880410346152584", "?"))
         emoji_id, status_label = status_info
+        done = job.sent+job.failed
+        scale = job.total or (done or 1)
         rows.append([InlineKeyboardButton(
-            text=f"#{job.id} · {job.segment} · {job.sent}/{job.sent+job.failed+job.blocked}",
+            text=f"#{job.id} · {job.segment} · {status_label} · {done}/{scale}",
             icon_custom_emoji_id=emoji_id,
             callback_data=f"admin:broadcasts:{job.id}")])
     rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_ads_kb(campaigns) -> InlineKeyboardMarkup:
+    status_label = {"draft": "Черновик", "active": "Идёт", "paused": "Пауза"}
+    rows = [[InlineKeyboardButton(
+        text=f"#{c.id} · {status_label.get(c.status, c.status)} · {c.title[:20]} · {c.impressions_total}",
+        callback_data=f"admin:ad:{c.id}")] for c in campaigns]
+    rows.append([InlineKeyboardButton(text="Новая кампания", icon_custom_emoji_id="5188481279963715781", callback_data="admin:ad:new", style="primary")])
+    rows.append([InlineKeyboardButton(text="Настройки рекламы", icon_custom_emoji_id="6129805886383723340", callback_data="admin:ads:settings")])
+    rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_ads_settings_kb(cooldown_seconds) -> InlineKeyboardMarkup:
+    def mark(seconds):
+        return " ✓" if cooldown_seconds == seconds else ""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=f"10 мин{mark(600)}", callback_data="admin:ads:settings:set:600"),
+            InlineKeyboardButton(text=f"30 мин{mark(1800)}", callback_data="admin:ads:settings:set:1800"),
+            InlineKeyboardButton(text=f"60 мин{mark(3600)}", callback_data="admin:ads:settings:set:3600"),
+        ],
+        [InlineKeyboardButton(text="Своё значение", icon_custom_emoji_id="5301173701323028420", callback_data="admin:ads:settings:custom")],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:ads")],
+    ])
+
+
+def admin_ads_settings_cancel_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Отменить", icon_custom_emoji_id="5312229088876847138", callback_data="admin:ads:settings:cancel", style="danger")]])
+
+
+def admin_ad_card_kb(campaign) -> InlineKeyboardMarkup:
+    rows = []
+    if campaign.status == "draft":
+        rows.append([
+            InlineKeyboardButton(text="Запустить", icon_custom_emoji_id="5188481279963715781", callback_data=f"admin:ad:launch:{campaign.id}", style="success"),
+            InlineKeyboardButton(text="Удалить", icon_custom_emoji_id="5312229088876847138", callback_data=f"admin:ad:delete:{campaign.id}", style="danger"),
+        ])
+    elif campaign.status == "active":
+        rows.append([InlineKeyboardButton(text="Пауза", callback_data=f"admin:ad:pause:{campaign.id}", style="danger")])
+    elif campaign.status == "paused":
+        rows.append([InlineKeyboardButton(text="Возобновить", callback_data=f"admin:ad:resume:{campaign.id}", style="success")])
+    if campaign.status in {"active", "paused"}:
+        rows.append([InlineKeyboardButton(text="Завершить", callback_data=f"admin:ad:complete:{campaign.id}", style="danger")])
+    rows.append([InlineKeyboardButton(text="К списку", callback_data="admin:ads")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

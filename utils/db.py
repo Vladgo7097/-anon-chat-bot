@@ -1,10 +1,11 @@
-"""Read compatibility helpers. Mutations belong to transactional services."""
+"""Read compatibility helpers. Mutations belong in transactional services."""
 from repositories.users import UserRepository
 from repositories.chats import premium_active
 
 
 async def get_or_create_user(telegram_id, username=None, first_name=None):
-    return await UserRepository().get_or_create(telegram_id, username, first_name)
+    user, _ = await UserRepository().get_or_create(telegram_id, username, first_name)
+    return user
 
 
 async def get_user_by_id(telegram_id):

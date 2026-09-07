@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+from datetime import date
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -14,6 +15,33 @@ from workers.maintenance import run as maintenance_loop
 from utils.middleware import AntiFloodMiddleware, AccessMiddleware
 
 logger = logging.getLogger(__name__)
+
+
+async def notify_owner_on_startup():
+    if not config.OWNER_ID:
+        return
+    from models.base import async_session
+    from models.user import User
+    from models.operations import Notification
+    from services.notifications import enqueue
+    from utils.time import utcnow
+    from sqlalchemy import func, select, delete
+    today = date.today().isoformat()
+    now = utcnow()
+    async with async_session.begin() as s:
+        total_users = await s.scalar(select(func.count(User.id))) or 0
+        text = (
+            f"<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Бот запущен\n\n"
+            f"Пользователей: <b>{total_users}</b>\n"
+            f"Дата: {today}\n"
+            f"Время: {now:%H:%M} UTC"
+        )
+        dedupe_key = f"startup:{config.OWNER_ID}:{today}"
+        # A restart mid-day replaces the day's still-queued notice rather than
+        # stacking one per deploy; an already-sent one is not recalled.
+        await s.execute(delete(Notification).where(
+            Notification.dedupe_key == dedupe_key, Notification.status == "queued"))
+        await enqueue(s, config.OWNER_ID, "startup", dedupe_key, text)
 
 
 async def on_startup():
@@ -33,6 +61,7 @@ async def on_startup():
     from services.chats import ChatService
     await ChatService().reconcile()
     logger.info("Database tables created")
+    await notify_owner_on_startup()
 
 
 async def on_shutdown():

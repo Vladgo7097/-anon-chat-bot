@@ -5,10 +5,12 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import admin_router
 from keyboards import texts as T
-from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb
+from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb
 from services.admin import AdminService, StatsService, authorize
+from services.ads import AdCampaignService
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
 
@@ -33,6 +35,18 @@ class AdminBroadcast(StatesGroup):
 
 class AdminMessage(StatesGroup):
     CONTENT=State()
+
+
+class AdminAdCampaign(StatesGroup):
+    CHANNEL=State()
+    TITLE=State()
+    SUBTITLE=State()
+    BODY=State()
+    LIMITS=State()
+
+
+class AdminAdSettings(StatesGroup):
+    COOLDOWN=State()
 
 
 @admin_router.message(Command("season"))
@@ -278,10 +292,66 @@ async def cmd_setting(message: Message):
     await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено" if result.ok else "Недопустимое значение.")
 
 
+SEGMENT_TITLES = {"all": "все пользователи", "premium": "Premium",
+                  "inactive": "неактивные 7+ дней", "nopay": "без покупок"}
+STATUS_TITLES = {"draft": "черновик", "queued": "готовим список",
+                 "sending": "отправка", "completed": "готово"}
+FILLED, EMPTY, THIN_SPACE = "█", "░", " "
+
+
+def amount(value):
+    return f"{value:,}".replace(",", THIN_SPACE)
+
+
+def progress_bar(done, total, width=16):
+    if total <= 0:
+        return EMPTY*width
+    filled = max(0, min(width, round(width*done/total)))
+    return FILLED*filled + EMPTY*(width-filled)
+
+
+def broadcast_card(job, counts):
+    """One renderer for the live progress message and the status screen."""
+    sent, failed = counts.get("sent", 0), counts.get("failed", 0)
+    skipped, expanded = counts.get("skipped", 0), sum(counts.values())
+    processed = sent + failed + skipped
+    # Until expansion finishes, the audience snapshot is the honest denominator.
+    scale = max(job.total, expanded, 1)
+    lines = ["<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> "
+             f"Рассылка #{job.id} · {SEGMENT_TITLES.get(job.segment, job.segment)}"]
+    if job.status == "draft":
+        lines.append("\nЧерновик, ещё не запущена.")
+    else:
+        lines.append(f"\n<code>[{progress_bar(processed, scale)}]</code> {round(100*processed/scale)}%\n")
+        lines.append(f"Отправлено: {amount(sent)}")
+        blocked = f" (заблокировали бота: {amount(job.blocked)})" if job.blocked else ""
+        lines.append(f"Не доставлено: {amount(failed)}{blocked}")
+        if skipped:
+            lines.append(f"Пропущено: {amount(skipped)}")
+        lines.append(f"Обработано: {amount(processed)} из {amount(max(job.total, expanded))}")
+    lines.append(f"\nСтатус: {STATUS_TITLES.get(job.status, job.status)}")
+    if job.started_at:
+        lines.append(f"Запущена: {job.started_at:%d.%m.%Y %H:%M} UTC")
+    if job.finished_at:
+        lines.append(f"Завершена: {job.finished_at:%d.%m.%Y %H:%M} UTC")
+    return "\n".join(lines)
+
+
+def broadcast_card_kb(job_id):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Обновить", icon_custom_emoji_id="5260450573768990626",
+                             callback_data=f"admin:broadcasts:{job_id}"),
+        InlineKeyboardButton(text="К списку", callback_data="admin:broadcasts")]])
+
+
 @admin_router.callback_query(F.data=="admin:broadcast")
 async def cb_broadcast(callback: CallbackQuery):
+    service = AdminService()
+    sizes = {segment: await service.audience_size(callback.from_user.id, segment)
+             for segment in ("all", "premium", "inactive", "nopay")}
     await callback.answer()
-    await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Выбери аудиторию:",reply_markup=admin_broadcast_audience_kb())
+    await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Выбери аудиторию:",
+                                  reply_markup=admin_broadcast_audience_kb(sizes))
 
 
 @admin_router.callback_query(F.data.startswith("bc:"))
@@ -316,8 +386,15 @@ async def cb_send(callback: CallbackQuery):
     if not value.isdigit():
         await callback.answer("Недопустимая рассылка")
         return
-    result=await AdminService().confirm_broadcast(callback.from_user.id,int(value))
+    service=AdminService()
+    result=await service.confirm_broadcast(callback.from_user.id,int(value))
     await callback.answer("Добавлено в очередь" if result.ok else "Рассылка уже запущена")
+    if not result.ok:
+        return
+    job=result.data["job"]
+    # The worker keeps editing this message until the broadcast finishes.
+    progress=await callback.message.answer(broadcast_card(job,{}),reply_markup=broadcast_card_kb(job.id))
+    await service.attach_progress(callback.from_user.id,job.id,progress.chat.id,progress.message_id)
 
 
 @admin_router.callback_query(F.data=="admin:broadcasts")
@@ -326,22 +403,22 @@ async def cb_broadcast_status(callback: CallbackQuery):
     value=callback.data.split(":")[-1]
     job_id=int(value) if value.isdigit() else None
     if job_id:
-        job=await AdminService().broadcast_status(callback.from_user.id,job_id)
-        if not job:
+        found=await AdminService().broadcast_progress(callback.from_user.id,job_id)
+        if not found:
             await callback.answer("Рассылка не найдена",show_alert=True)
             return
-        await callback.answer()
-        await callback.message.answer(
-            f"<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылка #{job.id}\n"
-            f"Аудитория: {job.segment}\n"
-            f"Статус: {job.status}\n"
-            f"Отправлено: {job.sent}\n"
-            f"Ошибок: {job.failed}\n"
-            f"Заблокировано: {job.blocked}\n"
-            f"Создана: {job.created_at:%d.%m.%Y %H:%M UTC}\n"
-            f"Завершена: {job.finished_at or '—'}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="Назад", callback_data="admin:broadcasts")]]))
+        job,counts=found
+        text,markup=broadcast_card(job,counts),broadcast_card_kb(job.id)
+        try:
+            await callback.message.edit_text(text,reply_markup=markup)
+            await callback.answer("Обновлено")
+        except TelegramBadRequest as error:
+            # Refreshing an unchanged card is normal; anything else gets a new message.
+            if "message is not modified" in error.message:
+                await callback.answer("Без изменений")
+            else:
+                await callback.answer()
+                await callback.message.answer(text,reply_markup=markup)
     else:
         jobs=await AdminService().broadcast_status(callback.from_user.id)
         await callback.answer()
@@ -349,3 +426,235 @@ async def cb_broadcast_status(callback: CallbackQuery):
             await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылок пока нет.",reply_markup=admin_kb())
             return
         await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Последние рассылки:",reply_markup=admin_broadcast_status_kb(jobs))
+
+
+def ad_campaign_card_text(campaign):
+    from handlers.chat import ad_card_text
+    preview = ad_card_text({"title": campaign.title, "subtitle": campaign.subtitle, "body": campaign.body,
+                            "channel_username": campaign.channel_username})
+    def limit(v):
+        return "без лимита" if not v else str(v)
+    joins = (f"Вступлений по рекламной ссылке: {campaign.joins_total}" if campaign.invite_link else
+             "Вступления не отслеживаются — добавь бота админом канала и перезапусти кампанию.")
+    stats = (f"\n\n<b>Кампания #{campaign.id}</b>\n"
+             f"Канал: @{campaign.channel_username}\n"
+             f"Показов: {campaign.impressions_total} · дневной лимит: {limit(campaign.daily_limit)} · "
+             f"общий лимит: {limit(campaign.total_limit)}\n"
+             f"{joins}\n"
+             f"Клики не измеряются — Telegram не уведомляет бота о нажатии ссылки.")
+    return preview + stats
+
+
+@admin_router.callback_query(F.data == "admin:ads")
+async def cb_ads(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    campaigns = await AdCampaignService().list(callback.from_user.id)
+    await callback.answer()
+    text = "<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рекламные кампании" if campaigns else \
+        "<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Кампаний пока нет."
+    await callback.message.answer(text, reply_markup=admin_ads_kb(campaigns))
+
+
+async def ads_settings_text(cooldown):
+    minutes = cooldown // 60
+    return (f"<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Настройки рекламы\n\n"
+            f"Частота показа: не чаще раза в {minutes} мин ({cooldown} сек) одному пользователю.\n"
+            f"Действует сразу на все кампании.")
+
+
+@admin_router.callback_query(F.data == "admin:ads:settings")
+async def cb_ads_settings(callback: CallbackQuery, state: FSMContext):
+    from services.settings import bot_value
+    await state.clear()
+    cooldown = await bot_value("ad_cooldown_seconds", 1800)
+    await callback.answer()
+    await callback.message.answer(await ads_settings_text(cooldown), reply_markup=admin_ads_settings_kb(cooldown))
+
+
+@admin_router.callback_query(F.data.startswith("admin:ads:settings:set:"))
+async def cb_ads_settings_set(callback: CallbackQuery):
+    from services.settings import bot_value
+    value = callback.data.split(":")[-1]
+    if not value.isdigit():
+        await callback.answer("Недопустимое значение")
+        return
+    result = await AdminService().setting(callback.from_user.id, "ad_cooldown_seconds", int(value))
+    await callback.answer("Сохранено" if result.ok else "Недопустимое значение")
+    cooldown = await bot_value("ad_cooldown_seconds", 1800)
+    await callback.message.edit_text(await ads_settings_text(cooldown), reply_markup=admin_ads_settings_kb(cooldown))
+
+
+@admin_router.callback_query(F.data == "admin:ads:settings:custom")
+async def cb_ads_settings_custom(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminAdSettings.COOLDOWN)
+    await callback.answer()
+    await callback.message.answer(
+        "Введи новую частоту показа в секундах (0–86400, например 900):",
+        reply_markup=admin_ads_settings_cancel_kb())
+
+
+@admin_router.callback_query(F.data == "admin:ads:settings:cancel")
+async def cb_ads_settings_cancel(callback: CallbackQuery, state: FSMContext):
+    from services.settings import bot_value
+    await state.clear()
+    await callback.answer("Отменено")
+    cooldown = await bot_value("ad_cooldown_seconds", 1800)
+    await callback.message.answer(await ads_settings_text(cooldown), reply_markup=admin_ads_settings_kb(cooldown))
+
+
+@admin_router.message(AdminAdSettings.COOLDOWN, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def ads_settings_cooldown(message: Message, state: FSMContext):
+    from services.settings import bot_value
+    if not message.text.isdigit():
+        await message.answer("Нужно неотрицательное число секунд.", reply_markup=admin_ads_settings_cancel_kb())
+        return
+    result = await AdminService().setting(message.from_user.id, "ad_cooldown_seconds", int(message.text))
+    if not result.ok:
+        await message.answer("Значение вне диапазона 0–86400.", reply_markup=admin_ads_settings_cancel_kb())
+        return
+    await state.clear()
+    cooldown = await bot_value("ad_cooldown_seconds", 1800)
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено.")
+    await message.answer(await ads_settings_text(cooldown), reply_markup=admin_ads_settings_kb(cooldown))
+
+
+@admin_router.callback_query(F.data == "admin:ad:new")
+async def cb_ad_new(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminAdCampaign.CHANNEL)
+    await callback.answer()
+    await callback.message.answer(
+        "Username канала-рекламодателя, без @ (например anon_chat_news):\n/cancel — отменить.")
+
+
+@admin_router.message(AdminAdCampaign.CHANNEL, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def ad_channel(message: Message, state: FSMContext):
+    value = message.text.strip().lstrip("@")
+    if not (5 <= len(value) <= 32) or not value.replace("_", "").isalnum():
+        await message.answer("Username канала: 5–32 символа, латиница/цифры/подчёркивание. Попробуй ещё раз.")
+        return
+    await state.update_data(channel_username=value)
+    await state.set_state(AdminAdCampaign.TITLE)
+    await message.answer("Название с эмодзи, до 64 символов (например «🌍 Мир вокруг»):")
+
+
+@admin_router.message(AdminAdCampaign.TITLE, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def ad_title(message: Message, state: FSMContext):
+    if not 1 <= len(message.text) <= 64:
+        await message.answer("Название должно быть от 1 до 64 символов.")
+        return
+    await state.update_data(title=message.text)
+    await state.set_state(AdminAdCampaign.SUBTITLE)
+    await message.answer("Подзаголовок, до 64 символов (например «Путешествия · 89K подписчиков»). Пришли «-», чтобы пропустить:")
+
+
+@admin_router.message(AdminAdCampaign.SUBTITLE, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def ad_subtitle(message: Message, state: FSMContext):
+    if len(message.text) > 64:
+        await message.answer("Подзаголовок должен быть не длиннее 64 символов.")
+        return
+    await state.update_data(subtitle="" if message.text.strip() == "-" else message.text)
+    await state.set_state(AdminAdCampaign.BODY)
+    await message.answer("Текст объявления, до 400 символов:")
+
+
+@admin_router.message(AdminAdCampaign.BODY, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def ad_body(message: Message, state: FSMContext):
+    if not 1 <= len(message.text) <= 400:
+        await message.answer("Текст объявления должен быть от 1 до 400 символов.")
+        return
+    await state.update_data(body=message.text)
+    await state.set_state(AdminAdCampaign.LIMITS)
+    await message.answer(
+        "Лимиты показов: два числа через пробел — дневной и общий (0 = без лимита). Например «0 5000»:")
+
+
+@admin_router.message(AdminAdCampaign.LIMITS, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def ad_limits(message: Message, state: FSMContext):
+    parts = message.text.split()
+    if len(parts) != 2 or not all(p.isdigit() for p in parts):
+        await message.answer("Нужны два неотрицательных числа через пробел, например «0 5000».")
+        return
+    data = await state.get_data()
+    result = await AdCampaignService().create(message.from_user.id, data["channel_username"], data["title"],
+        data["subtitle"], data["body"], int(parts[0]), int(parts[1]))
+    await state.clear()
+    if not result.ok:
+        await message.answer(f"Не удалось создать кампанию: {result.code}")
+        return
+    campaign = await AdCampaignService().get(message.from_user.id, result.data["campaign_id"])
+    await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Черновик сохранён. Так увидят объявление подписчики:")
+    await message.answer(ad_campaign_card_text(campaign), reply_markup=admin_ad_card_kb(campaign))
+
+
+def _ad_id(callback):
+    parts = callback.data.split(":")
+    return int(parts[-1]) if parts[-1].isdigit() else None
+
+
+@admin_router.callback_query(F.data.startswith("admin:ad:launch:"))
+async def cb_ad_launch(callback: CallbackQuery):
+    campaign_id = _ad_id(callback)
+    if campaign_id is None:
+        await callback.answer("Недопустимая кампания")
+        return
+    campaign = await AdCampaignService().get(callback.from_user.id, campaign_id)
+    if not campaign:
+        await callback.answer("Кампания не найдена")
+        return
+    invite_link, note = None, ""
+    try:
+        # A tracked invite link is what lets a later join be attributed to
+        # this campaign; it only succeeds if the bot is an admin there.
+        link = await callback.bot.create_chat_invite_link(
+            chat_id=f"@{campaign.channel_username}", name=f"ad-{campaign.id}")
+        invite_link = link.invite_link
+    except (TelegramBadRequest, TelegramForbiddenError):
+        note = ("\n\n⚠️ Ссылка для учёта вступлений не создана: бот не админ канала "
+                f"@{campaign.channel_username}. Кампания запущена с обычной ссылкой; "
+                "добавь бота админом и перезапусти, если нужна статистика вступлений.")
+    result = await AdCampaignService().set_status(callback.from_user.id, campaign_id, "active", invite_link=invite_link)
+    await callback.answer("Запущено" if result.ok else "Действие недоступно")
+    campaign = await AdCampaignService().get(callback.from_user.id, campaign_id)
+    if campaign:
+        await callback.message.answer(ad_campaign_card_text(campaign)+note, reply_markup=admin_ad_card_kb(campaign))
+
+
+@admin_router.callback_query(F.data.startswith("admin:ad:pause:"))
+@admin_router.callback_query(F.data.startswith("admin:ad:resume:"))
+@admin_router.callback_query(F.data.startswith("admin:ad:complete:"))
+async def cb_ad_status(callback: CallbackQuery):
+    campaign_id = _ad_id(callback)
+    action = callback.data.split(":")[2]
+    status = {"pause": "paused", "resume": "active", "complete": "completed"}[action]
+    if campaign_id is None:
+        await callback.answer("Недопустимая кампания")
+        return
+    result = await AdCampaignService().set_status(callback.from_user.id, campaign_id, status)
+    await callback.answer("Сохранено" if result.ok else "Действие недоступно")
+    campaign = await AdCampaignService().get(callback.from_user.id, campaign_id)
+    if campaign:
+        await callback.message.answer(ad_campaign_card_text(campaign), reply_markup=admin_ad_card_kb(campaign))
+
+
+@admin_router.callback_query(F.data.startswith("admin:ad:delete:"))
+async def cb_ad_delete(callback: CallbackQuery):
+    campaign_id = _ad_id(callback)
+    if campaign_id is None:
+        await callback.answer("Недопустимая кампания")
+        return
+    result = await AdCampaignService().delete_draft(callback.from_user.id, campaign_id)
+    await callback.answer("Удалено" if result.ok else "Действие недоступно")
+    if result.ok:
+        campaigns = await AdCampaignService().list(callback.from_user.id)
+        await callback.message.answer("Черновик удалён.", reply_markup=admin_ads_kb(campaigns))
+
+
+@admin_router.callback_query(F.data.regexp(r"^admin:ad:\d+$"))
+async def cb_ad_view(callback: CallbackQuery):
+    campaign_id = _ad_id(callback)
+    campaign = await AdCampaignService().get(callback.from_user.id, campaign_id) if campaign_id is not None else None
+    if not campaign:
+        await callback.answer("Кампания не найдена", show_alert=True)
+        return
+    await callback.answer()
+    await callback.message.answer(ad_campaign_card_text(campaign), reply_markup=admin_ad_card_kb(campaign))

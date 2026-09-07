@@ -40,7 +40,7 @@ async def show_step(message, state, result, page=0):
 async def cmd_start(message: Message, state: FSMContext):
     user = message.from_user
     payload = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
-    result = await OnboardingService().start(user.id, user.username, user.first_name, payload)
+    result = await OnboardingService().start(user.id, user.username, user.first_name, payload, notify_owner=True)
     await show_step(message, state, result)
 
 

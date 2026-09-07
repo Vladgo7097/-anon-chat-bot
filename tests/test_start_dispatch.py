@@ -195,7 +195,7 @@ class StartDispatchTests(unittest.TestCase):
 
         with (
             patch.object(bot.session, "make_request", telegram),
-            patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=SimpleNamespace())),
+            patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=(SimpleNamespace(), False))),
             patch("services.onboarding.banned", return_value=False),
             patch("services.onboarding.step_for", return_value="MENU") as step,
             patch("services.chat_manager.set_online", AsyncMock()),
@@ -241,7 +241,7 @@ class StartDispatchTests(unittest.TestCase):
         with (
             patch.object(bot.session, "make_request", telegram),
             patch("config.ADMIN_IDS", {123}),
-            patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=SimpleNamespace())),
+            patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=(SimpleNamespace(), False))),
             patch("services.onboarding.banned", return_value=False),
             patch("services.onboarding.step_for", return_value="MENU"),
             patch("services.chat_manager.set_online", AsyncMock()),

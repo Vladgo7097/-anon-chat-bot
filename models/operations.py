@@ -99,9 +99,63 @@ class Broadcast(Base):
     content: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="draft")
     cursor: Mapped[int] = mapped_column(BigInteger, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     sent: Mapped[int] = mapped_column(Integer, default=0)
     failed: Mapped[int] = mapped_column(Integer, default=0)
     blocked: Mapped[int] = mapped_column(Integer, default=0)
+    progress_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    progress_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    progress_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+
+class AdCampaign(Base):
+    """A cross-promo slot sold to another Telegram channel, shown between chats.
+
+    Revenue here is external (the advertiser pays outside Stars); the bot only
+    tracks impressions, and joins when the channel granted admin rights, against
+    the agreed budget. Telegram does not notify a bot when a plain url= button
+    is tapped, so clicks are never measured or fabricated (see product rule
+    against fictitious monetization events).
+    """
+    __tablename__ = "ad_campaigns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    admin_id: Mapped[int] = mapped_column(BigInteger)
+    channel_username: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(64))
+    subtitle: Mapped[str] = mapped_column(String(64), default="")
+    body: Mapped[str] = mapped_column(String(400))
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft|active|paused|completed
+    daily_limit: Mapped[int] = mapped_column(Integer, default=0)  # impressions/day, 0 = unlimited
+    total_limit: Mapped[int] = mapped_column(Integer, default=0)  # lifetime impressions, 0 = unlimited
+    impressions_total: Mapped[int] = mapped_column(Integer, default=0)
+    # Set only when the bot could create a tracked invite link (needs admin
+    # rights in the advertiser's channel); NULL means the plain channel link
+    # was used and joins genuinely cannot be attributed to this campaign.
+    invite_link: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    joins_total: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+
+class AdImpression(Base):
+    """One durable, billable record of a campaign shown to a user."""
+    __tablename__ = "ad_impressions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    shown_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, index=True)
+
+
+class AdJoin(Base):
+    """A real, Telegram-attributed join to the advertiser's channel via the
+    campaign's own tracked invite link — never inferred or estimated."""
+    __tablename__ = "ad_joins"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    dedupe_key: Mapped[str] = mapped_column(String(160), unique=True)

@@ -1,5 +1,6 @@
 """Durable outbox. Telegram transport is owned by workers, not services."""
 import json
+import config
 from datetime import timedelta
 from sqlalchemy import select, func, or_, update
 from models.base import async_session
@@ -9,6 +10,19 @@ from models.user import User
 from models.chat import Chat, ActiveParticipant
 from utils.time import utcnow
 from services.onboarding import banned
+
+
+def broadcast_segment(query, segment, now=None):
+    """Single definition of an audience; counting and expanding must not drift."""
+    now = now or utcnow()
+    query = query.where(User.deleted_at.is_(None), User.bot_blocked_at.is_(None))
+    if segment == "premium":
+        return query.where(User.premium_expires > now)
+    if segment == "inactive":
+        return query.where(User.last_online < now-timedelta(days=7))
+    if segment == "nopay":
+        return query.where(User.total_stars_spent == 0)
+    return query
 
 
 async def enqueue(s, user_id, kind, key, content, callback=None, marketing=False, broadcast_id=None):
@@ -110,7 +124,10 @@ class NotificationService:
                 from models.operations import BotSetting
                 flag=await s.get(BotSetting,"marketing_enabled")
                 marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
-            if not user or (banned(user) and n.type != "ban") or user.deleted_at or user.bot_blocked_at or marketing_disabled:
+            owner_notice = n.type == "owner_new_user" and n.user_id == config.OWNER_ID
+            if (n.type == "owner_new_user" and not owner_notice) or (not owner_notice and (
+                    not user or (banned(user) and n.type != "ban") or user.deleted_at
+                    or user.bot_blocked_at or marketing_disabled)):
                 n.status = "skipped"
                 return None
             if n.attempt_count >= 5:
@@ -141,6 +158,15 @@ class NotificationService:
             if retry_after is not None:
                 n.status="queued"
                 n.scheduled_at=utcnow()+timedelta(seconds=retry_after)
+            # Share the recipient cooldown with queued messages, not only the
+            # rejected item; otherwise every pending notice hits the same limit.
+            delay = retry_after if error == "rate_limit" else (
+                3 if status == "sent" and n.type == "owner_new_user" else None)
+            if delay is not None:
+                deadline = utcnow()+timedelta(seconds=delay)
+                await s.execute(update(Notification).where(
+                    Notification.user_id == n.user_id, Notification.status == "queued",
+                    Notification.scheduled_at < deadline).values(scheduled_at=deadline))
             if error=="forbidden":
                 user=await s.scalar(select(User).where(User.telegram_id==n.user_id))
                 if user:
@@ -163,16 +189,45 @@ class NotificationService:
             job=await s.scalar(select(Broadcast).where(Broadcast.status=="queued").with_for_update(skip_locked=True).limit(1))
             if not job:
                 return
-            q=select(User).where(User.telegram_id>job.cursor, User.deleted_at.is_(None), User.bot_blocked_at.is_(None)).order_by(User.telegram_id).limit(100)
-            if job.segment=="premium":
-                q=q.where(User.premium_expires>utcnow())
-            elif job.segment=="inactive":
-                q=q.where(User.last_online<utcnow()-timedelta(days=7))
-            elif job.segment=="nopay":
-                q=q.where(User.total_stars_spent==0)
+            q=broadcast_segment(select(User).where(User.telegram_id>job.cursor), job.segment).order_by(User.telegram_id).limit(100)
             users=(await s.scalars(q)).all()
             for user in users:
                 await enqueue(s,user.telegram_id,"broadcast",f"broadcast:{job.id}:{user.telegram_id}",job.content,marketing=True,broadcast_id=job.id)
                 job.cursor=user.telegram_id
             if len(users)<100:
                 job.status="sending"
+
+    async def broadcast_counts(self, s, job_id):
+        rows = (await s.execute(select(Notification.status, func.count(Notification.id))
+                                .where(Notification.broadcast_id == job_id)
+                                .group_by(Notification.status))).all()
+        return {status: count for status, count in rows}
+
+    async def progress_updates(self):
+        """Return live progress for broadcasts that have an admin message to edit.
+
+        Transport belongs to the worker, so this only reads counters, stamps the
+        refresh time and stops tracking once the final render has been handed out.
+        """
+        updates = []
+        async with async_session.begin() as s:
+            now = utcnow()
+            jobs = (await s.scalars(select(Broadcast).where(
+                Broadcast.progress_message_id.is_not(None),
+                or_(Broadcast.progress_at.is_(None), Broadcast.progress_at <= now-timedelta(seconds=5)))
+                .order_by(Broadcast.id).with_for_update(skip_locked=True).limit(5))).all()
+            for job in jobs:
+                counts = await self.broadcast_counts(s, job.id)
+                updates.append({"chat_id": job.progress_chat_id, "message_id": job.progress_message_id,
+                                "job": job, "counts": counts, "final": job.status == "completed"})
+                job.progress_at = now
+                if job.status == "completed":
+                    job.progress_message_id = None
+        return updates
+
+    async def drop_progress(self, job_id):
+        """Stop tracking a message the admin deleted or that Telegram rejected."""
+        async with async_session.begin() as s:
+            job = await s.get(Broadcast, job_id, with_for_update=True)
+            if job:
+                job.progress_message_id = None

@@ -1,3 +1,4 @@
+from html import escape
 from aiogram import F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -21,6 +22,30 @@ def rating_keyboard(session_id):
     ]])
 
 
+def ad_card_text(ad):
+    lines = ["📢 <i>Реклама</i>", "", f"<b>{escape(ad['title'])}</b>"]
+    if ad["subtitle"]:
+        lines.append(escape(ad["subtitle"]))
+    lines += ["", escape(ad["body"])]
+    return "\n".join(lines)
+
+
+def ad_keyboard(ad):
+    # A plain url= button: Telegram gives the bot no event when it is tapped.
+    # If the advertiser made the bot an admin, this is instead the campaign's
+    # own tracked invite link, so a join (not a click) becomes measurable.
+    url = ad.get("invite_link") or f"https://t.me/{ad['channel_username']}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Перейти в канал", url=url, style="primary")],
+        [InlineKeyboardButton(text="Пропустить", callback_data=f"v1:ad:{ad['impression_id']}:skip")],
+    ])
+
+
+@chat_router.callback_query(F.data.startswith("v1:ad:"))
+async def cb_ad_skip(callback: CallbackQuery):
+    await callback.answer()
+
+
 async def finish(message, user_id, reason="stop"):
     result = await ChatService().end_chat(user_id, reason=reason)
     if not result.ok:
@@ -28,6 +53,12 @@ async def finish(message, user_id, reason="stop"):
         return False
     chat = result.data["chat"]
     await message.answer("👋 Диалог завершён", reply_markup=main_menu_kb())
+    # Every reason finish() is actually called with (stop/next/unreachable) is a
+    # real "back at the menu" moment for the person looking at this message.
+    from services.ads import AdService
+    ad = await AdService().pick(user_id)
+    if ad.ok:
+        await message.answer(ad_card_text(ad.data), reply_markup=ad_keyboard(ad.data))
     if reason == "stop":
         from services.growth import GrowthService, track
         from handlers.premium import product_keyboard

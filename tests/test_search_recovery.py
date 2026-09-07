@@ -46,6 +46,23 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(search._tasks, {})
             self.service.cancel.assert_awaited_once_with(1)
 
+    async def test_start_status_contains_online_in_one_message(self):
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        self.message.answer.assert_awaited_once()
+        self.assertEqual(self.message.answer.await_args.kwargs["reply_markup"].inline_keyboard[-1][0].callback_data, "search:cancel")
+        self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
+
+    async def test_rejected_status_does_not_leave_orphan_search(self):
+        from aiogram.exceptions import TelegramRetryAfter
+        from aiogram.methods import SendMessage
+        self.message.answer.side_effect = TelegramRetryAfter(
+            method=SendMessage(chat_id=1, text="test"), message="rate limit", retry_after=193)
+        with self.assertRaises(TelegramRetryAfter):
+            await search.begin_search(self.message, 1)
+        self.service.cancel.assert_awaited_once_with(1)
+        self.assertNotIn(1, search._tasks)
+
     async def test_restart_restores_only_live_entries_once(self):
         async def entries(*args):
             for uid in ("1", "2", "1"):

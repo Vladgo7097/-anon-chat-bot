@@ -212,7 +212,7 @@ class AdminService:
 
     async def setting(self,admin,key,value):
         authorize(admin)
-        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1)}
+        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1),"ad_cooldown_seconds":(0,86400)}
         if type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:
@@ -236,15 +236,45 @@ class AdminService:
             audit(s,admin,"broadcast_draft","broadcast",job.id,after={"segment":segment})
         return ServiceResult(True,"DRAFT",{"job":job})
 
+    async def audience_size(self,admin,segment):
+        authorize(admin)
+        if segment not in {"all","premium","inactive","nopay"}:
+            return 0
+        from services.notifications import broadcast_segment
+        async with async_session() as s:
+            return await s.scalar(broadcast_segment(select(func.count(User.id)),segment)) or 0
+
     async def confirm_broadcast(self,admin,job_id):
         authorize(admin)
+        from services.notifications import broadcast_segment
         async with async_session.begin() as s:
             job=await s.get(Broadcast,job_id,with_for_update=True)
             if not job or job.admin_id!=admin or job.status!="draft":
                 return ServiceResult(False,"ALREADY_STARTED")
+            # Snapshot of the audience at launch; it is what progress is measured against.
+            job.total=await s.scalar(broadcast_segment(select(func.count(User.id)),job.segment)) or 0
             job.status,job.started_at="queued",utcnow()
-            audit(s,admin,"broadcast_confirm","broadcast",job.id,after={"status":"queued"})
-        return ServiceResult(True,"QUEUED")
+            audit(s,admin,"broadcast_confirm","broadcast",job.id,after={"status":"queued","total":job.total})
+        return ServiceResult(True,"QUEUED",{"job":job})
+
+    async def attach_progress(self,admin,job_id,chat_id,message_id):
+        """Bind the admin message that the worker keeps refreshing."""
+        authorize(admin)
+        async with async_session.begin() as s:
+            job=await s.get(Broadcast,job_id,with_for_update=True)
+            if not job or job.admin_id!=admin:
+                return ServiceResult(False,"NOT_FOUND")
+            job.progress_chat_id,job.progress_message_id,job.progress_at=chat_id,message_id,None
+        return ServiceResult(True,"ATTACHED")
+
+    async def broadcast_progress(self,admin,job_id):
+        authorize(admin)
+        from services.notifications import NotificationService
+        async with async_session() as s:
+            job=await s.get(Broadcast,job_id)
+            if not job or job.admin_id!=admin:
+                return None
+            return job,await NotificationService().broadcast_counts(s,job.id)
 
     async def send_message_to_user(self,admin,target_id,text,request_key=None):
         authorize(admin)

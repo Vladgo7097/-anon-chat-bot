@@ -4,8 +4,8 @@ import time
 from weakref import WeakValueDictionary
 from aiogram import F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from handlers import search_router
 from keyboards import texts as T
 from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
@@ -48,6 +48,12 @@ async def begin_search(message, user_id):
         await _begin_search(message, user_id)
 
 
+def search_status_keyboard(offer=None):
+    rows = list(offer.inline_keyboard) if offer else []
+    return InlineKeyboardMarkup(inline_keyboard=rows + [[
+        InlineKeyboardButton(text="Отменить поиск", callback_data="search:cancel")]])
+
+
 async def _begin_search(message, user_id):
     result = await MatchingService().enqueue(user_id)
     task = _tasks.get(user_id)
@@ -59,8 +65,14 @@ async def _begin_search(message, user_id):
                               "ONBOARDING_REQUIRED": "Сначала заверши регистрацию: /start"}[result.code])
         return
     await cancel_task(user_id)
-    await message.answer("<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу собеседника...", reply_markup=search_kb_reply())
-    status = await message.answer(f"<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: 00:00\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}")
+    try:
+        status = await message.answer(
+            f"🔎 Ищу собеседника...\n\n⏱ Прошло: 00:00\n"
+            f"👥 Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard())
+    except Exception:
+        # Do not leave an orphan queue entry when Telegram rejects the status.
+        await MatchingService().cancel(user_id)
+        raise
     task = asyncio.create_task(search_loop(status, user_id))
     _tasks[user_id] = task
 
@@ -109,11 +121,14 @@ async def search_loop(status, user_id, bot=None):
                 from utils.db import is_premium
                 if status is not None:
                     offer = await product_keyboard(["instant_search"]) if elapsed > await bot_value("search_slow_offer_seconds", 20) and not await is_premium(user_id) else None
-                    await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=offer)
+                    await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard(offer))
                     if offer and not offer_tracked:
                         from services.growth import track
                         await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")
                         offer_tracked=True
+            except TelegramRetryAfter as error:
+                await asyncio.sleep(error.retry_after)
+                continue
             except TelegramBadRequest:
                 pass
             await asyncio.sleep(2)

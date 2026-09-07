@@ -12,6 +12,8 @@ class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
         notification = SimpleNamespace(id=1, user_id=123, type=kind, text=text,
                                        callback_data=None, attempt_count=1)
         service = SimpleNamespace(schedule=AsyncMock(), expand_broadcast=AsyncMock(),
+                                  progress_updates=AsyncMock(return_value=[]),
+                                  drop_progress=AsyncMock(),
                                   next=AsyncMock(side_effect=[notification, asyncio.CancelledError()]),
                                   finish=AsyncMock())
         bot = SimpleNamespace(send_message=AsyncMock())

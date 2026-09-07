@@ -1,3 +1,5 @@
+from repositories.users import UserRepository
+from services.onboarding import OnboardingService
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -19,7 +21,7 @@ from utils.time import utcnow
 class OperationsTests(DatabaseCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        for target, value in (("config.ADMIN_IDS",{99}),
+        for target, value in (("config.OWNER_ID",99), ("config.ADMIN_IDS",{99}),
             ("services.matching.MatchingService.cancel",AsyncMock()),
             ("services.chats.ChatService.end_chat",AsyncMock(return_value=ServiceResult(True,"ENDED")))):
             p=patch(target,value)
@@ -226,6 +228,52 @@ class OperationsTests(DatabaseCase):
         async with self.factory() as s:
             self.assertEqual((await s.scalar(select(User).where(User.telegram_id==3))).referrals_activated,1)
             self.assertEqual(await s.scalar(select(func.count(Offer.id))),2)
+
+    async def test_owner_notified_once_per_new_user(self):
+        """A fresh /start queues one owner notice; retries and repeats never do."""
+        fresh, is_new = await UserRepository().get_or_create(4242, "newbie", "Newbie")
+        self.assertTrue(is_new)
+        self.assertFalse(fresh.onboarding_completed)
+        async with self.factory() as s:
+            self.assertEqual(await s.scalar(select(func.count(Notification.id)).where(
+                Notification.type == "owner_new_user")), 1)
+        for _ in range(3):
+            result = await OnboardingService().start(4242, "newbie", "Newbie")
+            self.assertEqual(result.code, "WELCOME")
+        # Same profile via the middleware path must not count as new either.
+        again, is_new_again = await UserRepository().get_or_create(4242, "newbie", "Newbie")
+        self.assertFalse(is_new_again)
+        self.assertEqual(again.id, fresh.id)
+        async with self.factory() as s:
+            rows = (await s.scalars(select(Notification).where(Notification.type == "owner_new_user"))).all()
+            self.assertEqual([n.user_id for n in rows], [99])
+            self.assertEqual(rows[0].dedupe_key, "owner_new_user:4242:99")
+            self.assertEqual(rows[0].callback_data, "admin:user_card:4242")
+
+    async def test_owner_notice_skipped_for_banned_user(self):
+        async with self.factory.begin() as s:
+            s.add(Ban(user_id=1, reason="test", is_active=True, banned_by=99))
+            user = await s.get(User, 1)
+            user.is_banned = True
+        await OnboardingService().start(1)
+        async with self.factory() as s:
+            self.assertEqual(await s.scalar(select(func.count(Notification.id)).where(
+                Notification.type == "owner_new_user")), 0)
+
+    async def test_owner_delivery_without_profile(self):
+        await UserRepository().get_or_create(4242)
+        service = NotificationService()
+        notice = await service.next()
+        self.assertIsNotNone(notice)
+        self.assertEqual(notice.user_id, 99)
+        await service.finish(notice.id, "failed", "forbidden")
+        self.assertIsNone(await service.next())
+
+    async def test_existing_user_start_does_not_notify_owner(self):
+        await OnboardingService().start(1)
+        async with self.factory() as s:
+            self.assertEqual(await s.scalar(select(func.count(Notification.id)).where(
+                Notification.type == "owner_new_user")), 0)
 
 
 class PaymentFloodTests(__import__('unittest').IsolatedAsyncioTestCase):

@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 def notification_content(notification):
-    if notification.type not in {"match", "rating", "unban", "inactive", "reward"}:
+    if notification.type not in {"match", "rating", "unban", "inactive", "reward", "startup", "owner_new_user"}:
         return notification.text, None
+    if notification.type in {"startup", "owner_new_user"}:
+        return notification.text, "HTML"
     # Escape dynamic text, then restore only the supported custom emoji markup.
     text = escape(notification.text)
     text = re.sub(
@@ -23,6 +25,27 @@ def notification_content(notification):
         r'<tg-emoji emoji-id="\1">\2</tg-emoji>', text,
     )
     return text, "HTML"
+
+
+async def refresh_broadcast_progress(bot, service):
+    """Keep the admin progress message in step with the outbox."""
+    from handlers.admin import broadcast_card, broadcast_card_kb
+    for update in await service.progress_updates():
+        job = update["job"]
+        try:
+            await bot.edit_message_text(broadcast_card(job, update["counts"]),
+                                        chat_id=update["chat_id"], message_id=update["message_id"],
+                                        reply_markup=broadcast_card_kb(job.id))
+        except TelegramRetryAfter:
+            # The outbox itself matters more than the progress card; try again later.
+            return
+        except TelegramBadRequest as error:
+            if "message is not modified" in error.message:
+                continue
+            logger.warning("event=broadcast_progress_unavailable error_code=%s", type(error).__name__)
+            await service.drop_progress(job.id)
+        except TelegramForbiddenError:
+            await service.drop_progress(job.id)
 
 
 async def run(bot):
@@ -36,6 +59,7 @@ async def run(bot):
                 await service.schedule()
                 last=time.monotonic()
             await service.expand_broadcast()
+            await refresh_broadcast_progress(bot, service)
             notification=await service.next()
             if notification:
                 try:

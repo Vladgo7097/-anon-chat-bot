@@ -24,7 +24,7 @@ class OnboardingService:
     def __init__(self, repository=None):
         self.repository = repository or UserRepository()
 
-    async def start(self, telegram_id, username=None, first_name=None, payload=""):
+    async def start(self, telegram_id, username=None, first_name=None, payload="", notify_owner=False):
         await self.repository.get_or_create(telegram_id, username, first_name)
 
         async def apply(user, session):

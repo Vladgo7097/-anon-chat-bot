@@ -31,7 +31,7 @@ class DatabaseCase(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("Integration tests require the isolated test-db/anon_chat_test")
         self.engine = create_async_engine(url)
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
-        for module in ("models.base", "repositories.chats", "repositories.users", "services.reveal", "services.reports", "services.admin", "services.notifications", "services.payments", "services.growth", "services.profile", "services.settings", "services.matching"):
+        for module in ("models.base", "repositories.chats", "repositories.users", "services.reveal", "services.reports", "services.admin", "services.notifications", "services.payments", "services.growth", "services.profile", "services.settings", "services.matching", "services.ads"):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)
