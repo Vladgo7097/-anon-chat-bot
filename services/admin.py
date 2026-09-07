@@ -207,7 +207,7 @@ class AdminService:
 
     async def ban(self,admin,uid,reason,hours=None):
         authorize(admin)
-        if not reason or (hours is not None and not 1<=hours<=87600):
+        if not reason or (hours is not None and hours != 0 and not 1<=hours<=87600):
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:
             from repositories.chats import lock_matching

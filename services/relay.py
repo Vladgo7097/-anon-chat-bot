@@ -90,7 +90,7 @@ class RelayService:
             fields = {f"{user_id}:{message_id}": str(copied_id), f"{partner}:{copied_id}": str(message_id)}
             async with r.pipeline(transaction=True) as pipe:
                 pipe.hset(key, mapping=fields)
-                pipe.lpush(order, *fields)
+                pipe.lpush(order, *sorted(fields.keys()))
                 pipe.expire(key, 86400)
                 pipe.expire(order, 86400)
                 await pipe.execute()

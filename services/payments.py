@@ -189,7 +189,7 @@ class PaymentService:
             now = utcnow()
             p.status, p.paid_at, p.telegram_payment_charge_id = "paid", now, charge_id
             p.telegram_payment_id = charge_id
-            user.total_stars_spent += amount
+            user.total_stars_spent = (user.total_stars_spent or 0) + amount
             from models.operations import Offer
             from services.growth import event
             if p.offer_id:

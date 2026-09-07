@@ -73,7 +73,7 @@ async def finish(message, user_id, reason="stop"):
     ad = await AdService().pick(user_id)
     if ad.ok:
         await message.answer(ad_card_text(ad.data), reply_markup=ad_keyboard(ad.data))
-    if reason == "stop":
+    if reason in {"stop", "next"}:
         from services.growth import GrowthService, track
         from handlers.premium import product_keyboard
         text=await GrowthService().upsell(user_id)
@@ -164,8 +164,7 @@ async def forward_message(message: Message, album=None):
                     params["reply_parameters"] = ReplyParameters(message_id=target, allow_sending_without_reply=True)
             copied = await message.bot.copy_message(chat_id=partner, from_chat_id=message.chat.id,
                 message_id=message.message_id, **params)
-            if isinstance(copied.message_id, int):
-                await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
+            await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
         await service.remember_context(result.data["session_id"], message.from_user.id, content)
     except TelegramForbiddenError:
