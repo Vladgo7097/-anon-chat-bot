@@ -67,6 +67,12 @@ class OnboardingService:
                 user.gender, user.onboarding_step = value, "AGE"
             elif action == "age" and step == "AGE":
                 if not isinstance(value, int) or not config.MIN_AGE <= value <= config.MAX_AGE:
+                    if isinstance(self.repository, UserRepository):
+                        # Counted once per user per day: the funnel is built from
+                        # the users table, which keeps no trace of a refused answer.
+                        from services.growth import event
+                        await event(session, telegram_id, "onboarding_age_rejected",
+                                    f"age_rejected:{telegram_id}:{utcnow():%Y-%m-%d}")
                     return ServiceResult(False, "AGE", {"error": "Сервис доступен только с 18 лет. Выбери возраст от 18 до 99."})
                 user.age, user.onboarding_step = value, "RULES"
             elif action == "accept" and step == "RULES":

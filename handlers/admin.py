@@ -78,10 +78,58 @@ async def cb_admin_back(callback: CallbackQuery):
     await callback.message.answer(overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
-@admin_router.callback_query(F.data.in_({"admin:stats","admin:money","admin:funnel"}))
+def funnel_text(f, days):
+    total = f["stages"][0][1]
+    head = f"<tg-emoji emoji-id=\"5399909394525737759\">📉</tg-emoji> Воронка регистрации за {days} дн."
+    if not total:
+        return head+"\n\nЗа период никто не запускал бота."
+    lines, previous = [], None
+    for label, count in f["stages"]:
+        share = f"{round(100*count/total)}% от всех"
+        if previous is not None:
+            share += f", {round(100*count/previous) if previous else 0}% от предыдущего"
+        lines.append(f"{label}: {count} ({share})")
+        previous = count
+    text = head+"\n\n"+"\n".join(lines)
+    text += f"\n\nНе нажали ни одной кнопки после /start: {f['stages'][0][1]-f['stages'][1][1]}"
+    if f["age_rejected"]:
+        text += f"\nОтклонено на шаге возраста: {f['age_rejected']}"
+    if f["avg_minutes"] is not None:
+        text += f"\nСреднее время регистрации: {f['avg_minutes']} мин."
+    if len(f["daily"]) > 1:
+        text += "\n\nПо дням (новых / дошли до конца):\n"+"\n".join(
+            f"{day}: {new} / {done} ({round(100*done/new) if new else 0}%)"
+            for day, new, done in f["daily"])
+    return text
+
+
+def funnel_kb(days):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Сегодня", callback_data="admin:funnel:1"),
+        InlineKeyboardButton(text="7 дней", callback_data="admin:funnel:7"),
+        InlineKeyboardButton(text="30 дней", callback_data="admin:funnel:30")], [
+        InlineKeyboardButton(text="События", callback_data=f"admin:events:{days}"),
+        InlineKeyboardButton(text="Назад", callback_data="admin:back")]])
+
+
+@admin_router.callback_query(F.data=="admin:funnel")
+@admin_router.callback_query(F.data.startswith("admin:funnel:"))
+async def cb_funnel(callback: CallbackQuery):
+    value=callback.data.split(":")[-1]
+    days=int(value) if value.isdigit() else 1
+    if days not in {1,7,30}:
+        await callback.answer("Недопустимый период.")
+        return
+    await callback.answer()
+    await callback.message.answer(funnel_text(await StatsService().onboarding_funnel(days),days),
+                                  reply_markup=funnel_kb(days))
+
+
+@admin_router.callback_query(F.data.in_({"admin:stats","admin:money"}))
+@admin_router.callback_query(F.data.startswith("admin:events:"))
 @admin_router.callback_query(F.data.startswith("admin:period:"))
 async def cb_stats(callback: CallbackQuery):
-    days=int(callback.data.split(":")[-1]) if callback.data.startswith("admin:period:") else 1
+    days=int(callback.data.split(":")[-1]) if callback.data.split(":")[-1].isdigit() else 1
     if days not in {1,7,30}:
         await callback.answer("Недопустимый период.")
         return
@@ -89,13 +137,14 @@ async def cb_stats(callback: CallbackQuery):
     text=overview_text(s)
     if callback.data=="admin:money":
         text+="\n\nПо продуктам:\n"+"\n".join(f"{k}: {v}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for k,v in s['products'].items())
-    if callback.data=="admin:funnel":
-        text+="\n\nУникальные пользователи за период:\n"+"\n".join(f"{k}: {v}" for k,v in s['funnel'].items())
+    if callback.data.startswith("admin:events:"):
+        text+="\n\nУникальные пользователи по событиям:\n"+"\n".join(f"{k}: {v}" for k,v in s['funnel'].items())
     await callback.answer()
     await callback.message.answer(text,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="За неделю",callback_data="admin:period:7"),
         InlineKeyboardButton(text="За месяц",callback_data="admin:period:30"),
-        InlineKeyboardButton(text="CSV",callback_data=f"admin:export:{days}")]]))
+        InlineKeyboardButton(text="CSV",callback_data=f"admin:export:{days}")],[
+        InlineKeyboardButton(text="Назад",callback_data="admin:back")]]))
 
 
 @admin_router.callback_query(F.data.startswith("admin:export:"))

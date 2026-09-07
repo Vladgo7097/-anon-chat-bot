@@ -1,6 +1,6 @@
 import logging
 from datetime import timedelta
-from sqlalchemy import select, func, or_, update
+from sqlalchemy import select, func, or_, update, case
 from models.base import async_session
 from models.user import User
 from models.chat import Chat
@@ -37,6 +37,44 @@ class StatsService:
         target=func.date(User.created_at)+days if s.bind.dialect.name=="postgresql" else func.date(User.created_at,f"+{days} day")
         returned=await s.scalar(select(func.count(func.distinct(User.id))).join(AnalyticsEvent,AnalyticsEvent.user_id==User.telegram_id).where(*cohort,AnalyticsEvent.event=="daily_active",func.date(AnalyticsEvent.created_at)==target))
         return round(100*returned/total,1)
+
+    async def onboarding_funnel(self, days=1):
+        """Where signups stop, per cohort of users created in the period.
+
+        Derived from the users table rather than from analytics events, so it
+        is exact and covers cohorts registered before the funnel existed. Each
+        stage is a column the step can only fill in order, so the counts are
+        monotonic by construction.
+        """
+        cutoff = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)-timedelta(days=days-1)
+        cohort = (User.created_at >= cutoff, User.deleted_at.is_(None))
+        stages = (("Запустили /start", None),
+                  ("Нажали «Начать»", User.onboarding_step != "WELCOME"),
+                  ("Указали пол", User.gender.in_(["male", "female"])),
+                  ("Указали возраст", User.age.isnot(None)),
+                  ("Приняли правила", User.onboarding_completed.is_(True)))
+        async with async_session() as s:
+            rows = []
+            for label, condition in stages:
+                where = cohort if condition is None else cohort+(condition,)
+                rows.append((label, await s.scalar(select(func.count(User.id)).where(*where))))
+            # The age gate is the one refusal the users table cannot show:
+            # a rejected answer leaves no column behind.
+            rejected = await s.scalar(select(func.count(func.distinct(AnalyticsEvent.user_id))).where(
+                AnalyticsEvent.event == "onboarding_age_rejected", AnalyticsEvent.created_at >= cutoff))
+            # Same dialect split as retention(): SQLite has no interval maths.
+            elapsed = (func.extract("epoch", User.rules_accepted_at-User.created_at)
+                       if s.bind.dialect.name == "postgresql" else
+                       (func.julianday(User.rules_accepted_at)-func.julianday(User.created_at))*86400)
+            minutes = await s.scalar(select(func.avg(elapsed)).where(
+                *cohort, User.onboarding_completed.is_(True), User.rules_accepted_at.isnot(None)))
+            done = func.sum(case((User.onboarding_completed.is_(True), 1), else_=0))
+            daily = (await s.execute(select(func.date(User.created_at), func.count(User.id), done)
+                .where(*cohort).group_by(func.date(User.created_at))
+                .order_by(func.date(User.created_at)))).all()
+        return dict(stages=rows, age_rejected=rejected,
+                    avg_minutes=round(minutes/60, 1) if minutes is not None else None,
+                    daily=[(str(day), total, done) for day, total, done in daily])
 
     async def overview(self, days=1):
         cutoff=utcnow().replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=days-1)
