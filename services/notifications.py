@@ -37,6 +37,7 @@ class NotificationService:
         from models.ban import Ban
         from sqlalchemy import text
         marketing_enabled = await bot_value("marketing_enabled", 1)
+        nudge_after = timedelta(hours=await bot_value("onboarding_nudge_hours", 3))
         now = utcnow()
         cursor = 0
         while True:
@@ -69,7 +70,17 @@ class NotificationService:
                         user.is_banned = False
                     if user.is_premium and user.premium_expires and user.premium_expires <= now:
                         user.is_premium = False
-                    if user.deleted_at or user.bot_blocked_at or not user.onboarding_completed or banned(user):
+                    if user.deleted_at or user.bot_blocked_at or banned(user):
+                        continue
+                    if not user.onboarding_completed:
+                        # The people who tapped /start and stopped are the single
+                        # largest lost group; nudge each of them exactly once.
+                        if (nudge_after <= now-user.created_at <= timedelta(days=7)
+                                and marketing_enabled
+                                and json.loads(user.notification_settings or "{}").get("marketing", True)):
+                            notice(user, "onboarding_nudge", f"onboarding_nudge:{user.telegram_id}",
+                                   "Ты почти зарегистрирован — остался один шаг, и можно искать собеседника.",
+                                   "menu", True)
                         continue
                     if user.premium_expires and now < user.premium_expires <= now+timedelta(days=1):
                         notice(user, "premium_expiry", f"expiry:{user.telegram_id}:{user.premium_expires.isoformat()}",
@@ -87,6 +98,7 @@ class NotificationService:
                     else:
                         from sqlalchemy.dialects.sqlite import insert
                     await s.execute(insert(Notification).values(notices).on_conflict_do_nothing(index_elements=["dedupe_key"]))
+        await self.owner_digest(now)
         async with async_session.begin() as s:
             if s.bind.dialect.name == "postgresql":
                 await s.execute(text("SELECT pg_advisory_xact_lock(8873771497)"))
@@ -98,12 +110,49 @@ class NotificationService:
                     offer.status = "active" if offer.ends_at > now else "expired"
                     offer.reserved_payment_id = None
 
+    async def owner_digest(self, now):
+        """Report the signups the per-user notice deliberately skipped.
+
+        Covers the last completed hour and counts only what was not already
+        sent one by one, so a quiet hour produces nothing and a spike produces
+        exactly one line instead of hundreds of messages.
+        """
+        import config
+        if not config.OWNER_ID:
+            return
+        hour_end = now.replace(minute=0, second=0, microsecond=0)
+        hour_start = hour_end - timedelta(hours=1)
+        async with async_session.begin() as s:
+            joined = await s.scalar(select(func.count(User.id)).where(
+                User.created_at >= hour_start, User.created_at < hour_end)) or 0
+            if not joined:
+                return
+            reported = await s.scalar(select(func.count(Notification.id)).where(
+                Notification.type == "owner_new_user",
+                Notification.scheduled_at >= hour_start, Notification.scheduled_at < hour_end)) or 0
+            missing = joined - reported
+            if missing <= 0:
+                return
+            day_start = hour_end.replace(hour=0)
+            today = await s.scalar(select(func.count(User.id)).where(User.created_at >= day_start)) or 0
+            reached_menu = await s.scalar(select(func.count(User.id)).where(
+                User.created_at >= day_start, User.onboarding_completed.is_(True))) or 0
+            await enqueue(s, config.OWNER_ID, "owner_digest",
+                          f"owner_digest:{config.OWNER_ID}:{hour_start.isoformat()}",
+                          f"Сводка за {hour_start:%H:%M}–{hour_end:%H:%M} UTC\n"
+                          f"Новых пользователей: {joined} (поштучно показано {reported})\n\n"
+                          f"За сегодня: {today} новых, из них дошли до меню {reached_menu}.")
+
     async def next(self):
         async with async_session.begin() as s:
             now = utcnow()
             n = await s.scalar(select(Notification).where(Notification.status.in_(["queued","sending"]), Notification.scheduled_at<=now)
                 .order_by(Notification.id).with_for_update(skip_locked=True).limit(1))
             if not n:
+                return None
+            if n.type == "onboarding_nudge" and await s.scalar(select(User.onboarding_completed).where(
+                    User.telegram_id == n.user_id)):
+                n.status = "skipped"  # finished the form while the nudge waited
                 return None
             if n.type == "reveal_request":
                 from models.chat import RevealRequest

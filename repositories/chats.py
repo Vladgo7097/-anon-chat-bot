@@ -25,6 +25,25 @@ def compatible(a, b, gender_access=()):
     return a.telegram_id != b.telegram_id
 
 
+ICEBREAKERS = (
+    "«Как прошёл твой день?»",
+    "«Что тебя сегодня порадовало?»",
+    "«Кофе или чай?»",
+    "«Что последнее смотрел или читал?»",
+    "«Сова или жаворонок?»",
+    "«Куда бы уехал прямо сейчас?»",
+    "«Какая музыка играет у тебя чаще всего?»",
+    "«Море или горы?»",
+    "«Чем занимаешься по вечерам?»",
+    "«Что умеешь такого, чему сложно научиться?»",
+)
+
+
+def icebreaker(session_id):
+    """Same prompt for both sides of one dialogue, stable for a given session."""
+    return ICEBREAKERS[int(session_id[:8], 16) % len(ICEBREAKERS)]
+
+
 async def lock_matching(session):
     if session.bind.dialect.name == "postgresql":
         await session.execute(text("SELECT pg_advisory_xact_lock(8873771496)"))
@@ -93,10 +112,11 @@ class ChatRepository:
             await s.flush()
             s.add_all([ActiveParticipant(user_id=uid, session_id=chat.session_id) for uid in (a_id, b_id)])
             from services.growth import event
+            starter = icebreaker(chat.session_id)
             for uid in (a_id, b_id):
                 await event(s, uid, "chat_started", f"chat_started:{chat.session_id}:{uid}")
                 from services.notifications import enqueue
-                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>",chat.session_id)
+                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Если не знаешь, с чего начать: "+starter,chat.session_id)
             for user in users:
                 entitlement = filters.get(user.telegram_id)
                 if entitlement and entitlement.kind == "gender_filter_one_match" and not premium_active(user) and user.settings_gender_filter != "a":

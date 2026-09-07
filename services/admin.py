@@ -212,7 +212,7 @@ class AdminService:
 
     async def setting(self,admin,key,value):
         authorize(admin)
-        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1),"ad_cooldown_seconds":(0,86400)}
+        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1),"ad_cooldown_seconds":(0,86400),"owner_notice_limit":(0,1000),"onboarding_nudge_hours":(1,168)}
         if type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:
