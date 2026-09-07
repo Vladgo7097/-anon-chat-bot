@@ -13,6 +13,7 @@ from test_chat_duration import DatabaseCase
 class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.message = SimpleNamespace(answer=AsyncMock(), from_user=SimpleNamespace(id=1))
+        self.message.answer.return_value.delete = AsyncMock()
         self.service = SimpleNamespace(
             enqueue=AsyncMock(return_value=ServiceResult(True, "ALREADY_SEARCHING")),
             cancel=AsyncMock(), find=AsyncMock(return_value=None))
@@ -45,6 +46,26 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             await search.cmd_cancel(self.message)
             self.assertEqual(search._tasks, {})
             self.service.cancel.assert_awaited_once_with(1)
+
+    async def test_typed_cancel_deletes_the_search_status_card(self):
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        await search.cmd_cancel(self.message)
+        self.message.answer.return_value.delete.assert_awaited_once()
+        self.assertNotIn(1, search._status_messages)
+
+    async def test_inline_cancel_deletes_the_search_status_card(self):
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        callback = SimpleNamespace(from_user=SimpleNamespace(id=1), answer=AsyncMock(),
+                                    message=SimpleNamespace(answer=AsyncMock()))
+        await search.cb_cancel(callback)
+        self.message.answer.return_value.delete.assert_awaited_once()
+        self.assertNotIn(1, search._status_messages)
+
+    async def test_cancel_without_an_active_search_does_not_try_to_delete_anything(self):
+        await search.cmd_cancel(self.message)
+        self.message.answer.return_value.delete.assert_not_awaited()
 
     async def test_start_status_contains_online_in_one_message(self):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop):

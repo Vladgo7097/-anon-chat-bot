@@ -17,6 +17,7 @@ import config
 
 logger = logging.getLogger(__name__)
 _tasks = {}
+_status_messages = {}
 # Compare-and-delete: only the holder that set the token releases the lock, so a
 # holder whose TTL already expired can never delete the next holder's lock.
 _RELEASE_SCRIPT = """
@@ -53,6 +54,22 @@ async def cancel_task(user_id):
     if task and task is not asyncio.current_task():
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def cancel_search(user_id):
+    """Cancel the search loop/queue entry and remove the status card.
+
+    Only an explicit user cancel removes the card — a match or timeout leaves
+    it as history, since another message already covers that outcome.
+    """
+    status = _status_messages.pop(user_id, None)
+    await cancel_task(user_id)
+    await MatchingService().cancel(user_id)
+    if status is not None:
+        try:
+            await status.delete()
+        except TelegramBadRequest:
+            pass
 
 
 async def begin_search(message, user_id):
@@ -92,6 +109,7 @@ async def _begin_search(message, user_id):
         raise
     task = asyncio.create_task(search_loop(status, user_id))
     _tasks[user_id] = task
+    _status_messages[user_id] = status
 
 
 async def search_loop(status, user_id, bot=None):
@@ -163,6 +181,7 @@ async def search_loop(status, user_id, bot=None):
     finally:
         if _tasks.get(user_id) is asyncio.current_task():
             _tasks.pop(user_id, None)
+            _status_messages.pop(user_id, None)
 
 
 @search_router.message(Command("search"))
@@ -181,8 +200,7 @@ async def cb_search_start(callback: CallbackQuery):
 @search_router.message(F.text == T.CANCEL)
 async def cmd_cancel(message: Message):
     async with search_lock(message.from_user.id):
-        await cancel_task(message.from_user.id)
-        await MatchingService().cancel(message.from_user.id)
+        await cancel_search(message.from_user.id)
     await message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
 
 
@@ -190,8 +208,7 @@ async def cmd_cancel(message: Message):
 async def cb_cancel(callback: CallbackQuery):
     await callback.answer("Поиск отменён")
     async with search_lock(callback.from_user.id):
-        await cancel_task(callback.from_user.id)
-        await MatchingService().cancel(callback.from_user.id)
+        await cancel_search(callback.from_user.id)
     await callback.message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
 
 
@@ -212,3 +229,4 @@ async def restore_searches(bot):
 async def shutdown_searches():
     for uid in list(_tasks):
         await cancel_task(uid)
+    _status_messages.clear()
