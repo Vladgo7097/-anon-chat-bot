@@ -27,6 +27,12 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             self.bot.copy_message.assert_awaited_with(chat_id=2,from_chat_id=1,message_id=10)
         self.assertEqual(self.bot.copy_message.await_count,2)
 
+    async def test_contact_detector_catches_username_link_and_phone(self):
+        from services.relay import RelayService
+        for text in ("пиши @someone", "https://t.me/someone", "+380 99 123 45 67"):
+            self.assertTrue(RelayService.contains_contact(text))
+        self.assertFalse(RelayService.contains_contact("увидимся в 18:30, номер комнаты 42"))
+
     async def test_system_buttons_and_unsupported_content_are_not_relayed(self):
         self.message.text=T.STOP
         await forward_message(self.message)

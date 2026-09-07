@@ -17,6 +17,8 @@ class RevealService:
             if request is None:
                 request = RevealRequest(chat_session_id=session_id, consent_a=False, consent_b=False)
                 s.add(request)
+            elif request.status != "pending":
+                return ServiceResult(False, request.status.upper())
             field = "consent_a" if user_id == chat.user1_id else "consent_b"
             if getattr(request, field):
                 return ServiceResult(False, "ALREADY_REQUESTED")
@@ -33,11 +35,39 @@ class RevealService:
                     count=await s.scalar(select(func.count(RevealRequest.chat_session_id)).join(Chat,Chat.session_id==RevealRequest.chat_session_id).where(RevealRequest.status=="mutual",or_(Chat.user1_id==user.telegram_id,Chat.user2_id==user.telegram_id)))
                     if count>=5:
                         await award(s,user.telegram_id,"reveal_5")
-                return ServiceResult(True, "MUTUAL", {"contacts": {u.telegram_id: u.username for u in users}, "partner": partner})
+                return ServiceResult(True, "MUTUAL", {
+                    "profiles": {u.telegram_id: {
+                        "username": u.username, "photo": u.profile_photo,
+                        "anon_id": u.anon_id,
+                    } for u in users},
+                    "partner": partner,
+                })
             from services.notifications import enqueue
             await enqueue(s, partner, "reveal_request", f"reveal:{session_id}:{partner}",
                 "❤️ Собеседник предложил взаимно раскрыть контакты.", session_id)
             return ServiceResult(True, "PENDING", {"partner": partner})
+
+    async def decline(self, user_id, session_id):
+        async with async_session.begin() as s:
+            chat = await s.scalar(select(Chat).where(
+                Chat.session_id == session_id, Chat.status == "active",
+                or_(Chat.user1_id == user_id, Chat.user2_id == user_id)).with_for_update())
+            if not chat:
+                return ServiceResult(False, "SESSION_EXPIRED")
+            request = await s.get(RevealRequest, session_id)
+            if not request or request.status != "pending":
+                return ServiceResult(False, "NOT_PENDING")
+            own = request.consent_a if user_id == chat.user1_id else request.consent_b
+            other = request.consent_b if user_id == chat.user1_id else request.consent_a
+            if own or not other:
+                return ServiceResult(False, "NOT_ALLOWED")
+            requester = chat.user2_id if user_id == chat.user1_id else chat.user1_id
+            request.status, request.resolved_at = "declined", utcnow()
+            from services.notifications import enqueue
+            await enqueue(s, requester, "reveal_declined",
+                          f"reveal_declined:{session_id}:{requester}",
+                          "Собеседник отказался раскрывать контакт.")
+            return ServiceResult(True, "DECLINED")
 
     async def status(self, user_id, session_id):
         from repositories.chats import ChatRepository

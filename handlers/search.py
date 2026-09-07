@@ -160,6 +160,7 @@ async def cmd_search(message: Message):
 
 
 @search_router.callback_query(F.data == "search:start")
+@search_router.callback_query(F.data == "search:repeat")
 async def cb_search_start(callback: CallbackQuery):
     await callback.answer()
     await begin_search(callback.message, callback.from_user.id)

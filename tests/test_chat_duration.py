@@ -104,6 +104,24 @@ class SessionTests(DatabaseCase):
         new = await self.repo.match(1, 2, self.redis)
         self.assertEqual((await reveal.consent(1, new.session_id)).code, "PENDING")
 
+    async def test_reveal_can_be_declined_and_returns_mutual_photo(self):
+        async with self.factory.begin() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.profile_photo = "safe-file-id"
+        chat = await self.repo.match(1, 2, self.redis)
+        reveal = RevealService()
+        await reveal.consent(1, chat.session_id)
+        declined = await reveal.decline(2, chat.session_id)
+        self.assertEqual(declined.code, "DECLINED")
+        self.assertEqual((await reveal.status(1, chat.session_id)).code, "DECLINED")
+        self.assertFalse((await reveal.consent(2, chat.session_id)).ok)
+
+        await self.repo.end(1, chat.session_id)
+        second = await self.repo.match(1, 2, self.redis)
+        await reveal.consent(1, second.session_id)
+        mutual = await reveal.consent(2, second.session_id)
+        self.assertEqual(mutual.data["profiles"][1]["photo"], "safe-file-id")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

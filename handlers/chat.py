@@ -46,6 +46,20 @@ async def cb_ad_skip(callback: CallbackQuery):
     await callback.answer()
 
 
+@chat_router.callback_query(F.data.startswith("v1:contact:allow:"))
+async def cb_allow_contact(callback: CallbackQuery):
+    session_id = callback.data.removeprefix("v1:contact:allow:")
+    chat = await ChatService().active(callback.from_user.id)
+    if not chat or chat.session_id != session_id:
+        await callback.answer("Диалог уже завершён.", show_alert=True)
+        return
+    from services.relay import RelayService
+    await RelayService().allow_contacts(callback.from_user.id, session_id)
+    await callback.answer("Разрешено для этого диалога")
+    await callback.message.edit_text(
+        "Предупреждение принято. Теперь отправь сообщение с контактом ещё раз.")
+
+
 async def finish(message, user_id, reason="stop"):
     result = await ChatService().end_chat(user_id, reason=reason)
     if not result.ok:
@@ -107,6 +121,9 @@ async def cb_chat_control(callback: CallbackQuery):
 
 @chat_router.message()
 async def forward_message(message: Message, album=None):
+    if message.text == "/delete":
+        await delete_relayed_message(message)
+        return
     if message.text and (message.text.startswith("/") or message.text in T.SYSTEM_TEXTS):
         return
     from services.relay import RelayService
@@ -118,6 +135,15 @@ async def forward_message(message: Message, album=None):
         await message.answer("Этот тип сообщения не поддерживается. Отправь текст, фото, голосовое или видео.")
         return
     partner = result.data["partner"]
+    content = message.text or message.caption
+    if await service.contact_warning_required(message.from_user.id, result.data["session_id"], content):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Понимаю, отправить контакт",
+                callback_data=f"v1:contact:allow:{result.data['session_id']}", style="danger")]])
+        await message.answer(
+            "⚠️ В сообщении найден контакт. После отправки собеседник сможет связаться с тобой вне бота. "
+            "Если ты согласен, нажми кнопку и отправь сообщение ещё раз.", reply_markup=keyboard)
+        return
     try:
         if album:
             if any(item.content_type not in service.SUPPORTED for item in album):
@@ -141,8 +167,68 @@ async def forward_message(message: Message, album=None):
             if isinstance(copied.message_id, int):
                 await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
+        await service.remember_context(result.data["session_id"], message.from_user.id, content)
     except TelegramForbiddenError:
         await finish(message, message.from_user.id, "unreachable")
     except TelegramBadRequest:
         logger.warning("event=relay_failed chat_session_id=%s", result.data["session_id"])
         await message.answer("Не удалось передать сообщение. Попробуй другой формат.")
+
+
+@chat_router.edited_message()
+async def sync_edited_message(message: Message):
+    if not (message.text or message.caption):
+        return
+    from services.relay import RelayService
+    service = RelayService()
+    chat = await ChatService().active(message.from_user.id)
+    if not chat:
+        return
+    if await service.contact_warning_required(
+            message.from_user.id, chat.session_id, message.text or message.caption):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Понимаю, разрешить контакты",
+                callback_data=f"v1:contact:allow:{chat.session_id}", style="danger")]])
+        await message.answer(
+            "⚠️ Изменение содержит контакт и не передано собеседнику. Подтверди передачу, "
+            "затем измени сообщение ещё раз.", reply_markup=keyboard)
+        return
+    target = await service.reply_target(chat.session_id, message.from_user.id, message.message_id)
+    if not target:
+        return
+    partner = chat.user2_id if chat.user1_id == message.from_user.id else chat.user1_id
+    try:
+        if message.text is not None:
+            await message.bot.edit_message_text(message.text, chat_id=partner,
+                                                message_id=target, parse_mode=None)
+        else:
+            await message.bot.edit_message_caption(chat_id=partner, message_id=target,
+                                                   caption=message.caption, parse_mode=None)
+        await service.remember_context(chat.session_id, message.from_user.id,
+                                       message.text or message.caption)
+    except TelegramBadRequest:
+        await message.answer("Не удалось синхронизировать изменение сообщения.")
+
+
+@chat_router.message(Command("delete"))
+async def delete_relayed_message(message: Message):
+    reply = message.reply_to_message
+    if not reply:
+        await message.answer("Ответь командой /delete на сообщение, которое нужно удалить у собеседника.")
+        return
+    from services.relay import RelayService
+    service = RelayService()
+    chat = await ChatService().active(message.from_user.id)
+    if not chat:
+        await message.answer("Диалог уже завершён.")
+        return
+    target = await service.reply_target(chat.session_id, message.from_user.id, reply.message_id)
+    if not target:
+        await message.answer("Это сообщение уже нельзя удалить у собеседника.")
+        return
+    partner = chat.user2_id if chat.user1_id == message.from_user.id else chat.user1_id
+    try:
+        await message.bot.delete_message(partner, target)
+        await message.answer("Сообщение удалено у собеседника.")
+    except TelegramBadRequest:
+        await message.answer("Telegram уже не позволяет удалить это сообщение.")

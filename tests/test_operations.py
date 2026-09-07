@@ -101,6 +101,16 @@ class OperationsTests(DatabaseCase):
             user = await s.scalar(select(User).where(User.telegram_id == 4))
             self.assertIsNone(user.referrer_id)
 
+    async def test_referral_uses_random_anon_code_and_rejects_telegram_id(self):
+        from services.onboarding import OnboardingService
+        async with self.factory() as s:
+            code = (await s.scalar(select(User).where(User.telegram_id == 1))).referral_code
+        await OnboardingService().start(4, payload="ref_" + code)
+        await OnboardingService().start(5, payload="ref_1")
+        async with self.factory() as s:
+            self.assertEqual((await s.scalar(select(User).where(User.telegram_id == 4))).referrer_id, 1)
+            self.assertIsNone((await s.scalar(select(User).where(User.telegram_id == 5))).referrer_id)
+
     async def test_duplicate_admin_grant_does_not_extend_twice(self):
         admin=AdminService()
         self.assertTrue((await admin.grant(99,1,30,"support","grant:99:1")).ok)
@@ -140,6 +150,26 @@ class OperationsTests(DatabaseCase):
         self.assertEqual((await service.submit(1,chat.session_id,"spam")).code,"ALREADY_REPORTED")
         self.assertTrue((await AdminService().resolve(99,first.data["report_id"],"dismiss")).ok)
         self.assertFalse((await AdminService().resolve(99,first.data["report_id"],"ban1")).ok)
+
+    async def test_report_persists_only_explicitly_captured_context(self):
+        chat=await self.repo.match(1,2,self.redis)
+        context=["1:привет", "2:оскорбление"]
+        with patch("services.relay.RelayService.report_context",
+                   AsyncMock(side_effect=[context, context])):
+            result=await ReportService().submit(1,chat.session_id,"insult")
+        async with self.factory() as s:
+            report=await s.get(Report,result.data["report_id"])
+            self.assertIn("Вы: привет",report.message_content)
+            self.assertIn("Собеседник: оскорбление",report.message_content)
+
+    async def test_unexpected_end_offers_same_settings_search(self):
+        chat=await self.repo.match(1,2,self.redis)
+        await self.repo.end(1,chat.session_id,"timeout")
+        async with self.factory() as s:
+            prompts=(await s.scalars(select(Notification).where(
+                Notification.type=="reconnect_prompt"))).all()
+            self.assertEqual({item.user_id for item in prompts},{1,2})
+            self.assertTrue(all(item.callback_data=="search:repeat" for item in prompts))
 
     async def test_broadcast_confirm_once_worker_counts_once_and_respects_optout(self):
         async with self.factory.begin() as s:
@@ -285,6 +315,13 @@ class OperationsTests(DatabaseCase):
         notice = await NotificationService().next()
         self.assertIsNotNone(notice)
         self.assertEqual(notice.user_id, 99)
+
+    async def test_backup_failure_reaches_owner_without_profile(self):
+        async with self.factory.begin() as s:
+            await enqueue(s, 99, "backup_failed", "backup_failed:test", "failed")
+        notice = await NotificationService().next()
+        self.assertIsNotNone(notice)
+        self.assertEqual(notice.type, "backup_failed")
 
     async def test_owner_delivery_without_profile(self):
         await UserRepository().get_or_create(4242)

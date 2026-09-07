@@ -168,7 +168,7 @@ class NotificationService:
             if n.type=="match" and not await s.scalar(select(Chat.id).where(Chat.session_id==n.callback_data,Chat.status=="active")):
                 n.status="skipped"
                 return None
-            if n.type == "chat_ended" and await s.get(ActiveParticipant, n.user_id):
+            if n.type in {"chat_ended", "reconnect_prompt"} and await s.get(ActiveParticipant, n.user_id):
                 n.status = "skipped"
                 return None
             user = await s.scalar(select(User).where(User.telegram_id==n.user_id))
@@ -177,8 +177,9 @@ class NotificationService:
                 from models.operations import BotSetting
                 flag=await s.get(BotSetting,"marketing_enabled")
                 marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
-            owner_notice = n.type in {"owner_new_user", "startup"} and n.user_id == config.OWNER_ID
-            if (n.type in {"owner_new_user", "startup"} and not owner_notice) or (not owner_notice and (
+            owner_types = {"owner_new_user", "startup", "backup_failed"}
+            owner_notice = n.type in owner_types and n.user_id == config.OWNER_ID
+            if (n.type in owner_types and not owner_notice) or (not owner_notice and (
                     not user or (banned(user) and n.type != "ban") or user.deleted_at
                     or user.bot_blocked_at or marketing_disabled)):
                 n.status = "skipped"

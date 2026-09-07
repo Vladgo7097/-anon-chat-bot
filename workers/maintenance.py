@@ -72,13 +72,17 @@ async def run(bot):
                     if notification.type=="match":
                         markup=chat_kb_reply()
                     elif notification.type == "reveal_request":
-                        from handlers.reveal import reveal_keyboard
-                        markup = reveal_keyboard(notification.callback_data)
+                        from handlers.reveal import reveal_request_keyboard
+                        markup = reveal_request_keyboard(notification.callback_data)
                     elif notification.type == "rating_prompt":
                         from handlers.chat import rating_keyboard
                         markup = rating_keyboard(notification.callback_data)
                     elif notification.type=="chat_ended":
                         markup=main_menu_kb()
+                    elif notification.type == "reconnect_prompt":
+                        markup=InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="Найти похожего собеседника",
+                                callback_data="search:repeat", style="primary")]])
                     elif notification.callback_data:
                         markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть",callback_data=notification.callback_data,style="primary")]])
                     text, parse_mode = notification_content(notification)

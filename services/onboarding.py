@@ -1,4 +1,4 @@
-from sqlalchemy import select, or_
+from sqlalchemy import select
 import config
 from models.user import User
 from repositories.users import UserRepository
@@ -33,10 +33,10 @@ class OnboardingService:
             if payload.startswith("ref_") and not user.referrer_id and not user.onboarding_completed:
                 value = payload.removeprefix("ref_")
                 if value.isalnum() and len(value)<=32:
-                    referrer_id = int(value) if value.isascii() and value.isdigit() and len(value) <= 19 else -1
-                    if referrer_id > 9223372036854775807:
-                        referrer_id = -1
-                    referrer = await session.scalar(select(User).where(or_(User.anon_id=="#"+value, User.telegram_id == referrer_id)).with_for_update())
+                    # Public referral payloads use the random anonymous code.
+                    # Raw Telegram IDs are deliberately not accepted.
+                    referrer = await session.scalar(select(User).where(
+                        User.referral_code == value).with_for_update())
                     if referrer and referrer.telegram_id != telegram_id:
                         user.referrer_id = referrer.telegram_id
                         from models.operations import Referral

@@ -1,3 +1,5 @@
+import re
+
 from services.chats import ChatService
 from services.result import ServiceResult
 from repositories.chats import ChatRepository
@@ -5,6 +7,58 @@ from repositories.chats import ChatRepository
 
 class RelayService:
     SUPPORTED={"text","photo","voice","sticker","video","video_note","animation"}
+    CONTACT_PATTERN = re.compile(
+        r"(?ix)(?:https?://)?t\.me/[a-z0-9_+/-]+|(?<!\w)@[a-z][a-z0-9_]{4,31}|"
+        r"(?<!\d)(?:\+?\d[\s().-]*){7,15}(?!\d)"
+    )
+
+    @classmethod
+    def contains_contact(cls, text):
+        return bool(text and cls.CONTACT_PATTERN.search(text))
+
+    async def contact_warning_required(self, user_id, session_id, text):
+        if not self.contains_contact(text):
+            return False
+        from services.chat_manager import get_redis
+        from redis.exceptions import RedisError
+        try:
+            return not await (await get_redis()).exists(f"contact:allowed:{session_id}:{user_id}")
+        except RedisError:
+            return True
+
+    async def allow_contacts(self, user_id, session_id):
+        from services.chat_manager import get_redis
+        await (await get_redis()).set(f"contact:allowed:{session_id}:{user_id}", "1", ex=86400)
+
+    async def remember_context(self, session_id, user_id, text):
+        if not text:
+            return
+        from services.chat_manager import get_redis
+        from redis.exceptions import RedisError
+        try:
+            key = f"report:context:{session_id}"
+            value = f"{user_id}:{text[:300]}"
+            r = await get_redis()
+            async with r.pipeline(transaction=True) as pipe:
+                pipe.rpush(key, value)
+                pipe.ltrim(key, -8, -1)
+                pipe.expire(key, 1800)
+                await pipe.execute()
+        except RedisError:
+            return
+
+    async def report_context(self, session_id, clear=False):
+        from services.chat_manager import get_redis
+        from redis.exceptions import RedisError
+        try:
+            key = f"report:context:{session_id}"
+            r = await get_redis()
+            values = await r.lrange(key, 0, -1)
+            if clear:
+                await r.delete(key)
+            return [value.decode() if isinstance(value, bytes) else value for value in values]
+        except RedisError:
+            return []
 
     async def prepare(self,user_id,content_type):
         chat=await ChatService().active(user_id)

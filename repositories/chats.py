@@ -159,6 +159,11 @@ class ChatRepository:
                 for uid in targets:
                     from services.notifications import enqueue
                     await enqueue(s,uid,"chat_ended",f"ended:{chat.session_id}:{uid}","Диалог завершён по неактивности." if reason=="timeout" else "Диалог завершён. Можно начать новый поиск.","menu")
+                    if reason in {"unreachable", "timeout"}:
+                        await enqueue(s, uid, "reconnect_prompt",
+                                      f"reconnect:{chat.session_id}:{uid}",
+                                      "Найти нового собеседника с теми же настройками?",
+                                      "search:repeat")
             if reason in {"stop", "next", "unreachable"}:
                 from services.notifications import enqueue
                 if reason != "unreachable":

@@ -86,10 +86,31 @@ class StatsService:
             stars=await s.scalar(select(func.coalesce(func.sum(Payment.stars_amount),0)).where(Payment.status=="paid",Payment.paid_at>=cutoff))
             premium=await s.scalar(select(func.count(User.id)).where(User.premium_expires>utcnow()))
             products=(await s.execute(select(Payment.product,func.sum(Payment.stars_amount)).where(Payment.status=="paid",Payment.paid_at>=cutoff).group_by(Payment.product))).all()
+            product_orders=(await s.execute(select(Payment.product,func.count(Payment.id)).where(
+                Payment.status=="paid",Payment.paid_at>=cutoff).group_by(Payment.product))).all()
+            completed=await s.scalar(select(func.count(User.id)).where(
+                User.created_at>=cutoff, User.onboarding_completed.is_(True)))
+            searchers=await s.scalar(select(func.count(func.distinct(AnalyticsEvent.user_id))).where(
+                AnalyticsEvent.created_at>=cutoff, AnalyticsEvent.event=="search_started"))
+            matched=await s.scalar(select(func.count(func.distinct(AnalyticsEvent.user_id))).where(
+                AnalyticsEvent.created_at>=cutoff, AnalyticsEvent.event=="chat_started"))
+            buyers=await s.scalar(select(func.count(func.distinct(Payment.user_id))).join(
+                User, User.telegram_id==Payment.user_id).where(
+                Payment.status=="paid", Payment.paid_at>=cutoff, User.created_at>=cutoff))
             funnel=dict((await s.execute(select(AnalyticsEvent.event,func.count(func.distinct(AnalyticsEvent.user_id))).where(AnalyticsEvent.created_at>=cutoff).group_by(AnalyticsEvent.event))).all())
             rating=await s.scalar(select(func.avg(User.positive_rating_pct)).where(User.likes_received+User.dislikes_received>0))
             d1,d7=await self.retention(s,1),await self.retention(s,7)
-        return dict(users=users,new=new,chats=chats,avg_seconds=round(duration or 0),stars=stars,premium=premium,products=dict(products),funnel=funnel,rating=round(rating,1) if rating is not None else None,retention_d1=d1,retention_d7=d7)
+        orders=dict(product_orders)
+        total_orders=sum(orders.values())
+        product_shares={key: round(100*value/total_orders, 1) for key, value in orders.items()} if total_orders else {}
+        return dict(users=users,new=new,chats=chats,avg_seconds=round(duration or 0),stars=stars,
+            premium=premium,products=dict(products),product_orders=orders,product_shares=product_shares,
+            funnel=funnel,rating=round(rating,1) if rating is not None else None,
+            retention_d1=d1,retention_d7=d7, onboarding_completed=completed,
+            onboarding_conversion=round(100*completed/new,1) if new else None,
+            searchers=searchers,matched=matched,
+            search_conversion=round(100*matched/searchers,1) if searchers else None,
+            buyers=buyers,purchase_conversion=round(100*buyers/new,1) if new else None)
 
 
 class AdminService:

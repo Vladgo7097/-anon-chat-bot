@@ -28,7 +28,7 @@ async def cb_rewards(callback: CallbackQuery):
     streak=await StreakService().checkin(callback.from_user.id)
     user,achievements,offers=await GrowthService().profile(callback.from_user.id)
     bot=await callback.bot.get_me()
-    link=f"https://t.me/{bot.username}?start=ref_{user.anon_id.lstrip('#')}"
+    link=f"https://t.me/{bot.username}?start=ref_{user.referral_code}"
     names={"first_chat":"Первый диалог","50_chats":"50 диалогов","100_chats":"100 диалогов","streak_7":"7 дней подряд","streak_30":"30 дней подряд","reveal_1":"Взаимное раскрытие","reveal_5":"5 взаимных раскрытий"}
     text=f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Твои награды\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Приглашено: {user.referrals_count} | Активировали: {user.referrals_activated}\nПригласи друга: после его первого диалога оба получите скидку.\n{link}\n\n<tg-emoji emoji-id=\"5303040337059543238\">🔥</tg-emoji> Стрик: {streak} дней (UTC)\n3 дня: −10% на разовую покупку\n7 дней: −20% на Premium\n30 дней: −30% на Premium 12 месяцев\n\n<tg-emoji emoji-id=\"5283130719806175947\">🏆</tg-emoji> Достижения:\n"
     text+="\n".join(("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> " if code in achievements else "<tg-emoji emoji-id=\"5312229088876847138\">🔒</tg-emoji> ")+label for code,label in names.items())
@@ -86,7 +86,7 @@ async def cb_field(callback: CallbackQuery, state: FSMContext):
     await state.set_state(getattr(ProfileEdit, step))
     await state.update_data(age_page=0)
     await callback.answer()
-    await callback.message.answer({"GENDER": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Выбери пол:", "AGE": "🎂 Выбери возраст:", "PHOTO": "<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> Отправь фото профиля. Собеседникам оно автоматически не показывается."}[step],
+    await callback.message.answer({"GENDER": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Выбери пол:", "AGE": "🎂 Выбери возраст:", "PHOTO": "<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> Отправь фото профиля. Оно будет показано собеседнику только после взаимного раскрытия."}[step],
         reply_markup=onboarding_kb(step) if step != "PHOTO" else main_menu_kb())
 
 
@@ -167,8 +167,10 @@ async def cb_privacy(callback: CallbackQuery, state: FSMContext):
         "🔒 Приватность\n\n"
         "Собеседник не видит твой Telegram ID, имя и username. "
         "Username раскрывается только после согласия обоих участников. "
-        "Фото профиля автоматически не отправляется.\n\n"
-        "Данные, которые ты сам отправляешь в сообщениях, видны собеседнику.\n\n"
+        "Фото профиля показывается только после взаимного согласия раскрыться.\n\n"
+        "Данные, которые ты сам отправляешь в сообщениях, видны собеседнику. "
+        "Последние текстовые сообщения временно хранятся до 30 минут для возможной жалобы; "
+        "в базу они попадают только после явной отправки жалобы.\n\n"
         f"Рекомендации и предложения: {'включены' if enabled else 'выключены'}.\n"
         "Этот переключатель управляет рекламными и маркетинговыми уведомлениями. "
         "Сообщения о диалогах, оплатах и другие служебные уведомления остаются."

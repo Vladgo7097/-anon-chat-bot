@@ -13,6 +13,13 @@ def reveal_keyboard(sid):
         InlineKeyboardButton(text="Предложить раскрыться", icon_custom_emoji_id="5348232622898167572", callback_data=f"v1:reveal:{sid}", style="primary")]])
 
 
+def reveal_request_keyboard(sid):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Согласиться", callback_data=f"v1:reveal:{sid}", style="success"),
+        InlineKeyboardButton(text="Отказать", callback_data=f"v1:reveal:no:{sid}", style="danger"),
+    ]])
+
+
 async def show_reveal(message, user_id):
     chat = await ChatService().active(user_id)
     if not chat:
@@ -50,6 +57,14 @@ async def cb_old_reveal(callback: CallbackQuery):
 
 @reveal_router.callback_query(F.data.startswith("v1:reveal:"))
 async def cb_consent(callback: CallbackQuery):
+    if callback.data.startswith("v1:reveal:no:"):
+        result = await RevealService().decline(
+            callback.from_user.id, callback.data.removeprefix("v1:reveal:no:"))
+        await callback.answer("Отказ отправлен" if result.ok else "Запрос уже недоступен")
+        if result.ok:
+            await callback.message.edit_text(
+                "Ты отказался раскрывать контакт. Диалог можно продолжить анонимно.")
+        return
     sid = callback.data.split(":")[-1]
     result = await RevealService().consent(callback.from_user.id, sid)
     await callback.answer()
@@ -57,12 +72,19 @@ async def cb_consent(callback: CallbackQuery):
         await callback.message.answer("Запрос уже отправлен или диалог завершён.")
         return
     if result.code == "MUTUAL":
-        contacts = result.data["contacts"]
-        for uid in contacts:
-            other = next((value for key, value in contacts.items() if key != uid), None)
-            text = f"@{escape(other)}" if other else "контакт в Telegram не настроен"
+        profiles = result.data["profiles"]
+        for uid in profiles:
+            other = next((value for key, value in profiles.items() if key != uid), {})
+            username = other.get("username")
+            text = f"@{escape(username)}" if username else "контакт в Telegram не настроен"
+            caption = (f"<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> "
+                       f"Вы оба хотите общаться открыто!\n\n"
+                       f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Собеседник: {text}")
             try:
-                await callback.bot.send_message(uid, f"<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> Вы оба хотите общаться открыто!\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Собеседник: {text}")
+                if other.get("photo"):
+                    await callback.bot.send_photo(uid, other["photo"], caption=caption)
+                else:
+                    await callback.bot.send_message(uid, caption)
             except TelegramForbiddenError:
                 pass
     else:
@@ -77,6 +99,6 @@ async def paid_reveal(message, user_id, session_id, kind):
         await message.answer("Диалог уже завершён; контакт не раскрывается.")
         return
     if kind == "reveal_status":
-        await message.answer({"MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Согласие взаимно.", "PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Ожидается ответ.", "NOT_REQUESTED": "Запрос ещё не отправлен."}.get(result.code, "Запрос завершён."))
+        await message.answer({"MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Согласие взаимно.", "PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Ожидается ответ.", "DECLINED": "Собеседник отказался раскрывать контакт.", "NOT_REQUESTED": "Запрос ещё не отправлен."}.get(result.code, "Запрос завершён."))
     else:
         await message.answer("<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Приоритетный запрос доступен. Подтверди своё согласие:", reply_markup=reveal_keyboard(session_id))

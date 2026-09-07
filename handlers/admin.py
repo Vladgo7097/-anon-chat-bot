@@ -61,7 +61,7 @@ async def cmd_season(message: Message):
 
 def overview_text(s):
     metric=lambda key: f"{s[key]}%" if s.get(key) is not None else "— (недостаточно данных)"
-    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Оплачено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
+    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\nРегистрацию завершили: {s['onboarding_completed']} ({metric('onboarding_conversion')})\nНачали поиск: {s['searchers']}\nПолучили пару: {s['matched']} ({metric('search_conversion')})\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160337059543238\">💰</tg-emoji> Оплатили: {s['buyers']} ({metric('purchase_conversion')})\nПолучено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
 
 
 @admin_router.message(Command("admin"))
@@ -136,7 +136,10 @@ async def cb_stats(callback: CallbackQuery):
     s=await StatsService().overview(days)
     text=overview_text(s)
     if callback.data=="admin:money":
-        text+="\n\nПо продуктам:\n"+"\n".join(f"{k}: {v}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for k,v in s['products'].items())
+        text+="\n\nПо продуктам:\n"+"\n".join(
+            f"{k}: {v}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> · "
+            f"{s['product_orders'].get(k, 0)} покупок · {s['product_shares'].get(k, 0)}%"
+            for k,v in s['products'].items())
     if callback.data.startswith("admin:events:"):
         text+="\n\nУникальные пользователи по событиям:\n"+"\n".join(f"{k}: {v}" for k,v in s['funnel'].items())
     await callback.answer()
