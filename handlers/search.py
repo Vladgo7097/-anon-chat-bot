@@ -91,6 +91,9 @@ async def search_loop(status, user_id, bot=None):
             await MatchingService().cancel(user_id)
             return
         started = time.monotonic() - max(0, time.time() - float(queued_at))
+        # started is reset for each Premium window; queued_since is not,
+        # so the cap below measures the whole time spent in the queue.
+        queued_since = started
         offer_tracked = False
         status_retry_at = 0.0
         while True:
@@ -107,9 +110,11 @@ async def search_loop(status, user_id, bot=None):
                 if await has_active_participation(user_id):
                     return
                 from utils.db import is_premium
-                if await is_premium(user_id):
-                    # Preserve the current Premium behavior: keep searching
-                    # with priority for another window until explicitly cancelled.
+                # Premium keeps its priority window, but no longer searches
+                # without end: waiting in the queue past the cap helps nobody.
+                cap = await bot_value("premium_search_timeout", config.PREMIUM_SEARCH_TIMEOUT)
+                if await is_premium(user_id) and (
+                        not cap or time.monotonic()-queued_since < cap):
                     requeued = await MatchingService().enqueue(user_id)
                     if requeued.code == "SEARCH_STARTED":
                         started = time.monotonic()

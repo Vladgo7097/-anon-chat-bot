@@ -18,7 +18,10 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 CHAT_DELAY_NEXT = int(os.getenv("CHAT_DELAY_NEXT", "7"))
 ONLINE_UPDATE_INTERVAL = 60
 ANTI_FLOOD_DELAY = 0.5
-SEARCH_TIMEOUT = 60
+SEARCH_TIMEOUT = 180
+# Total time a Premium search may keep re-queueing for a new window.
+# 0 lifts the cap and restores an unlimited Premium search.
+PREMIUM_SEARCH_TIMEOUT = 180
 INACTIVE_CHAT_TTL = 300
 
 # Цены Telegram Stars

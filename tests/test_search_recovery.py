@@ -114,25 +114,44 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.enqueue.assert_not_awaited()
         self.bot.send_message.assert_awaited_once()
 
-    async def test_premium_search_survives_timeout(self):
-        from services.result import ServiceResult
+    async def premium_loop(self, queued_seconds, settings):
+        """Run one Premium search that has already waited queued_seconds."""
         self.service.enqueue = AsyncMock(return_value=ServiceResult(True, "SEARCH_STARTED"))
         self.service.find = AsyncMock(return_value=SimpleNamespace(user1_id=1, user2_id=2))
-        self.redis.get.return_value = str(time.time() - 120)
-        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+        self.redis.get.return_value = str(time.time() - queued_seconds)
+        with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
+             patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
              patch("utils.db.is_premium", AsyncMock(return_value=True)), \
              patch("handlers.search.asyncio.sleep", AsyncMock()):
             await search.search_loop(None, 1, self.bot)
+
+    async def test_premium_gets_another_window_while_under_the_cap(self):
+        await self.premium_loop(70, {"search_timeout": 60, "premium_search_timeout": 180})
         self.service.cancel.assert_awaited_once_with(1)
         self.service.enqueue.assert_awaited_once_with(1)
         self.service.find.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
+    async def test_premium_stops_once_the_cap_is_reached(self):
+        # Nobody should sit in the queue past the cap, Premium included.
+        await self.premium_loop(200, {"search_timeout": 60, "premium_search_timeout": 180})
+        self.service.cancel.assert_awaited_once_with(1)
+        self.service.enqueue.assert_not_awaited()
+        self.bot.send_message.assert_awaited_once()
+        self.assertIn("Пока никого нет", self.bot.send_message.await_args.args[1])
+
+    async def test_a_zero_cap_restores_the_unlimited_premium_search(self):
+        await self.premium_loop(6000, {"search_timeout": 60, "premium_search_timeout": 0})
+        self.service.enqueue.assert_awaited_once_with(1)
+        self.bot.send_message.assert_not_awaited()
+
     async def test_premium_search_exits_when_reenqueue_rejected(self):
-        from services.result import ServiceResult
+        # Still inside the cap, so the re-enqueue is attempted and refused.
         self.service.enqueue = AsyncMock(return_value=ServiceResult(False, "BANNED"))
-        self.redis.get.return_value = str(time.time() - 120)
-        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+        self.redis.get.return_value = str(time.time() - 70)
+        settings = {"search_timeout": 60, "premium_search_timeout": 180}
+        with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
+             patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
              patch("utils.db.is_premium", AsyncMock(return_value=True)), \
              patch("handlers.search.asyncio.sleep", AsyncMock()):
             await search.search_loop(None, 1, self.bot)
