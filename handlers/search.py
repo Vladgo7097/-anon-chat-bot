@@ -87,6 +87,7 @@ async def search_loop(status, user_id, bot=None):
             return
         started = time.monotonic() - max(0, time.time() - float(queued_at))
         offer_tracked = False
+        status_retry_at = 0.0
         while True:
             r = await get_redis()
             if await r.zscore("search_queue", str(user_id)) is None:
@@ -119,7 +120,7 @@ async def search_loop(status, user_id, bot=None):
             try:
                 from handlers.premium import product_keyboard
                 from utils.db import is_premium
-                if status is not None:
+                if status is not None and time.monotonic() >= status_retry_at:
                     offer = await product_keyboard(["instant_search"]) if elapsed > await bot_value("search_slow_offer_seconds", 20) and not await is_premium(user_id) else None
                     await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard(offer))
                     if offer and not offer_tracked:
@@ -127,8 +128,7 @@ async def search_loop(status, user_id, bot=None):
                         await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")
                         offer_tracked=True
             except TelegramRetryAfter as error:
-                await asyncio.sleep(error.retry_after)
-                continue
+                status_retry_at = time.monotonic() + error.retry_after
             except TelegramBadRequest:
                 pass
             await asyncio.sleep(2)
@@ -165,10 +165,10 @@ async def cmd_cancel(message: Message):
 
 @search_router.callback_query(F.data == "search:cancel")
 async def cb_cancel(callback: CallbackQuery):
+    await callback.answer("Поиск отменён")
     async with search_lock(callback.from_user.id):
         await cancel_task(callback.from_user.id)
         await MatchingService().cancel(callback.from_user.id)
-    await callback.answer("Поиск отменён")
     await callback.message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
 
 

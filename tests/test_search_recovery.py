@@ -63,6 +63,19 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.cancel.assert_awaited_once_with(1)
         self.assertNotIn(1, search._tasks)
 
+    async def test_status_rate_limit_does_not_suspend_matching(self):
+        from aiogram.exceptions import TelegramRetryAfter
+        from aiogram.methods import EditMessageText
+        status = SimpleNamespace(bot=self.bot, edit_text=AsyncMock(side_effect=TelegramRetryAfter(
+            method=EditMessageText(chat_id=1, message_id=1, text="test"),
+            message="rate limit", retry_after=193)))
+        self.service.find.side_effect = [None, SimpleNamespace(user1_id=1, user2_id=2)]
+        with patch("handlers.search.asyncio.sleep", AsyncMock()) as sleep:
+            await search.search_loop(status, 1)
+        self.assertEqual(self.service.find.await_count, 2)
+        self.assertTrue(all(call.args[0] <= 2 for call in sleep.await_args_list))
+        self.service.cancel.assert_not_awaited()
+
     async def test_restart_restores_only_live_entries_once(self):
         async def entries(*args):
             for uid in ("1", "2", "1"):

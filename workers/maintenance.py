@@ -36,16 +36,21 @@ async def refresh_broadcast_progress(bot, service):
             await bot.edit_message_text(broadcast_card(job, update["counts"]),
                                         chat_id=update["chat_id"], message_id=update["message_id"],
                                         reply_markup=broadcast_card_kb(job.id))
-        except TelegramRetryAfter:
-            # The outbox itself matters more than the progress card; try again later.
+        except TelegramRetryAfter as error:
+            await service.defer_progress(job.id, error.retry_after)
             return
         except TelegramBadRequest as error:
             if "message is not modified" in error.message:
+                if update["final"]:
+                    await service.drop_progress(job.id)
                 continue
             logger.warning("event=broadcast_progress_unavailable error_code=%s", type(error).__name__)
             await service.drop_progress(job.id)
         except TelegramForbiddenError:
             await service.drop_progress(job.id)
+        else:
+            if update["final"]:
+                await service.drop_progress(job.id)
 
 
 async def run(bot):

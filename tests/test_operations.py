@@ -260,6 +260,32 @@ class OperationsTests(DatabaseCase):
             self.assertEqual(await s.scalar(select(func.count(Notification.id)).where(
                 Notification.type == "owner_new_user")), 0)
 
+    async def test_new_notice_respects_existing_owner_cooldown(self):
+        await UserRepository().get_or_create(4242)
+        service = NotificationService()
+        first = await service.next()
+        await service.finish(first.id, "sent")
+        await UserRepository().get_or_create(4243)
+        self.assertIsNone(await service.next())
+
+    async def test_new_notice_respects_existing_rate_limit(self):
+        await UserRepository().get_or_create(4242)
+        service = NotificationService()
+        first = await service.next()
+        await service.finish(first.id, "queued", "rate_limit", 193)
+        await UserRepository().get_or_create(4243)
+        self.assertIsNone(await service.next())
+        async with self.factory() as s:
+            notices = (await s.scalars(select(Notification))).all()
+            self.assertTrue(all(n.scheduled_at > utcnow() for n in notices))
+
+    async def test_owner_startup_does_not_require_user_profile(self):
+        async with self.factory.begin() as s:
+            await enqueue(s, 99, "startup", "startup:test", "started")
+        notice = await NotificationService().next()
+        self.assertIsNotNone(notice)
+        self.assertEqual(notice.user_id, 99)
+
     async def test_owner_delivery_without_profile(self):
         await UserRepository().get_or_create(4242)
         service = NotificationService()

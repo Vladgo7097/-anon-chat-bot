@@ -95,7 +95,10 @@ class BroadcastProgressTests(DatabaseCase):
             stored.progress_at = utcnow()-timedelta(seconds=30)
         final = await service.progress_updates()
         self.assertTrue(final[0]["final"])
-        # The final render is the last one; the job stops being tracked.
+        # Keep tracking until Telegram confirms the final render.
+        async with self.factory() as s:
+            self.assertIsNotNone((await s.get(Broadcast, job.id)).progress_message_id)
+        await service.drop_progress(job.id)
         async with self.factory.begin() as s:
             stored = await s.get(Broadcast, job.id)
             self.assertIsNone(stored.progress_message_id)
@@ -149,3 +152,24 @@ class BroadcastCardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ProgressTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_final_progress_is_acknowledged_only_after_delivery(self):
+        from workers.maintenance import refresh_broadcast_progress
+        from aiogram.exceptions import TelegramRetryAfter
+        from aiogram.methods import EditMessageText
+        job = SimpleNamespace(id=1)
+        service = SimpleNamespace(progress_updates=AsyncMock(return_value=[
+            {"job": job, "chat_id": 99, "message_id": 1, "counts": {}, "final": True}]),
+            drop_progress=AsyncMock(), defer_progress=AsyncMock())
+        bot = SimpleNamespace(edit_message_text=AsyncMock(side_effect=TelegramRetryAfter(
+            method=EditMessageText(chat_id=99, message_id=1, text="test"),
+            message="rate limit", retry_after=10)))
+        with patch("handlers.admin.broadcast_card", return_value="done"), patch("handlers.admin.broadcast_card_kb", return_value=None):
+            await refresh_broadcast_progress(bot, service)
+            service.drop_progress.assert_not_awaited()
+            service.defer_progress.assert_awaited_once_with(1, 10)
+            bot.edit_message_text.side_effect = None
+            await refresh_broadcast_progress(bot, service)
+        service.drop_progress.assert_awaited_once_with(1)

@@ -124,11 +124,24 @@ class NotificationService:
                 from models.operations import BotSetting
                 flag=await s.get(BotSetting,"marketing_enabled")
                 marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
-            owner_notice = n.type == "owner_new_user" and n.user_id == config.OWNER_ID
-            if (n.type == "owner_new_user" and not owner_notice) or (not owner_notice and (
+            owner_notice = n.type in {"owner_new_user", "startup"} and n.user_id == config.OWNER_ID
+            if (n.type in {"owner_new_user", "startup"} and not owner_notice) or (not owner_notice and (
                     not user or (banned(user) and n.type != "ban") or user.deleted_at
                     or user.bot_blocked_at or marketing_disabled)):
                 n.status = "skipped"
+                return None
+            cooldown = await s.scalar(select(func.max(Notification.scheduled_at)).where(
+                Notification.user_id == n.user_id, Notification.id != n.id,
+                Notification.status.in_(["queued", "sending"]),
+                Notification.last_error == "rate_limit"))
+            if owner_notice:
+                sent = await s.scalar(select(func.max(Notification.sent_at)).where(
+                    Notification.user_id == n.user_id, Notification.type == "owner_new_user",
+                    Notification.status == "sent"))
+                if sent:
+                    cooldown = max(cooldown or sent, sent+timedelta(seconds=3))
+            if cooldown and cooldown > now:
+                n.scheduled_at = cooldown
                 return None
             if n.attempt_count >= 5:
                 n.status = "failed"
@@ -206,8 +219,8 @@ class NotificationService:
     async def progress_updates(self):
         """Return live progress for broadcasts that have an admin message to edit.
 
-        Transport belongs to the worker, so this only reads counters, stamps the
-        refresh time and stops tracking once the final render has been handed out.
+        Transport belongs to the worker: read counters and stamp the refresh time.
+        The worker stops tracking only after the final render is acknowledged.
         """
         updates = []
         async with async_session.begin() as s:
@@ -221,9 +234,13 @@ class NotificationService:
                 updates.append({"chat_id": job.progress_chat_id, "message_id": job.progress_message_id,
                                 "job": job, "counts": counts, "final": job.status == "completed"})
                 job.progress_at = now
-                if job.status == "completed":
-                    job.progress_message_id = None
         return updates
+
+    async def defer_progress(self, job_id, retry_after):
+        async with async_session.begin() as s:
+            job = await s.get(Broadcast, job_id, with_for_update=True)
+            if job:
+                job.progress_at = utcnow()+timedelta(seconds=max(0, retry_after)-5)
 
     async def drop_progress(self, job_id):
         """Stop tracking a message the admin deleted or that Telegram rejected."""
