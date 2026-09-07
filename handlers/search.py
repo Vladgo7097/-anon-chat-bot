@@ -51,7 +51,7 @@ async def begin_search(message, user_id):
 def search_status_keyboard(offer=None):
     rows = list(offer.inline_keyboard) if offer else []
     return InlineKeyboardMarkup(inline_keyboard=rows + [[
-        InlineKeyboardButton(text="Отменить поиск", callback_data="search:cancel")]])
+        InlineKeyboardButton(text="Отменить поиск", icon_custom_emoji_id="5273914604752216432", callback_data="search:cancel")]])
 
 
 async def _begin_search(message, user_id):

@@ -41,14 +41,22 @@ async def cb_rewards(callback: CallbackQuery):
         InlineKeyboardButton(text="Premium", icon_custom_emoji_id="5920281855378068765",callback_data="premium")]]))
 
 
+# Telegram wants a custom emoji's fallback to be that emoji's own character,
+# so each id travels together with the character it stands for.
+GENDER_ICONS = {"male": ("5366121041426922772", "👨‍🦳"),
+                "female": ("5366209534933089956", "👵")}
+UNKNOWN_GENDER_ICON = ("5348232622898167572", "♥️")
+
+
 async def show_profile(message, user_id):
     s = await get_user_stats(user_id)
     if not s:
         await message.answer("Создай профиль: /start")
         return
     gender = {"male": "Парень", "female": "Девушка"}.get(s['gender'], "Не указан")
+    gender_icon = GENDER_ICONS.get(s['gender'], UNKNOWN_GENDER_ICON)
     premium = f"до {s['premium_expires']:%d.%m.%Y}" if s['is_premium'] else "нет"
-    await message.answer(f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Твой профиль\n\n<tg-emoji emoji-id=\"5965485570124681987\">🆔</tg-emoji> ID: {s['anon_id']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Пол: {gender}\n<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Возраст: {s['age']}\n<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> В боте с: {s['created_at']:%d.%m.%Y}\n\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов проведено: {s['chats_count']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Лайков: {s['likes']}   <tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Дизлайков: {s['dislikes']}\n<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}", reply_markup=profile_kb())
+    await message.answer(f"<tg-emoji emoji-id=\"5976585328985643006\">🧑‍🧑‍🧒</tg-emoji> Твой профиль\n\n<tg-emoji emoji-id=\"5965485570124681987\">🆔</tg-emoji> ID: {s['anon_id']}\n<tg-emoji emoji-id=\"{gender_icon[0]}\">{gender_icon[1]}</tg-emoji> Пол: {gender}\n<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Возраст: {s['age']}\n<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> В боте с: {s['created_at']:%d.%m.%Y}\n\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов проведено: {s['chats_count']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Лайков: {s['likes']}   <tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Дизлайков: {s['dislikes']}\n<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}", reply_markup=profile_kb())
 
 
 @profile_router.message(Command("profile"))
