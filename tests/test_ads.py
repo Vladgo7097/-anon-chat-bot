@@ -444,5 +444,42 @@ class AdsSettingsHandlerTests(DatabaseCase):
         self.assertEqual(await bot_value("ad_cooldown_seconds", 1800), before)
 
 
+class AdChannelInputTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from aiogram.fsm.context import FSMContext
+        from aiogram.fsm.storage.memory import MemoryStorage
+        from aiogram.fsm.storage.base import StorageKey
+        self.state = FSMContext(storage=MemoryStorage(), key=StorageKey(bot_id=1, chat_id=99, user_id=99))
+
+    def message(self, text):
+        return SimpleNamespace(text=text, from_user=SimpleNamespace(id=99), answer=AsyncMock())
+
+    async def test_bare_username_without_at_is_rejected(self):
+        from handlers.admin import ad_channel
+        from handlers.admin import AdminAdCampaign
+        await self.state.set_state(AdminAdCampaign.CHANNEL)
+        message = self.message("anon_chat_news")
+        await ad_channel(message, self.state)
+        self.assertIn("с @", message.answer.await_args.args[0])
+        self.assertEqual(await self.state.get_state(), AdminAdCampaign.CHANNEL.state)
+        self.assertEqual(await self.state.get_data(), {})
+
+    async def test_at_prefixed_username_is_accepted_and_stored_without_at(self):
+        from handlers.admin import ad_channel, AdminAdCampaign
+        await self.state.set_state(AdminAdCampaign.CHANNEL)
+        message = self.message("@anon_chat_news")
+        await ad_channel(message, self.state)
+        self.assertEqual((await self.state.get_data())["channel_username"], "anon_chat_news")
+        self.assertEqual(await self.state.get_state(), AdminAdCampaign.TITLE.state)
+
+    async def test_too_short_username_after_at_is_rejected(self):
+        from handlers.admin import ad_channel, AdminAdCampaign
+        await self.state.set_state(AdminAdCampaign.CHANNEL)
+        message = self.message("@abc")
+        await ad_channel(message, self.state)
+        self.assertIn("5–32 символа", message.answer.await_args.args[0])
+        self.assertEqual(await self.state.get_state(), AdminAdCampaign.CHANNEL.state)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

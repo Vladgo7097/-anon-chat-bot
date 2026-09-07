@@ -523,14 +523,18 @@ async def cb_ad_new(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminAdCampaign.CHANNEL)
     await callback.answer()
     await callback.message.answer(
-        "Username канала-рекламодателя, без @ (например anon_chat_news):\n/cancel — отменить.")
+        "Username канала или группы-рекламодателя, с @ (например @anon_chat_news):\n/cancel — отменить.")
 
 
 @admin_router.message(AdminAdCampaign.CHANNEL, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
 async def ad_channel(message: Message, state: FSMContext):
-    value = message.text.strip().lstrip("@")
+    raw = message.text.strip()
+    if not raw.startswith("@"):
+        await message.answer("Нужно с @ в начале, например @anon_chat_news. Попробуй ещё раз.")
+        return
+    value = raw.lstrip("@")
     if not (5 <= len(value) <= 32) or not value.replace("_", "").isalnum():
-        await message.answer("Username канала: 5–32 символа, латиница/цифры/подчёркивание. Попробуй ещё раз.")
+        await message.answer("Username: 5–32 символа после @, латиница/цифры/подчёркивание. Попробуй ещё раз.")
         return
     await state.update_data(channel_username=value)
     await state.set_state(AdminAdCampaign.TITLE)
