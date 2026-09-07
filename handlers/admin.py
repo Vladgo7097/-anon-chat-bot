@@ -84,7 +84,9 @@ async def cmd_season(message: Message):
 
 def overview_text(s):
     metric=lambda key: f"{s[key]}%" if s.get(key) is not None else "— (недостаточно данных)"
-    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\nРегистрацию завершили: {s['onboarding_completed']} ({metric('onboarding_conversion')})\nНачали поиск: {s['searchers']}\nПолучили пару: {s['matched']} ({metric('search_conversion')})\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Оплатили: {s['buyers']} ({metric('purchase_conversion')})\nПолучено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
+    growth=metric('growth_7d_pct') if s.get('growth_7d_pct') is not None else "— (недостаточно данных за прошлую неделю)"
+    stars_usd=f" (≈${s['stars_usd']})" if s.get('stars_usd') is not None else ""
+    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\nНовых за 7 дней: {s['new_7d']} ({growth} к предыдущим 7 дням)\nРегистрацию завершили: {s['onboarding_completed']} ({metric('onboarding_conversion')})\nНачали поиск: {s['searchers']}\nПолучили пару: {s['matched']} ({metric('search_conversion')})\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Оплатили: {s['buyers']} ({metric('purchase_conversion')})\nПолучено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>{stars_usd}\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
 
 
 @admin_router.message(Command("admin"))
@@ -101,19 +103,24 @@ async def cb_admin_back(callback: CallbackQuery):
     await safe_send(callback.message, overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
-def funnel_text(f, days):
+def funnel_text(f, days, min_step_pct=0):
     total = f["stages"][0][1]
     head = f"<tg-emoji emoji-id=\"5399909394525737759\">📉</tg-emoji> Воронка регистрации за {days} дн."
     if not total:
         return head+"\n\nЗа период никто не запускал бота."
-    lines, previous = [], None
+    lines, warnings, previous, previous_label = [], [], None, None
     for label, count in f["stages"]:
+        step_pct = round(100*count/previous) if previous else 0
         share = f"{round(100*count/total)}% от всех"
         if previous is not None:
-            share += f", {round(100*count/previous) if previous else 0}% от предыдущего"
+            share += f", {step_pct}% от предыдущего"
+            if min_step_pct and previous and step_pct < min_step_pct:
+                warnings.append(f"⚠️ Просадка на шаге «{label}»: {step_pct}% от «{previous_label}» (порог {min_step_pct}%)")
         lines.append(f"{label}: {count} ({share})")
-        previous = count
+        previous, previous_label = count, label
     text = head+"\n\n"+"\n".join(lines)
+    if warnings:
+        text += "\n\n"+"\n".join(warnings)
     text += f"\n\nНе нажали ни одной кнопки после /start: {f['stages'][0][1]-f['stages'][1][1]}"
     if f["age_rejected"]:
         text += f"\nОтклонено на шаге возраста: {f['age_rejected']}"
@@ -143,8 +150,10 @@ async def cb_funnel(callback: CallbackQuery):
     if days not in {1,7,30}:
         await callback.answer("Недопустимый период.")
         return
+    from services.settings import bot_value
+    min_step_pct = await bot_value("funnel_min_step_pct", 0)
     await callback.answer()
-    await safe_send(callback.message, funnel_text(await StatsService().onboarding_funnel(days),days),
+    await safe_send(callback.message, funnel_text(await StatsService().onboarding_funnel(days),days,min_step_pct),
                                   reply_markup=funnel_kb(days))
 
 
@@ -353,7 +362,9 @@ async def cb_settings(callback: CallbackQuery):
     products=await PaymentService().products()
     await callback.answer()
     await callback.message.answer("<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Цены:\n"+"\n".join(f"{p.code}: {p.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for p in products)+
-        "\n\n/price код цена\n/setting chat_delay_next 7\n/setting search_timeout 60\n/setting inactive_chat_ttl 300\n/setting marketing_enabled 0")
+        "\n\n/price код цена\n/setting chat_delay_next 7\n/setting search_timeout 60\n/setting inactive_chat_ttl 300\n/setting marketing_enabled 0"
+        "\n/setting stars_usd_cents_per_100 130 (курс: центов США за 100 звёзд; 0 — не показывать $)"
+        "\n/setting funnel_min_step_pct 50 (предупреждать в воронке о просадке ниже этого % между шагами; 0 — выключено)")
 
 
 @admin_router.message(Command("price","setting"))

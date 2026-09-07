@@ -172,3 +172,67 @@ class ExpiredQueueTests(DatabaseCase):
             self.assertIsNone(await self.repo.match(1, 2, self.redis))
         self.assertIsNone(await self.repo.active(1))
         self.assertIsNone(await self.repo.active(2))
+
+
+class FakeLockRedis:
+    """Just enough of redis-py's SET NX/EX and EVAL to test search_lock's CAS release."""
+
+    def __init__(self):
+        self.store = {}
+        self.set_calls = []
+
+    async def set(self, key, value, nx=False, ex=None):
+        self.set_calls.append((key, value, nx, ex))
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+    async def eval(self, script, numkeys, key, token):
+        if self.store.get(key) == token:
+            del self.store[key]
+            return 1
+        return 0
+
+
+class SearchLockTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.redis = FakeLockRedis()
+        p = patch("handlers.search.get_redis", AsyncMock(return_value=self.redis))
+        p.start()
+        self.addCleanup(p.stop)
+
+    async def test_lock_is_a_redis_key_with_nx_and_ttl(self):
+        async with search.search_lock(42, ttl=10):
+            pass
+        key, value, nx, ex = self.redis.set_calls[0]
+        self.assertEqual(key, "search:lock:42")
+        self.assertTrue(nx)
+        self.assertEqual(ex, 10)
+        # Released on exit, so a later acquisition of the same key succeeds again.
+        self.assertNotIn(key, self.redis.store)
+
+    async def test_second_holder_waits_until_the_first_releases(self):
+        order = []
+
+        async def holder(name, delay):
+            async with search.search_lock(1, retry_delay=0.001):
+                order.append(f"{name}:enter")
+                await asyncio.sleep(delay)
+                order.append(f"{name}:exit")
+
+        await asyncio.gather(holder("a", 0.02), holder("b", 0))
+        # Whichever gets there first, the second holder's enter must not
+        # appear before the first holder's exit.
+        first = order[0].split(":")[0]
+        self.assertEqual(order, [f"{first}:enter", f"{first}:exit",
+                                  f"{'b' if first == 'a' else 'a'}:enter",
+                                  f"{'b' if first == 'a' else 'a'}:exit"])
+
+    async def test_release_does_not_delete_a_lock_it_no_longer_owns(self):
+        # Simulates a holder whose TTL expired and got overwritten by a new
+        # holder: releasing the stale token must not evict the new one.
+        self.redis.store["search:lock:7"] = "someone-elses-token"
+        released = await self.redis.eval(search._RELEASE_SCRIPT, 1, "search:lock:7", "my-token")
+        self.assertEqual(released, 0)
+        self.assertEqual(self.redis.store["search:lock:7"], "someone-elses-token")

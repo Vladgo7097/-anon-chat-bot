@@ -78,9 +78,14 @@ class StatsService:
 
     async def overview(self, days=1):
         cutoff=utcnow().replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=days-1)
+        week_ago=utcnow()-timedelta(days=7)
+        two_weeks_ago=utcnow()-timedelta(days=14)
         async with async_session() as s:
             users=await s.scalar(select(func.count(User.id)))
             new=await s.scalar(select(func.count(User.id)).where(User.created_at>=cutoff))
+            new_7d=await s.scalar(select(func.count(User.id)).where(User.created_at>=week_ago))
+            new_prev_7d=await s.scalar(select(func.count(User.id)).where(
+                User.created_at>=two_weeks_ago,User.created_at<week_ago))
             chats=await s.scalar(select(func.count(Chat.id)).where(Chat.status=="ended",Chat.ended_at>=cutoff))
             duration=await s.scalar(select(func.avg(Chat.duration_seconds)).where(Chat.status=="ended",Chat.ended_at>=cutoff))
             stars=await s.scalar(select(func.coalesce(func.sum(Payment.stars_amount),0)).where(Payment.status=="paid",Payment.paid_at>=cutoff))
@@ -103,8 +108,15 @@ class StatsService:
         orders=dict(product_orders)
         total_orders=sum(orders.values())
         product_shares={key: round(100*value/total_orders, 1) for key, value in orders.items()} if total_orders else {}
+        growth_7d_pct=round(100*(new_7d-new_prev_7d)/new_prev_7d,1) if new_prev_7d else None
+        from services.settings import bot_value
+        # Undefined by default: showing a $ estimate off a made-up rate is the
+        # kind of fake monetization data rule 13 forbids.
+        usd_rate=await bot_value("stars_usd_cents_per_100",0)
+        stars_usd=round(stars*usd_rate/10000,2) if usd_rate else None
         return dict(users=users,new=new,chats=chats,avg_seconds=round(duration or 0),stars=stars,
-            premium=premium,products=dict(products),product_orders=orders,product_shares=product_shares,
+            stars_usd=stars_usd,premium=premium,products=dict(products),product_orders=orders,
+            product_shares=product_shares,new_7d=new_7d,growth_7d_pct=growth_7d_pct,
             funnel=funnel,rating=round(rating,1) if rating is not None else None,
             retention_d1=d1,retention_d7=d7, onboarding_completed=completed,
             onboarding_conversion=round(100*completed/new,1) if new else None,
@@ -271,7 +283,7 @@ class AdminService:
 
     async def setting(self,admin,key,value):
         authorize(admin)
-        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"premium_search_timeout":(0,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1),"ad_cooldown_seconds":(0,86400),"owner_notice_limit":(0,1000),"onboarding_nudge_hours":(1,168)}
+        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"premium_search_timeout":(0,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1),"ad_cooldown_seconds":(0,86400),"owner_notice_limit":(0,1000),"onboarding_nudge_hours":(1,168),"stars_usd_cents_per_100":(0,1000000),"funnel_min_step_pct":(0,100)}
         if type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:

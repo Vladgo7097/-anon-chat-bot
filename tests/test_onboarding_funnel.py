@@ -97,10 +97,10 @@ class FunnelTests(DatabaseCase):
 
 
 class FunnelTextTests(unittest.TestCase):
-    def render(self, stages, **extra):
+    def render(self, stages, min_step_pct=0, **extra):
         data = dict(stages=stages, age_rejected=0, avg_minutes=None, daily=[])
         data.update(extra)
-        return funnel_text(data, 7)
+        return funnel_text(data, 7, min_step_pct)
 
     def test_each_stage_shows_its_share_of_the_whole_and_of_the_step_before(self):
         text = self.render([("Запустили /start", 100), ("Нажали «Начать»", 50),
@@ -119,6 +119,23 @@ class FunnelTextTests(unittest.TestCase):
                             ("Указали пол", 0), ("Указали возраст", 0),
                             ("Приняли правила", 0)])
         self.assertIn("Указали пол: 0 (0% от всех, 0% от предыдущего)", text)
+
+    def test_drop_off_warning_fires_below_the_configured_threshold(self):
+        stages = [("Запустили /start", 100), ("Нажали «Начать»", 30),
+                  ("Указали пол", 25), ("Указали возраст", 20),
+                  ("Приняли правила", 15)]
+        text = self.render(stages, min_step_pct=50)
+        self.assertIn("⚠️ Просадка на шаге «Нажали «Начать»»: 30% от «Запустили /start» (порог 50%)", text)
+        # Later steps clear the threshold and get no warning of their own.
+        self.assertNotIn("шаге «Указали пол»", text)
+
+    def test_no_warning_below_threshold_when_disabled(self):
+        stages = [("Запустили /start", 100), ("Нажали «Начать»", 1)]+[("x", 1)]*3
+        self.assertNotIn("Просадка", self.render(stages, min_step_pct=0))
+
+    def test_no_warning_when_step_meets_the_threshold(self):
+        stages = [("Запустили /start", 100), ("Нажали «Начать»", 80)]+[("x", 80)]*3
+        self.assertNotIn("Просадка", self.render(stages, min_step_pct=50))
 
     def test_optional_lines_appear_only_when_there_is_something_to_say(self):
         stages = [("Запустили /start", 10)]+[("x", 5)]*4

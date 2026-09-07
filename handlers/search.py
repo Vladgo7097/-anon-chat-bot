@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import secrets
 import time
-from weakref import WeakValueDictionary
+from contextlib import asynccontextmanager
 from aiogram import F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -16,15 +17,26 @@ import config
 
 logger = logging.getLogger(__name__)
 _tasks = {}
-_start_locks = WeakValueDictionary()
+# Compare-and-delete: only the holder that set the token releases the lock, so a
+# holder whose TTL already expired can never delete the next holder's lock.
+_RELEASE_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
 
 
-def search_lock(user_id):
-    lock = _start_locks.get(user_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _start_locks[user_id] = lock
-    return lock
+@asynccontextmanager
+async def search_lock(user_id, ttl=10, retry_delay=0.05):
+    r = await get_redis()
+    key, token = f"search:lock:{user_id}", secrets.token_hex(8)
+    while not await r.set(key, token, nx=True, ex=ttl):
+        await asyncio.sleep(retry_delay)
+    try:
+        yield
+    finally:
+        await r.eval(_RELEASE_SCRIPT, 1, key, token)
 
 
 async def has_active_participation(user_id):
