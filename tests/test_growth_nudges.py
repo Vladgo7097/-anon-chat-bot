@@ -140,6 +140,55 @@ class OnboardingNudgeTests(DatabaseCase):
             self.assertEqual(row.status, "skipped")
 
 
+class QueuePriorityTests(DatabaseCase):
+    """A bulk nudge run once delayed ten match notices until their chats ended."""
+
+    async def queue(self, kind, user_id, marketing, key):
+        async with self.factory.begin() as s:
+            from services.notifications import enqueue
+            await enqueue(s, user_id, kind, key, "text", marketing=marketing)
+
+    async def test_a_match_overtakes_a_bulk_backlog_queued_before_it(self):
+        for index in range(50):
+            await self.queue("onboarding_nudge", 6000+index, True, f"nudge:{index}")
+        chat = await self.repo.match(1, 2, self.redis)
+        picked = await NotificationService().next()
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked.type, "match")
+        self.assertEqual(picked.callback_data, chat.session_id)
+
+    async def test_bulk_still_drains_once_nothing_urgent_is_waiting(self):
+        # Any bulk type will do; "onboarding_nudge" would be dropped here by the
+        # staleness check, since the fixture users have finished the form.
+        await self.queue("seasonal", 1, True, "seasonal:only")
+        picked = await NotificationService().next()
+        self.assertEqual(picked.type, "seasonal")
+
+    async def test_urgent_notices_keep_their_own_order(self):
+        await self.queue("ban", 1, False, "ban:first")
+        await self.queue("chat_ended", 2, False, "ended:second")
+        service = NotificationService()
+        first = await service.next()
+        await service.finish(first.id, "sent")
+        second = await service.next()
+        self.assertEqual([first.type, second.type], ["ban", "chat_ended"])
+
+
+class AlreadyChattingKeyboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_answer_carries_the_chat_keyboard(self):
+        from handlers import search
+        from services.result import ServiceResult
+        from keyboards import texts as T
+        message = AsyncMock()
+        message.answer = AsyncMock()
+        with patch.object(search, "MatchingService") as matching:
+            matching.return_value.enqueue = AsyncMock(return_value=ServiceResult(False, "ALREADY_CHATTING"))
+            await search._begin_search(message, 1)
+        markup = message.answer.await_args.kwargs["reply_markup"]
+        labels = [b.text for row in markup.keyboard for b in row]
+        self.assertIn(T.STOP, labels)
+
+
 class IcebreakerTests(DatabaseCase):
     def test_same_session_gives_both_sides_the_same_prompt(self):
         self.assertEqual(icebreaker("a1b2c3d4ffff0000"), icebreaker("a1b2c3d4ffff0000"))

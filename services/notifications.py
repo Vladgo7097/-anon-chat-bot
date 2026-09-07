@@ -147,7 +147,11 @@ class NotificationService:
         async with async_session.begin() as s:
             now = utcnow()
             n = await s.scalar(select(Notification).where(Notification.status.in_(["queued","sending"]), Notification.scheduled_at<=now)
-                .order_by(Notification.id).with_for_update(skip_locked=True).limit(1))
+                # Time-critical notices go before bulk marketing, FIFO within
+                # each class. A 1162-message nudge run once queued ahead of ten
+                # "Собеседник найден!" notices; every one of them expired
+                # unsent while the chat it announced was already over.
+                .order_by(Notification.marketing, Notification.id).with_for_update(skip_locked=True).limit(1))
             if not n:
                 return None
             if n.type == "onboarding_nudge" and await s.scalar(select(User.onboarding_completed).where(

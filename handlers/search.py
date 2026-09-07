@@ -61,8 +61,13 @@ async def _begin_search(message, user_id):
         await message.answer("<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Поиск уже идёт.", reply_markup=search_kb_reply())
         return
     if not result.ok:
+        # Send the chat keyboard along with the "press Стоп" answer: a user whose
+        # match notice never arrived still has the menu keyboard on screen and no
+        # Стоп button to press, which is a dead end.
+        markup = chat_kb_reply() if result.code == "ALREADY_CHATTING" else None
         await message.answer({"BANNED": "⛔ Ты заблокирован.", "ALREADY_CHATTING": "Ты уже в диалоге. Нажми «Стоп».",
-                              "ONBOARDING_REQUIRED": "Сначала заверши регистрацию: /start"}[result.code])
+                              "ONBOARDING_REQUIRED": "Сначала заверши регистрацию: /start"}[result.code],
+                             reply_markup=markup)
         return
     await cancel_task(user_id)
     try:

@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy import String, Integer, BigInteger, Boolean, Text, JSON, Date, UniqueConstraint
+from sqlalchemy import String, Integer, BigInteger, Boolean, Text, JSON, Date, UniqueConstraint, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base, UTCDateTime as DateTime
 from utils.time import utcnow
@@ -76,6 +76,10 @@ class Offer(Base):
 
 class Notification(Base):
     __tablename__ = "notification_log"
+    # Serves the worker's dispatch query, which runs several times a second:
+    # pending rows ordered by marketing first, then id.
+    __table_args__ = (Index("ix_notification_dispatch", "marketing", "id",
+                            postgresql_where=text("status IN ('queued', 'sending')")),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     type: Mapped[str] = mapped_column(String(64))
