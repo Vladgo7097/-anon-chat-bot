@@ -1,3 +1,5 @@
+import logging
+import re
 from html import escape
 import config
 from aiogram import F, BaseMiddleware
@@ -13,6 +15,27 @@ from services.admin import AdminService, StatsService, authorize
 from services.ads import AdCampaignService
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
+
+
+logger = logging.getLogger(__name__)
+CUSTOM_EMOJI = re.compile(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>')
+
+
+async def safe_send(message, text, **kwargs):
+    """Send text, falling back to the plain emoji if Telegram refuses an id.
+
+    One unusable custom emoji id makes Telegram reject the entire message with
+    DOCUMENT_INVALID, which left the admin panel unreachable. The fallback keeps
+    the emoji character and drops only the tag around it, so the panel still
+    opens while the bad id is fixed.
+    """
+    try:
+        return await message.answer(text, **kwargs)
+    except TelegramBadRequest as error:
+        if "DOCUMENT_INVALID" not in str(error):
+            raise
+        logger.warning("event=custom_emoji_rejected chat_id=%s", message.chat.id)
+        return await message.answer(CUSTOM_EMOJI.sub(r"\1", text), **kwargs)
 
 
 class AdminOnly(BaseMiddleware):
@@ -61,21 +84,21 @@ async def cmd_season(message: Message):
 
 def overview_text(s):
     metric=lambda key: f"{s[key]}%" if s.get(key) is not None else "— (недостаточно данных)"
-    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\nРегистрацию завершили: {s['onboarding_completed']} ({metric('onboarding_conversion')})\nНачали поиск: {s['searchers']}\nПолучили пару: {s['matched']} ({metric('search_conversion')})\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160337059543238\">💰</tg-emoji> Оплатили: {s['buyers']} ({metric('purchase_conversion')})\nПолучено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
+    return f"<tg-emoji emoji-id=\"6129805886383723340\">🛠</tg-emoji> Админ-панель\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Пользователей: {s['users']}\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Новых за период: {s['new']}\nРегистрацию завершили: {s['onboarding_completed']} ({metric('onboarding_conversion')})\nНачали поиск: {s['searchers']}\nПолучили пару: {s['matched']} ({metric('search_conversion')})\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Завершённых диалогов: {s['chats']}\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Средняя длительность: {s['avg_seconds']} сек.\n<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Оплатили: {s['buyers']} ({metric('purchase_conversion')})\nПолучено: {s['stars']}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>\n<tg-emoji emoji-id=\"5283130719806175947\">💎</tg-emoji> Активных Premium: {s['premium']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Средний рейтинг: {metric('rating')}\nВозврат на следующий день: {metric('retention_d1')}\nВозврат через 7 дней: {metric('retention_d7')}"
 
 
 @admin_router.message(Command("admin"))
 async def cmd_admin(message: Message,state: FSMContext):
     await state.clear()
     s=await StatsService().overview()
-    await message.answer(overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
+    await safe_send(message, overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
 @admin_router.callback_query(F.data=="admin:back")
 async def cb_admin_back(callback: CallbackQuery):
     await callback.answer()
     s=await StatsService().overview()
-    await callback.message.answer(overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
+    await safe_send(callback.message, overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 
 
 def funnel_text(f, days):
@@ -121,7 +144,7 @@ async def cb_funnel(callback: CallbackQuery):
         await callback.answer("Недопустимый период.")
         return
     await callback.answer()
-    await callback.message.answer(funnel_text(await StatsService().onboarding_funnel(days),days),
+    await safe_send(callback.message, funnel_text(await StatsService().onboarding_funnel(days),days),
                                   reply_markup=funnel_kb(days))
 
 
@@ -143,7 +166,7 @@ async def cb_stats(callback: CallbackQuery):
     if callback.data.startswith("admin:events:"):
         text+="\n\nУникальные пользователи по событиям:\n"+"\n".join(f"{k}: {v}" for k,v in s['funnel'].items())
     await callback.answer()
-    await callback.message.answer(text,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+    await safe_send(callback.message, text,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="За неделю",callback_data="admin:period:7"),
         InlineKeyboardButton(text="За месяц",callback_data="admin:period:30"),
         InlineKeyboardButton(text="CSV",callback_data=f"admin:export:{days}")],[
