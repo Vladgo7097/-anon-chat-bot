@@ -1,4 +1,5 @@
 """Redis cache and compatibility entry points; durable sessions live in PostgreSQL."""
+import asyncio
 import time
 import redis.asyncio as aioredis
 import config
@@ -20,20 +21,25 @@ def redis_fallback(default):
     return decorate
 
 _pool = None
+_pool_loop = None
 
 
 async def get_redis():
-    global _pool
-    if _pool is None:
+    global _pool, _pool_loop
+    loop = asyncio.get_running_loop()
+    if _pool is None or _pool_loop is not loop:
         _pool = aioredis.from_url(config.REDIS_URL, decode_responses=True, max_connections=30)
+        _pool_loop = loop
     return _pool
 
 
 async def close_redis():
-    global _pool
+    global _pool, _pool_loop
     if _pool is not None:
-        await _pool.aclose()
+        if _pool_loop is asyncio.get_running_loop():
+            await _pool.aclose()
         _pool = None
+        _pool_loop = None
 
 
 @redis_fallback(None)
