@@ -1,0 +1,36 @@
+#!/bin/bash
+# Deploy hook for the bare repo at /opt/anon-chat-bot.git.
+#
+# Install it with:
+#   scp deploy/post-receive root@<host>:/opt/anon-chat-bot.git/hooks/post-receive
+#   ssh root@<host> chmod +x /opt/anon-chat-bot.git/hooks/post-receive
+#
+# "checkout -f" discards anything edited directly in the deploy directory. That
+# has happened twice, and both times the edit vanished without a trace at the
+# next push. Save such edits as a patch and name them in the push output, so a
+# change that never reached the repository is at least recoverable.
+set -u
+
+DEPLOY_DIR="/opt/anon-chat-bot"
+GIT="git --work-tree=$DEPLOY_DIR --git-dir=/opt/anon-chat-bot.git"
+RESCUE="$DEPLOY_DIR/.deploy-rescue"
+
+echo "[post-receive] Deploying to $DEPLOY_DIR..."
+
+if ! $GIT diff --quiet HEAD 2>/dev/null; then
+    stamp=$(date +%Y%m%d-%H%M%S)
+    mkdir -p "$RESCUE"
+    $GIT diff HEAD > "$RESCUE/$stamp.patch"
+    echo "[post-receive] ВНИМАНИЕ: эти файлы правились на сервере мимо git и сейчас будут перезаписаны:"
+    $GIT diff --name-only HEAD | sed 's|^|[post-receive]     |'
+    echo "[post-receive] их изменения сохранены в .deploy-rescue/$stamp.patch"
+fi
+
+$GIT checkout -f
+
+echo "[post-receive] Rebuilding and restarting Docker..."
+cd "$DEPLOY_DIR" || exit 1
+docker compose build bot 2>&1 | tail -3
+docker compose up -d bot 2>&1
+
+echo "[post-receive] Deploy complete!"

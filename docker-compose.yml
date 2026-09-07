@@ -1,0 +1,40 @@
+# Production stack. Lived only on the server until now, which is how the
+# deployed setup could drift from the repository unnoticed.
+#
+# POSTGRES_PASSWORD comes from the .env file next to this one and is never
+# committed. Compose substitutes it at read time; the ":?" form stops the
+# stack rather than silently starting the database with an empty password.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: anon_chat
+      POSTGRES_USER: anon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5432:5432'
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6379:6379'
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./.env:/app/.env:ro
+    depends_on:
+      - db
+      - redis
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+volumes:
+  pgdata:
