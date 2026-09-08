@@ -18,6 +18,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 import config
 
 SESSION_COOKIE = "session"
+LOGOUT_GUARD_COOKIE = "logged_out"
 LOGIN_WIDGET_MAX_AGE = 86400  # Telegram's own recommendation for auth_date freshness.
 
 

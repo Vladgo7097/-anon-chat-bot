@@ -26,7 +26,7 @@
         без анкеты и фото. Контакты раскрываются, только если согласны оба.
       </p>
       <div id="telegram-login"></div>
-      <button id="miniapp-login-again" class="btn btn-primary" type="button" hidden>Войти снова</button>
+      <button id="login-again" class="btn btn-primary" type="button" hidden>Вернуться ко входу</button>
       <p class="mono" id="auth-error" hidden style="color:#c0524a;font-size:12px;margin-top:14px;"></p>
     </div>
 
@@ -57,31 +57,42 @@
 </div>
 
 <script>
+  var loggedOut = new URLSearchParams(location.search).get('logged_out') === '1';
+  var miniApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+
   // Built at runtime so the same static file works over the server's IP
   // during setup and over the real domain afterwards without editing HTML.
-  var s = document.createElement('script');
-  s.async = true;
-  s.src = 'https://telegram.org/js/telegram-widget.js?22';
-  s.setAttribute('data-telegram-login', 'anonim_chatqbot');
-  s.setAttribute('data-size', 'large');
-  s.setAttribute('data-radius', '3');
-  s.setAttribute('data-auth-url', location.origin + '/auth/telegram/callback');
-  s.setAttribute('data-request-access', 'write');
-  document.getElementById('telegram-login').appendChild(s);
+  if (!loggedOut) {
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://telegram.org/js/telegram-widget.js?22';
+    s.setAttribute('data-telegram-login', 'anonim_chatqbot');
+    s.setAttribute('data-size', 'large');
+    s.setAttribute('data-radius', '3');
+    s.setAttribute('data-auth-url', location.origin + '/auth/telegram/callback');
+    s.setAttribute('data-request-access', 'write');
+    document.getElementById('telegram-login').appendChild(s);
+  }
 
   // Do not immediately recreate the session after an explicit logout in a
   // Telegram Mini App. The user can start a fresh session with the button.
-  var loggedOut = new URLSearchParams(location.search).get('logged_out') === '1';
-  var miniApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
-  var loginAgain = document.getElementById('miniapp-login-again');
+  var loginAgain = document.getElementById('login-again');
   if (loggedOut) {
     document.getElementById('auth-error').hidden = false;
     document.getElementById('auth-error').style.color = 'var(--muted)';
     document.getElementById('auth-error').textContent = 'Вы вышли из профиля.';
-    if (miniApp) loginAgain.hidden = false;
+    loginAgain.hidden = false;
   }
   loginAgain.addEventListener('click', function () {
-    location.replace('/');
+    fetch('/auth/prepare-login', {method: 'POST', credentials: 'same-origin'})
+      .then(function (response) {
+        if (!response.ok) throw new Error('prepare login failed');
+        location.replace('/');
+      })
+      .catch(function () {
+        document.getElementById('auth-error').style.color = '#c0524a';
+        document.getElementById('auth-error').textContent = 'Не удалось открыть вход. Попробуй ещё раз.';
+      });
   });
 
   // Telegram Mini App: if opened inside Telegram, skip the widget and

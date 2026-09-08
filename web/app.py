@@ -62,6 +62,28 @@ async def logout():
         httponly=True,
         samesite="lax",
     )
+    response.set_cookie(
+        auth.LOGOUT_GUARD_COOKIE,
+        "1",
+        max_age=config.WEB_SESSION_MAX_AGE,
+        path="/",
+        secure=config.WEB_COOKIE_SECURE,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/auth/prepare-login")
+async def prepare_login():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(
+        auth.LOGOUT_GUARD_COOKIE,
+        path="/",
+        secure=config.WEB_COOKIE_SECURE,
+        httponly=True,
+        samesite="lax",
+    )
     return response
 
 
@@ -76,6 +98,8 @@ def _issue_session(response, telegram_id: int):
 @app.get("/auth/telegram/callback")
 async def telegram_login_callback(request: Request):
     """Redirect target of the Telegram Login Widget (browser)."""
+    if request.cookies.get(auth.LOGOUT_GUARD_COOKIE):
+        return RedirectResponse(url="/?logged_out=1", status_code=302)
     data = dict(request.query_params)
     if not auth.verify_login_widget(data):
         raise HTTPException(status_code=401, detail="BAD_SIGNATURE")
@@ -88,8 +112,10 @@ async def telegram_login_callback(request: Request):
 
 
 @app.post("/auth/miniapp")
-async def miniapp_login(payload: dict):
+async def miniapp_login(payload: dict, request: Request):
     """Telegram Mini App: the page posts window.Telegram.WebApp.initData here."""
+    if request.cookies.get(auth.LOGOUT_GUARD_COOKIE):
+        raise HTTPException(status_code=401, detail="LOGGED_OUT")
     user_data = auth.verify_miniapp_init_data(payload.get("init_data", ""))
     if user_data is None or "id" not in user_data:
         raise HTTPException(status_code=401, detail="BAD_SIGNATURE")
