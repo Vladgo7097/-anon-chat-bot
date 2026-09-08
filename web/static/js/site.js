@@ -485,7 +485,57 @@
         if (msg.from === (me && me.telegram_id)) break;
         appendBubble(false, msg.content_type, msg.text);
         break;
+      case "call_offer":
+        if (msg.from === (me && me.telegram_id)) {
+          appendSystemLine("Предложение звонка отправлено — ждём ответа");
+        } else {
+          showCallOffer(msg.session_id);
+        }
+        break;
+      case "call_accepted":
+        location.href = "/call.html";
+        break;
+      case "call_declined":
+        appendSystemLine("Собеседник отклонил звонок");
+        break;
+      case "call_ended":
+        appendSystemLine("Звонок завершён");
+        break;
     }
+  }
+
+  function showCallOffer(sessionId) {
+    var card = document.createElement("div");
+    card.className = "section";
+    card.style.cssText = "align-self:center;max-width:420px;text-align:center;border-style:dashed;";
+    card.innerHTML =
+      '<div class="mono" style="font-size:11px;letter-spacing:.1em;color:var(--muted);margin-bottom:6px;">ПРЕДЛОЖЕНИЕ ЗВОНКА</div>' +
+      '<div style="font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:14px;">Только голос. Камера выключена, включается вручную и видна собеседнику.</div>';
+    var row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:10px;justify-content:center;";
+    var accept = document.createElement("button");
+    accept.className = "btn btn-primary";
+    accept.textContent = "ПРИНЯТЬ";
+    var decline = document.createElement("button");
+    decline.className = "btn btn-ghost";
+    decline.textContent = "ОТКЛОНИТЬ";
+    accept.addEventListener("click", function () {
+      api("/api/call/accept", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      }).then(function () { location.href = "/call.html"; })
+        .catch(function () { toast("Звонок уже недоступен"); card.remove(); });
+    });
+    decline.addEventListener("click", function () {
+      api("/api/call/decline", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      }).catch(function () {}).finally(function () { card.remove(); });
+    });
+    row.appendChild(accept); row.appendChild(decline);
+    card.appendChild(row);
+    $("thread").appendChild(card);
+    $("thread").scrollTop = $("thread").scrollHeight;
   }
 
   function sendText() {
@@ -531,6 +581,16 @@
     api("/api/chat/send-photo", { method: "POST", body: form })
       .catch(function () { appendSystemLine("Фото не доставлено"); });
   });
+  $("call-btn").addEventListener("click", function () {
+    api("/api/call/offer", { method: "POST" })
+      .then(function () { appendSystemLine("Предложение звонка отправлено — ждём ответа"); })
+      .catch(function (e) {
+        toast(e.detail === "PREMIUM_REQUIRED" ? "Звонки доступны с Premium"
+            : e.detail === "CALL_IN_PROGRESS" ? "Звонок уже предложен"
+            : "Не удалось предложить звонок");
+      });
+  });
+
   $("logout-btn").addEventListener("click", function () {
     fetch("/auth/logout", { method: "POST" }).then(function () { location.href = "/"; });
   });
@@ -542,7 +602,13 @@
     if (!me.onboarding_complete) { $("onboarding-banner").hidden = false; return; }
     $("my-id").textContent = "ТЫ: " + me.anon_id;
     if (me.online !== undefined) $("panel-online").textContent = me.online + " онлайн";
+    // Calls are a Premium feature, so the button only exists for subscribers.
+    $("call-btn").hidden = !me.is_premium;
     $("app-frame").hidden = false;
+    try {
+      var notice = sessionStorage.getItem("callNotice");
+      if (notice) { toast(notice); sessionStorage.removeItem("callNotice"); }
+    } catch (e) {}
     go("panel");
     connectSocket();
   }).catch(function () {});

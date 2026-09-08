@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import config
 from web import auth
 from web.routes_account import router as account_router
+from web.routes_call import router as call_router
 from web.routes_chat import router as chat_router
 from web.ws import router as ws_router
 
@@ -19,6 +20,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="anon-chat-bot web")
 app.include_router(chat_router)
 app.include_router(account_router)
+app.include_router(call_router)
 app.include_router(ws_router)
 
 

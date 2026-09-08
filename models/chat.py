@@ -77,3 +77,19 @@ class RevealRequest(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Call(Base):
+    """One completed (or refused) call. The live state lives in Redis; this is
+    the durable record for stats and for moderating abuse -- never content."""
+    __tablename__ = "calls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_session_id: Mapped[str] = mapped_column(String(32), index=True)
+    initiator_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    partner_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="offered")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    end_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)

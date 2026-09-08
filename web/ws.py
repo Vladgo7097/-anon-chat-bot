@@ -110,6 +110,14 @@ async def _receiver(websocket, telegram_id, state, stop):
                 await ChatService().end_chat(telegram_id, reason="stop")
                 # The chat_ended pub/sub event (published by end_chat itself)
                 # flips state["mode"] back to idle from inside _run_chat.
+            elif action == "signal" and state["mode"] == "chatting":
+                # WebRTC offer/answer/ICE, passed between the two peers
+                # untouched -- the server never inspects or stores media
+                # negotiation, it only relays the envelope.
+                from services.relay import RelayService
+                await RelayService().publish_delivery(state["session_id"], {
+                    "type": "signal", "from": telegram_id, "signal": msg.get("signal"),
+                })
     finally:
         stop.set()
 

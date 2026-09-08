@@ -59,3 +59,14 @@ WEB_SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "")
 WEB_SESSION_MAX_AGE = int(os.getenv("WEB_SESSION_MAX_AGE", str(30 * 86400)))
 # Off only for local http:// testing before the real domain/TLS exist.
 WEB_COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "1") == "1"
+
+# Звонки. Медиа идёт через свой TURN, чтобы собеседники не видели IP друг друга.
+TURN_HOST = os.getenv("TURN_HOST", "")
+TURN_REALM = os.getenv("TURN_REALM", TURN_HOST)
+TURN_SECRET = os.getenv("TURN_SECRET", "")
+TURN_CREDENTIAL_TTL = int(os.getenv("TURN_CREDENTIAL_TTL", "600"))
+# Комната открывается по одноразовой ссылке: человек из бота может вообще не
+# иметь веб-сессии, а звонок ждать не может.
+CALL_TOKEN_TTL = int(os.getenv("CALL_TOKEN_TTL", "300"))
+# Сколько ждём ответа на предложение звонка, прежде чем снять его.
+CALL_OFFER_TTL = int(os.getenv("CALL_OFFER_TTL", "60"))

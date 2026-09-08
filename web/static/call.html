@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Звонок — Анонимный чат</title>
+<link rel="stylesheet" href="/css/site.css">
+<style>
+  .call-shell { max-width: 860px; margin: 0 auto; padding: 0 16px; min-height: 100vh; display: flex; flex-direction: column; }
+  .call-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; flex-wrap: wrap; }
+  .call-stage { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; padding: 20px 0; }
+  .peer { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+  .peer-ring { position: relative; width: 190px; height: 190px; display: flex; align-items: center; justify-content: center; }
+  .peer-pulse { position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent); opacity: 0; }
+  .peer-pulse.on { animation: callpulse 2.4s ease-out infinite; }
+  .peer-pulse.p2 { animation-delay: .8s; } .peer-pulse.p3 { animation-delay: 1.6s; }
+  @keyframes callpulse { 0% { transform: scale(.75); opacity: .5; } 100% { transform: scale(1.35); opacity: 0; } }
+  .peer-avatar { width: 130px; height: 130px; border-radius: 50%; background: var(--ink); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+  .peer-avatar video { width: 100%; height: 100%; object-fit: cover; }
+  .self-tile { position: absolute; right: 0; bottom: 0; width: 168px; border-radius: 8px; border: 1px solid var(--glass-border); background: linear-gradient(165deg, rgba(40,33,27,.72), rgba(24,20,17,.55)); backdrop-filter: blur(16px); padding: 12px; text-align: center; }
+  .self-tile video { width: 100%; height: 92px; object-fit: cover; border-radius: 5px; background: #1a1512; display: none; }
+  .self-tile.video-on video { display: block; }
+  .self-tile.video-on .self-placeholder { display: none; }
+  .controls { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 22px 0 32px; flex-wrap: wrap; }
+  .ctrl { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid var(--glass-border); background: rgba(255,255,255,.04); color: var(--text); cursor: pointer; }
+  .ctrl.off { color: var(--muted); background: rgba(255,255,255,.02); }
+  .ctrl.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(10,8,6,.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 20px; }
+  .modal { max-width: 360px; width: 100%; background: linear-gradient(165deg, rgba(45,37,30,.96), rgba(26,21,18,.96)); border: 1px solid var(--glass-border); border-radius: 10px; padding: 24px; text-align: center; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); }
+</style>
+</head>
+<body>
+<div class="atmosphere"><div class="glow-a"></div><div class="glow-b"></div></div>
+<div class="grain"></div>
+
+<div class="call-shell">
+  <div class="call-top">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span class="mono" style="font-size:13px;letter-spacing:.14em;">АНОНИМНЫЙ ЗВОНОК</span>
+      <span id="call-timer" class="mono" style="font-size:13px;color:var(--accent);">00:00</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span id="call-quality" class="chip">СОЕДИНЯЕМСЯ…</span>
+      <span id="call-camhint" class="chip" style="border-color:var(--accent-dim);color:var(--accent);">КАМЕРЫ ВЫКЛЮЧЕНЫ — ВАС НЕ ВИДНО</span>
+    </div>
+  </div>
+
+  <div class="call-stage">
+    <div class="peer">
+      <div class="peer-ring">
+        <div id="pulse1" class="peer-pulse"></div>
+        <div id="pulse2" class="peer-pulse p2"></div>
+        <div id="pulse3" class="peer-pulse p3"></div>
+        <div class="peer-avatar" id="peer-avatar">
+          <video id="remote-video" autoplay playsinline style="display:none;"></video>
+          <svg id="peer-placeholder" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dim)" stroke-width="1.4"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+      </div>
+      <div style="text-align:center;">
+        <div id="peer-label" class="mono" style="font-size:15px;letter-spacing:.06em;">СОБЕСЕДНИК</div>
+        <div id="peer-state" class="mono" style="font-size:11px;color:var(--muted);margin-top:8px;letter-spacing:.06em;">ожидание</div>
+      </div>
+    </div>
+
+    <div class="self-tile" id="self-tile">
+      <video id="local-video" autoplay muted playsinline></video>
+      <div class="self-placeholder" style="width:52px;height:52px;margin:0 auto 10px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dim)" stroke-width="1.6"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" stroke-linecap="round"/></svg>
+      </div>
+      <div class="mono" style="font-size:11px;letter-spacing:.06em;color:var(--muted);">ТЫ</div>
+      <div id="self-mic" class="mono" style="font-size:10px;letter-spacing:.05em;color:var(--accent);margin-top:6px;">МИКРОФОН ВКЛ</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="btn-mic" class="ctrl" title="Микрофон">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3a3.5 3.5 0 0 1 3.5 3.5v5a3.5 3.5 0 0 1-7 0v-5A3.5 3.5 0 0 1 12 3Z"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" stroke-linecap="round"/></svg>
+    </button>
+    <button id="btn-cam" class="ctrl off" title="Камера">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 3l18 18" stroke-linecap="round"/><path d="M15 10.5V8a1 1 0 0 0-1-1H8.5M3.8 7.8A1 1 0 0 0 3 8v8a1 1 0 0 0 1 1h10a1 1 0 0 0 .9-.6M22 8.5l-5 3.5 5 3.5v-7Z" stroke-linejoin="round"/></svg>
+    </button>
+    <a class="ctrl" href="/app.html#devices" title="Настройки устройств">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9 2 2 0 1 1-2.8 2.8 1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5 2 2 0 1 1-4 0 1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3 2 2 0 1 1-2.8-2.8 1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1 2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9 2 2 0 1 1 2.8-2.8 1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5 2 2 0 1 1 4 0 1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3 2 2 0 1 1 2.8 2.8 1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1 2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.5 1Z" stroke-linejoin="round"/></svg>
+    </a>
+    <div style="width:1px;height:34px;background:var(--border);"></div>
+    <button id="btn-hangup" class="ctrl danger" title="Завершить звонок">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 14.5c-.6-.6-.6-1.6 0-2.2C5 9.8 8.4 8.5 12 8.5s7 1.3 9.5 3.8c.6.6.6 1.6 0 2.2l-2 2a1.5 1.5 0 0 1-2 .1l-1.8-1.4a1.5 1.5 0 0 1-.5-1.6l.3-1a9.5 9.5 0 0 0-7 0l.3 1a1.5 1.5 0 0 1-.5 1.6L6.5 16.6a1.5 1.5 0 0 1-2-.1l-2-2Z" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="cam-modal" class="modal-backdrop" hidden>
+  <div class="modal">
+    <div style="width:44px;height:44px;margin:0 auto 14px;border-radius:50%;border:1px solid var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8Z"/><path d="m22 8.5-5 3.5 5 3.5v-7Z" stroke-linejoin="round"/></svg>
+    </div>
+    <div style="font-size:15px;font-weight:500;margin-bottom:10px;">Включить камеру?</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:18px;">
+      Собеседник увидит твоё лицо. Это раскроет тебя — анонимность в этом звонке будет потеряна.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button id="cam-plain" class="btn btn-primary">ВКЛЮЧИТЬ КАМЕРУ</button>
+      <button id="cam-blur" class="btn btn-ghost" style="border-color:var(--accent-dim);color:var(--accent);">ВКЛЮЧИТЬ С РАЗМЫТИЕМ ЛИЦА</button>
+      <button id="cam-cancel" class="btn btn-ghost">ОТМЕНА</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/call.js"></script>
+</body>
+</html>
