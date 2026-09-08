@@ -17,12 +17,19 @@ RESCUE="$DEPLOY_DIR/.deploy-rescue"
 
 echo "[post-receive] Deploying to $DEPLOY_DIR..."
 
-if ! $GIT diff --quiet HEAD 2>/dev/null; then
+# post-receive runs after refs are already updated, so HEAD here is the new
+# commit that was just pushed -- diffing the still-old working tree against
+# HEAD compares it to the NEW commit and misreports every normal push as a
+# server-side edit. Diff against the pre-push value passed on stdin instead.
+read -r oldrev _newrev _refname
+
+if [ -n "${oldrev:-}" ] && [ "$oldrev" != "0000000000000000000000000000000000000000" ] \
+        && ! $GIT diff --quiet "$oldrev" 2>/dev/null; then
     stamp=$(date +%Y%m%d-%H%M%S)
     mkdir -p "$RESCUE"
-    $GIT diff HEAD > "$RESCUE/$stamp.patch"
+    $GIT diff "$oldrev" > "$RESCUE/$stamp.patch"
     echo "[post-receive] ВНИМАНИЕ: эти файлы правились на сервере мимо git и сейчас будут перезаписаны:"
-    $GIT diff --name-only HEAD | sed 's|^|[post-receive]     |'
+    $GIT diff --name-only "$oldrev" | sed 's|^|[post-receive]     |'
     echo "[post-receive] их изменения сохранены в .deploy-rescue/$stamp.patch"
 fi
 
