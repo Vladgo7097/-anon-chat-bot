@@ -24,9 +24,6 @@
     <div class="landing-auth">
       <div id="telegram-login"></div>
       <p class="mono" id="auth-error" hidden></p>
-      <p class="mono" id="account-switch-help" hidden>
-        Другой аккаунт: нажмите аватар справа от кнопки Telegram, выйдите из Telegram Login и авторизуйтесь заново.
-      </p>
     </div>
   </div>
 
@@ -115,13 +112,6 @@
   s.setAttribute('data-auth-url', location.origin + '/auth/telegram/callback');
   s.setAttribute('data-request-access', 'write');
   document.getElementById('telegram-login').appendChild(s);
-
-  if (loggedOut) {
-    document.getElementById('auth-error').hidden = false;
-    document.getElementById('auth-error').style.color = 'var(--muted)';
-    document.getElementById('auth-error').textContent = 'Сеанс завершён. Войдите через Telegram заново.';
-    document.getElementById('account-switch-help').hidden = false;
-  }
 
   // Telegram Mini App: if opened inside Telegram, skip the widget and
   // authenticate with initData instead, then go straight to the app.
