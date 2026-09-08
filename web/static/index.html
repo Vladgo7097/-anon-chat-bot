@@ -6,7 +6,7 @@
 <title>Анонимный чат — разговор без имени</title>
 <link rel="stylesheet" href="/css/site.css">
 </head>
-<body>
+<body class="landing-page">
 <div class="atmosphere"><div class="glow-a"></div><div class="glow-b"></div></div>
 <div class="grain"></div>
 
@@ -15,48 +15,32 @@
     <a class="brand-logo" href="/" aria-label="Анонимный чат">
       <img src="/img/logo.webp" alt="Логотип Анонимного чата" width="260" height="130">
     </a>
-    <div class="mono" style="font-size:13px;color:var(--muted)"><a href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">открыть бота</a></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:56px;align-items:center;padding:40px 0 80px;">
-    <div>
-      <div class="mono" style="font-size:12px;letter-spacing:.2em;color:var(--accent);margin-bottom:20px;">СЛУЧАЙНЫЙ СОБЕСЕДНИК · 0 АНКЕТ · 0 ФОТО</div>
-      <h1 class="serif" style="font-size:52px;line-height:1.08;font-weight:500;margin:0 0 24px;">Разговор<br>без имени.</h1>
-      <p class="serif" style="font-style:italic;font-size:21px;color:var(--muted);margin:0 0 32px;max-width:460px;">Личность вымарана. Слова — настоящие.</p>
-      <p style="font-size:15px;line-height:1.7;color:var(--muted);margin:0 0 36px;max-width:440px;">
-        Входишь через Telegram — тот же аккаунт, что и в боте. Дальше — случайный собеседник,
-        без анкеты и фото. Контакты раскрываются, только если согласны оба.
-      </p>
+    <div class="landing-auth">
       <div id="telegram-login"></div>
-      <p class="mono" id="auth-error" hidden style="color:#c0524a;font-size:12px;margin-top:14px;"></p>
-      <p class="mono" id="account-switch-help" hidden style="color:var(--muted);font-size:12px;line-height:1.6;margin-top:10px;max-width:390px;">
+      <p class="mono" id="auth-error" hidden></p>
+      <p class="mono" id="account-switch-help" hidden>
         Другой аккаунт: нажмите аватар справа от кнопки Telegram, выйдите из Telegram Login и авторизуйтесь заново.
       </p>
     </div>
-
-    <div class="card-glass" style="padding:28px;position:relative;">
-      <div style="position:absolute;top:-11px;left:24px;background:#1c1815;padding:0 10px;border-radius:2px;" class="mono">
-        <span style="font-size:11px;letter-spacing:.16em;color:var(--muted);">ДОСЬЕ № 0000</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:16px;margin-top:6px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span class="mono" style="font-size:12px;color:var(--muted);">ИМЯ</span><span class="redact" style="width:110px;"></span>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span class="mono" style="font-size:12px;color:var(--muted);">ГОРОД</span><span class="redact" style="width:80px;"></span>
-        </div>
-        <div style="height:1px;background:var(--glass-border);margin:2px 0;"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span class="mono" style="font-size:12px;color:var(--muted);">СТАТУС</span>
-          <span style="display:flex;align-items:center;gap:8px;font-size:14px;"><span class="dot"></span>на связи</span>
-        </div>
-      </div>
-    </div>
   </div>
 
-  <div style="border-top:1px solid var(--border);padding:24px 0;display:flex;justify-content:space-between;color:var(--muted);font-size:12px;" class="mono">
-    <span>© АНОНИМ_ЧАТ</span>
-    <span>работает как сайт и как Mini App в Telegram</span>
+  <main class="landing-hero">
+    <div class="landing-copy card-glass">
+      <span class="landing-kicker mono">АНОНИМНЫЙ ЧАТ 1-НА-1</span>
+      <h1>Найди собеседника прямо сейчас</h1>
+      <p>Случайный подбор, переписка, фото и звонки. Контакты открываются только по взаимному согласию.</p>
+      <div class="landing-facts mono">
+        <span>АНОНИМНО</span>
+        <span>БЕЗ АНКЕТ В ЧАТЕ</span>
+        <span>ЖАЛОБЫ И БЛОКИРОВКИ</span>
+      </div>
+      <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Открыть в Telegram</a>
+    </div>
+  </main>
+
+  <div class="landing-footer mono">
+    <span>© АНОНИМНЫЙ ЧАТ</span>
+    <span>Сайт и Telegram Mini App</span>
   </div>
 </div>
 

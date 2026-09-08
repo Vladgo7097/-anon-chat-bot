@@ -20,6 +20,14 @@ def test_logo_is_served_as_webp():
     assert len(response.content) < 80_000
 
 
+def test_landing_background_is_served_as_webp():
+    response = TestClient(app).get("/img/background.webp")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+    assert len(response.content) < 120_000
+
+
 def test_logout_expires_the_session_cookie_with_matching_attributes():
     client = TestClient(app)
     client.cookies.set("session", "signed-value")
@@ -47,3 +55,5 @@ def test_logged_out_page_suppresses_automatic_miniapp_login():
     assert 'id="login-again"' not in page
     assert "Сеанс завершён. Войдите через Telegram заново." in page
     assert "Другой аккаунт: нажмите аватар справа" in page
+    assert 'class="landing-auth"' in page
+    assert "Случайный подбор, переписка, фото и звонки." in page
