@@ -592,7 +592,13 @@
   });
 
   $("logout-btn").addEventListener("click", function () {
-    fetch("/auth/logout", { method: "POST" }).then(function () { location.href = "/"; });
+    fetch("/auth/logout", { method: "POST", credentials: "same-origin" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("logout failed");
+        if (ws) { ws.close(); ws = null; }
+        location.replace("/?logged_out=1");
+      })
+      .catch(function () { toast("Не удалось выйти. Попробуй ещё раз"); });
   });
 
   /* ---------- boot ---------- */

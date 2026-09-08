@@ -55,7 +55,13 @@ async def me(request: Request):
 @app.post("/auth/logout")
 async def logout():
     response = JSONResponse({"ok": True})
-    response.delete_cookie(auth.SESSION_COOKIE)
+    response.delete_cookie(
+        auth.SESSION_COOKIE,
+        path="/",
+        secure=config.WEB_COOKIE_SECURE,
+        httponly=True,
+        samesite="lax",
+    )
     return response
 
 

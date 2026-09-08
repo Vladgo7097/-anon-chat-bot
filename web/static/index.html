@@ -26,6 +26,7 @@
         без анкеты и фото. Контакты раскрываются, только если согласны оба.
       </p>
       <div id="telegram-login"></div>
+      <button id="miniapp-login-again" class="btn btn-primary" type="button" hidden>Войти снова</button>
       <p class="mono" id="auth-error" hidden style="color:#c0524a;font-size:12px;margin-top:14px;"></p>
     </div>
 
@@ -68,9 +69,24 @@
   s.setAttribute('data-request-access', 'write');
   document.getElementById('telegram-login').appendChild(s);
 
+  // Do not immediately recreate the session after an explicit logout in a
+  // Telegram Mini App. The user can start a fresh session with the button.
+  var loggedOut = new URLSearchParams(location.search).get('logged_out') === '1';
+  var miniApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+  var loginAgain = document.getElementById('miniapp-login-again');
+  if (loggedOut) {
+    document.getElementById('auth-error').hidden = false;
+    document.getElementById('auth-error').style.color = 'var(--muted)';
+    document.getElementById('auth-error').textContent = 'Вы вышли из профиля.';
+    if (miniApp) loginAgain.hidden = false;
+  }
+  loginAgain.addEventListener('click', function () {
+    location.replace('/');
+  });
+
   // Telegram Mini App: if opened inside Telegram, skip the widget and
   // authenticate with initData instead, then go straight to the app.
-  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+  if (miniApp && !loggedOut) {
     window.Telegram.WebApp.ready();
     fetch('/auth/miniapp', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
