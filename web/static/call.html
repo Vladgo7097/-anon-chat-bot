@@ -22,9 +22,10 @@
   .self-tile.video-on video { display: block; }
   .self-tile.video-on .self-placeholder { display: none; }
   .controls { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 22px 0 32px; flex-wrap: wrap; }
-  .ctrl { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid var(--glass-border); background: rgba(255,255,255,.04); color: var(--text); cursor: pointer; }
-  .ctrl.off { color: var(--muted); background: rgba(255,255,255,.02); }
-  .ctrl.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .ctrl { width: 58px; height: 58px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid transparent; background: linear-gradient(145deg,#06183f,#090d31) padding-box,linear-gradient(130deg,var(--neon-cyan),var(--neon-violet)) border-box; color: #8deaff; cursor: pointer; box-shadow: 0 0 18px rgba(20,158,255,.18); transition: transform .16s ease,filter .16s ease,box-shadow .16s ease; }
+  .ctrl:hover { transform: translateY(-2px); filter: brightness(1.18); box-shadow:0 0 25px rgba(24,196,255,.32); }
+  .ctrl.off { color: #6d7d9f; filter: saturate(.45); }
+  .ctrl.danger { background:linear-gradient(135deg,#ff3d68,#b82cff);border-color:#ff88b3;color:#fff;box-shadow:0 0 24px rgba(255,55,122,.38); }
   .modal-backdrop { position: fixed; inset: 0; background: rgba(10,8,6,.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 20px; }
   .modal { max-width: 360px; width: 100%; background: linear-gradient(165deg, rgba(45,37,30,.96), rgba(26,21,18,.96)); border: 1px solid var(--glass-border); border-radius: 10px; padding: 24px; text-align: center; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); }
 </style>
@@ -101,7 +102,7 @@
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;">
       <button id="cam-plain" class="btn btn-primary">ВКЛЮЧИТЬ КАМЕРУ</button>
-      <button id="cam-blur" class="btn btn-ghost" style="border-color:var(--accent-dim);color:var(--accent);">ВКЛЮЧИТЬ С РАЗМЫТИЕМ ЛИЦА</button>
+      <button id="cam-blur" class="btn btn-ghost">ВКЛЮЧИТЬ С РАЗМЫТИЕМ ЛИЦА</button>
       <button id="cam-cancel" class="btn btn-ghost">ОТМЕНА</button>
     </div>
   </div>
