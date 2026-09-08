@@ -28,10 +28,16 @@ async def product_keyboard(codes, session_id=None):
 async def show_premium(message, user_id):
     from repositories.users import UserRepository
     from repositories.chats import premium_active
+    from services.growth import first_purchase_discount
     user = await UserRepository().get(user_id)
     text = PREMIUM_TEXT
     if user and premium_active(user):
         text += f"\n\n<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Активен до {user.premium_expires:%d.%m.%Y}"
+    else:
+        discount = await first_purchase_discount(user_id)
+        if discount:
+            text += (f"\n\n<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Первая подписка — "
+                     f"со скидкой {discount}%. Цена в счёте уже с ней.")
     await message.answer(text, reply_markup=await product_keyboard(["premium_1m", "premium_3m", "premium_12m"]))
 
 

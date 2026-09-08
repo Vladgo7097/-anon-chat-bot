@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 import config
 from web import auth
+from web.routes_account import router as account_router
 from web.routes_chat import router as chat_router
 from web.ws import router as ws_router
 
@@ -17,6 +18,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="anon-chat-bot web")
 app.include_router(chat_router)
+app.include_router(account_router)
 app.include_router(ws_router)
 
 
@@ -32,6 +34,7 @@ async def me(request: Request):
     if telegram_id is None:
         raise HTTPException(status_code=401, detail="NOT_AUTHENTICATED")
     from repositories.users import UserRepository
+    from services.chat_manager import get_online_count
     from services.onboarding import step_for
     from utils.db import is_premium
     user = await UserRepository().get(telegram_id)
@@ -43,6 +46,7 @@ async def me(request: Request):
         "onboarding_complete": step_for(user) == "MENU",
         "bot_username": config.BOT_USERNAME,
         "is_premium": await is_premium(telegram_id),
+        "online": await get_online_count(),
     }
 
 

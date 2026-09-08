@@ -23,6 +23,32 @@ async def offer(s, user_id, code, percent, scope="premium", days=30):
         await enqueue(s,user_id,"reward",f"reward:{code}",f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Получена скидка {percent}%. Срок: {days} дней. Подробности в профиле.","profile:rewards")
 
 
+async def first_purchase_discount(user_id, percent=50, days=30):
+    """Half off the first Premium ever bought, granted the moment the person
+    first looks at the tariffs.
+
+    Almost every abandoned invoice belongs to someone who has never paid with
+    Stars at all: the price is not the wall, buying Stars for the first time
+    is. This lowers that first step once, per account, and never again --
+    PaymentService.create() picks the discount up on its own at invoice time.
+    Returns the active percent, or None when the person has already paid for
+    something (they are past this barrier and do not need it).
+    """
+    from models.payment import Payment
+    now = utcnow()
+    code = f"first_purchase:{user_id}"
+    async with async_session.begin() as s:
+        if await s.scalar(select(Payment.id).where(Payment.user_id == user_id, Payment.status == "paid").limit(1)):
+            return None
+        existing = await s.scalar(select(Offer).where(Offer.code == code))
+        if existing:
+            active = existing.status == "active" and existing.starts_at <= now < existing.ends_at
+            return existing.discount_percent if active else None
+        s.add(Offer(user_id=user_id, code=code, discount_percent=percent,
+                    product_scope="premium", ends_at=now+timedelta(days=days)))
+    return percent
+
+
 async def completed_chat(s, user):
     await SeasonalService.reward(s,user.telegram_id)
     for count, code in ((1,"first_chat"),(50,"50_chats"),(100,"100_chats")):
