@@ -80,6 +80,28 @@ Telegram-бот анонимного чата (аналог "Random Coffee" / om
 ### workers/
 - `maintenance.py::run(bot)` — фоновый цикл: рассылка уведомлений из очереди, обслуживание (запускается из `bot.py`)
 
+### web/ — сайт и Mini App (отдельный контейнер `web`, FastAPI + uvicorn)
+Тот же аккаунт, что в боте: вход через Telegram Login Widget или `initData` Mini App,
+подписанная cookie. **Вся логика поиска/чата/профиля/платежей — те же сервисы, что у бота**,
+веб только новый способ до них дозвониться. Пара может быть бот↔бот, сайт↔сайт или смешанная.
+- `app.py` — сборка приложения, отдача `static/`; `auth.py` — проверка подписи Telegram и cookie
+- `ws.py` — один сокет `/ws/session` на пользователя: статус поиска, доставка чата, сигналинг звонков
+- `routes_chat.py` / `routes_account.py` / `routes_call.py` — сообщения, разделы аккаунта, звонки
+- `static/` — обычные HTML/CSS/JS без сборки (`app.html` — панель и разделы, `call.html` — комната звонка)
+- Живые события между двумя сторонами идут через Redis Pub/Sub `chat:{session_id}`
+  (публикует `services/relay.py::publish_delivery`)
+
+### Звонки 1-на-1
+- `services/calls.py` — жизненный цикл (offer/accept/decline/hangup), состояние в Redis,
+  запись факта в таблицу `calls`; там же выдача временных TURN-кредов
+- `handlers/call.py` — `/call` и инлайн-кнопки в боте (роутер регистрируется **до** `chat`,
+  иначе catch-all хендлер чата перехватит команду)
+- Медиа идёт браузер↔браузер через **свой coturn на этом же хосте** (`/etc/turnserver.conf`,
+  systemd-сервис `coturn`, сертификаты синхронизируются хуком `/usr/local/bin/coturn-cert-sync`).
+  Релей принудительный (`iceTransportPolicy: "relay"`) — иначе собеседники видят IP друг друга.
+- Лимитов на длительность и число звонков сознательно нет; потолок — аплинк сервера.
+  Ориентир: аудио ≈ 200 кбит/с на звонок через релей, видео ограничено 500 кбит/с.
+
 ### utils/
 - `middleware.py` — `AntiFloodMiddleware`, `AccessMiddleware`
 - `deduplication.py::UpdateDeduplication`, `albums.py::AlbumMiddleware`
