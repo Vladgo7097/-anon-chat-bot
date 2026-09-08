@@ -17,6 +17,7 @@ def test_logo_is_served_as_webp():
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/webp"
+    assert len(response.content) < 50_000
 
 
 def test_logout_expires_the_session_cookie_with_matching_attributes():
