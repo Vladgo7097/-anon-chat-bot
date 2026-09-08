@@ -49,6 +49,19 @@ class OperationsTests(DatabaseCase):
                 self.assertEqual(json.loads(user.notification_settings), {"other": True, "marketing": enabled})
         self.assertFalse((await ProfileService().marketing(999999, False)).ok)
 
+    async def test_rejected_setting_change_does_not_cancel_the_search(self):
+        from services.settings import SettingsService
+        with patch("services.settings.MatchingService.cancel", AsyncMock()) as cancel:
+            # User 1 has no Premium/entitlement in the fixture: a gender
+            # filter change is rejected, and must not drop them from search
+            # as a side effect of that rejection.
+            result = await SettingsService().save_search(1, gender="m")
+            self.assertEqual(result.code, "PREMIUM_REQUIRED")
+            cancel.assert_not_awaited()
+            result = await SettingsService().save_search(1, gender="a")
+            self.assertTrue(result.ok)
+            cancel.assert_awaited_once_with(1)
+
     async def test_find_user_accepts_anon_id_and_rejects_oversized_number(self):
         for value in ("#test1", "test1", "#TEST1", "1"):
             self.assertEqual((await AdminService().find_user(99, value)).telegram_id, 1)
@@ -131,6 +144,18 @@ class OperationsTests(DatabaseCase):
             self.assertFalse((await s.scalar(select(User).where(User.telegram_id==1))).is_banned)
             self.assertEqual(await s.scalar(select(func.count(Ban.id)).where(Ban.is_active.is_(True))),0)
         self.assertEqual((await service.next()).type,"unban")
+
+    async def test_enqueue_ignores_a_duplicate_dedupe_key_without_raising(self):
+        # A plain check-then-insert races against dedupe_key's UNIQUE
+        # constraint under concurrency; the atomic upsert must not raise and
+        # must still leave exactly one row, same as before.
+        async with self.factory.begin() as s:
+            await enqueue(s, 1, "reward", "dupe-key", "first")
+            await enqueue(s, 1, "reward", "dupe-key", "second")
+        async with self.factory() as s:
+            rows = (await s.scalars(select(Notification).where(Notification.dedupe_key == "dupe-key"))).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].text, "first")
 
     async def test_expired_ban_becomes_inactive_without_manual_action(self):
         async with self.factory.begin() as s:

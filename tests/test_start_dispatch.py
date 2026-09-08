@@ -255,6 +255,15 @@ class StartDispatchTests(unittest.TestCase):
                 await dispatch(text)
                 relay.assert_awaited_with(123, "text")
             find.assert_not_awaited()
+            # A stale "Onboarding:*" FSM state left over from before the user
+            # finished onboarding must not resurrect the onboarding handler for
+            # an already-MENU user: aiogram's FSM middleware caches raw_state
+            # once per update, so clearing storage without also clearing
+            # data["raw_state"] leaves the router still matching the old state.
+            relay.reset_mock()
+            await state.set_state("Onboarding:GENDER")
+            await dispatch("обычное сообщение собеседнику")
+            relay.assert_awaited_once_with(123, "text")
 
 
     async def check_payment_in_forms(self, dp, bot, telegram):

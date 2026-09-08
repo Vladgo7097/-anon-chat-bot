@@ -149,6 +149,19 @@ class BroadcastCardTests(unittest.TestCase):
         self.assertIn("Черновик", card)
         self.assertNotIn("%", card)
 
+    def test_draft_list_entry_does_not_show_a_fake_pending_recipient(self):
+        from keyboards.inline import admin_broadcast_status_kb
+        job = SimpleNamespace(id=3, segment="nopay", status="draft", total=0, sent=0, failed=0)
+        text = admin_broadcast_status_kb([job]).inline_keyboard[0][0].text
+        self.assertIn("черновик", text)
+        self.assertNotIn("0/1", text)
+
+    def test_completed_list_entry_with_a_genuinely_empty_audience_shows_zero_of_zero(self):
+        from keyboards.inline import admin_broadcast_status_kb
+        job = SimpleNamespace(id=4, segment="nopay", status="completed", total=0, sent=0, failed=0)
+        text = admin_broadcast_status_kb([job]).inline_keyboard[0][0].text
+        self.assertIn("0/0", text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
@@ -173,3 +186,23 @@ class ProgressTransportTests(unittest.IsolatedAsyncioTestCase):
             bot.edit_message_text.side_effect = None
             await refresh_broadcast_progress(bot, service)
         service.drop_progress.assert_awaited_once_with(1)
+
+    async def test_retry_after_on_one_job_does_not_skip_the_rest_of_the_batch(self):
+        from workers.maintenance import refresh_broadcast_progress
+        from aiogram.exceptions import TelegramRetryAfter
+        from aiogram.methods import EditMessageText
+        job1, job2 = SimpleNamespace(id=1), SimpleNamespace(id=2)
+        service = SimpleNamespace(progress_updates=AsyncMock(return_value=[
+            {"job": job1, "chat_id": 99, "message_id": 1, "counts": {}, "final": False},
+            {"job": job2, "chat_id": 99, "message_id": 2, "counts": {}, "final": True}]),
+            drop_progress=AsyncMock(), defer_progress=AsyncMock())
+        retry_error = TelegramRetryAfter(method=EditMessageText(chat_id=99, message_id=1, text="test"),
+                                          message="rate limit", retry_after=10)
+        bot = SimpleNamespace(edit_message_text=AsyncMock(side_effect=[retry_error, None]))
+        with patch("handlers.admin.broadcast_card", return_value="done"), patch("handlers.admin.broadcast_card_kb", return_value=None):
+            await refresh_broadcast_progress(bot, service)
+        # job1 hit the rate limit and was deferred; job2 must still be
+        # processed in the same pass instead of being abandoned.
+        self.assertEqual(bot.edit_message_text.await_count, 2)
+        service.defer_progress.assert_awaited_once_with(1, 10)
+        service.drop_progress.assert_awaited_once_with(2)

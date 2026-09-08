@@ -26,9 +26,17 @@ def broadcast_segment(query, segment, now=None):
 
 
 async def enqueue(s, user_id, kind, key, content, callback=None, marketing=False, broadcast_id=None):
-    if not await s.scalar(select(Notification).where(Notification.dedupe_key == key)):
-        s.add(Notification(user_id=user_id, type=kind, dedupe_key=key, text=content, callback_data=callback,
-                           marketing=marketing, broadcast_id=broadcast_id))
+    # A plain check-then-insert races under concurrency against dedupe_key's
+    # UNIQUE constraint and raises IntegrityError, aborting whatever else the
+    # caller's transaction was doing. schedule()'s bulk insert below already
+    # uses on_conflict_do_nothing for the same reason; do the same here.
+    if s.bind.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    await s.execute(insert(Notification).values(user_id=user_id, type=kind, dedupe_key=key, text=content,
+        callback_data=callback, marketing=marketing, broadcast_id=broadcast_id).on_conflict_do_nothing(
+        index_elements=["dedupe_key"]))
 
 
 class NotificationService:

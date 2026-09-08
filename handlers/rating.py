@@ -1,4 +1,5 @@
 from aiogram import F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery
 from handlers import rating_router
 from repositories.chats import ChatRepository
@@ -12,7 +13,10 @@ async def cb_rate(callback: CallbackQuery):
         ok = await ChatRepository().rate(parts[2], callback.from_user.id, int(parts[3]))
     await callback.answer("Спасибо за оценку!" if ok else "Оценка уже учтена или диалог недоступен.")
     if ok:
-        await callback.message.edit_text("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Спасибо за оценку!")
+        try:
+            await callback.message.edit_text("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Спасибо за оценку!")
+        except TelegramBadRequest:
+            pass
 
 
 @rating_router.callback_query(F.data.startswith("rate:"))

@@ -38,7 +38,7 @@ async def refresh_broadcast_progress(bot, service):
                                         reply_markup=broadcast_card_kb(job.id))
         except TelegramRetryAfter as error:
             await service.defer_progress(job.id, error.retry_after)
-            return
+            continue
         except TelegramBadRequest as error:
             if "message is not modified" in error.message:
                 if update["final"]:

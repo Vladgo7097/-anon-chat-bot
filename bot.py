@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import sys
-from datetime import date
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -26,8 +25,11 @@ async def notify_owner_on_startup():
     from services.notifications import enqueue
     from utils.time import utcnow
     from sqlalchemy import func, select, delete
-    today = date.today().isoformat()
     now = utcnow()
+    # Keep the displayed date and the dedupe window on the same UTC day the
+    # rest of the app uses (UTCDateTime columns, utcnow() elsewhere) rather
+    # than the host's local timezone, which could disagree near midnight.
+    today = now.date().isoformat()
     async with async_session.begin() as s:
         total_users = await s.scalar(select(func.count(User.id))) or 0
         text = (

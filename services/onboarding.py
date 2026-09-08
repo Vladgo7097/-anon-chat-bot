@@ -61,6 +61,11 @@ class OnboardingService:
             step = step_for(user)
             if step == "MENU":
                 return ServiceResult(True, "MENU")
+            # A deleted account re-entering onboarding through plain button
+            # presses (not /start) must not stay permanently excluded from
+            # matching once it reaches MENU again — start() clears this for
+            # the /start path, advance() must for every other one.
+            user.deleted_at = None
             if action == "begin" and step == "WELCOME":
                 user.onboarding_step = "GENDER"
             elif action == "gender" and step == "GENDER" and value in {"male", "female"}:

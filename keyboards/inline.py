@@ -118,9 +118,12 @@ def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
         status_info = {"draft": ("5460865451586250451", "Черновик"), "queued": ("5296482716567495148", "Ожидает"), "sending": ("5967432491684860012", "Отправка"), "completed": ("5280880410346152584", "Готово")}.get(job.status, ("5280880410346152584", "?"))
         emoji_id, status_label = status_info
         done = job.sent+job.failed
-        scale = job.total or (done or 1)
+        # Drafts have no audience snapshot yet (total stays 0 until
+        # confirm_broadcast()); showing a fake "0/1" implied a pending
+        # recipient that doesn't exist.
+        progress = "черновик" if job.status == "draft" else f"{done}/{job.total}"
         rows.append([InlineKeyboardButton(
-            text=f"#{job.id} · {job.segment} · {status_label} · {done}/{scale}",
+            text=f"#{job.id} · {job.segment} · {status_label} · {progress}",
             icon_custom_emoji_id=emoji_id,
             callback_data=f"admin:broadcasts:{job.id}")])
     rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")])

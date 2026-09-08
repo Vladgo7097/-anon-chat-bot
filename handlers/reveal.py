@@ -96,7 +96,8 @@ async def paid_reveal(message, user_id, session_id, kind):
     from services.reveal import upgrade_request
     result = await upgrade_request(user_id, session_id, kind)
     if not result.ok:
-        await message.answer("Диалог уже завершён; контакт не раскрывается.")
+        await message.answer("Нужен Premium или отдельная покупка для этой функции." if result.code == "NOT_PAID"
+                              else "Диалог уже завершён; контакт не раскрывается.")
         return
     if kind == "reveal_status":
         await message.answer({"MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Согласие взаимно.", "PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Ожидается ответ.", "DECLINED": "Собеседник отказался раскрывать контакт.", "NOT_REQUESTED": "Запрос ещё не отправлен."}.get(result.code, "Запрос завершён."))

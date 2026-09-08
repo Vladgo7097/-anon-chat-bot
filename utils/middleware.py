@@ -63,6 +63,10 @@ class AccessMiddleware(BaseMiddleware):
             return
         if step == "MENU" and (await data["state"].get_state() or "").startswith("Onboarding:"):
             await data["state"].clear()
+            # Same reason as below: the FSM middleware already cached this state
+            # snapshot before access checks ran, so the router would otherwise
+            # still dispatch this update to the abandoned onboarding handler.
+            data["raw_state"] = None
         navigation = {T.MENU, T.PROFILE, T.SETTINGS, T.PREMIUM, T.STATS, "menu", "profile", "settings", "premium", "stats", "/profile"}
         if action in navigation or command == "/start":
             if await get_partner(actor.id):

@@ -121,6 +121,53 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m.message_id for m in handler.await_args.args[1]["album"]], [10, 11])
         self.assertEqual(middleware.pending, {})
 
+    async def test_late_item_arriving_while_the_handler_is_still_running_is_not_dropped(self):
+        # forward_message (copy_messages, DB writes) can outlast the 0.7s
+        # collection window; a straggler for the same group must start its
+        # own album instead of landing in the already-handed-off list.
+        from utils.albums import AlbumMiddleware
+        from handlers.chat import forward_message
+        sleep_ready, sleep_release = asyncio.Event(), asyncio.Event()
+
+        async def collect(seconds):
+            sleep_ready.set()
+            await sleep_release.wait()
+
+        handler_started, handler_release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def handler(event, data):
+            calls.append([m.message_id for m in data["album"]])
+            handler_started.set()
+            await handler_release.wait()
+
+        middleware = AlbumMiddleware()
+        data = {"handler": SimpleNamespace(callback=forward_message)}
+        first = SimpleNamespace(chat=SimpleNamespace(id=1), media_group_id="a", message_id=10)
+        late = SimpleNamespace(chat=SimpleNamespace(id=1), media_group_id="a", message_id=99)
+
+        with patch("utils.albums.asyncio.sleep", collect):
+            task1 = asyncio.create_task(middleware(handler, first, dict(data)))
+            await sleep_ready.wait()
+            sleep_release.set()
+            await handler_started.wait()  # handler(first) is now "still processing"
+            sleep_ready.clear()
+            sleep_release.clear()
+            handler_started.clear()
+
+            task2 = asyncio.create_task(middleware(handler, late, dict(data)))
+            # Bounded waits: the pre-fix code returns task2 immediately without
+            # ever calling the handler, which would otherwise hang this test
+            # forever instead of failing it.
+            await asyncio.wait_for(sleep_ready.wait(), timeout=2)
+            sleep_release.set()
+            await asyncio.wait_for(handler_started.wait(), timeout=2)  # handler(late) reached, not swallowed
+
+            handler_release.set()
+            await asyncio.wait_for(asyncio.gather(task1, task2), timeout=2)
+
+        self.assertEqual(sorted(calls), [[10], [99]])
+
     @staticmethod
     def _queue_redis(pages, alive_per_page):
         """redis mock whose pipeline() is synchronous, like redis-py."""

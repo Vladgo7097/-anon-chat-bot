@@ -60,6 +60,9 @@ class AdCampaignServiceTests(DatabaseCase):
     async def test_validation_rejects_bad_input(self):
         self.assertFalse((await self.make(channel_username="ab")).ok)  # too short
         self.assertFalse((await self.make(channel_username="bad channel!")).ok)  # bad chars
+        # str.isalnum() accepts non-ASCII letters; Telegram usernames don't.
+        self.assertFalse((await self.make(channel_username="приветик")).ok)
+        self.assertFalse((await self.make(channel_username="_____")).ok)  # no actual letters/digits
         self.assertFalse((await self.make(title="")).ok)
         self.assertFalse((await self.make(title="x"*65)).ok)
         self.assertFalse((await self.make(body="")).ok)
@@ -309,6 +312,18 @@ class AdJoinTests(DatabaseCase):
         async with self.factory() as s:
             self.assertEqual((await s.get(AdCampaign, campaign_id)).joins_total, 0)
 
+    async def test_join_after_the_campaign_ended_is_not_counted(self):
+        # Telegram keeps delivering chat_member events for the same invite
+        # link after a campaign is paused/completed (the bot is still admin
+        # there); those joins must not keep inflating a stopped campaign.
+        from services.ads import record_join
+        for status in ("paused", "completed"):
+            campaign_id = await self.campaign_with_link(
+                invite_link=f"https://t.me/+{status}", status=status)
+            await record_join(f"https://t.me/+{status}", 555, utcnow())
+            async with self.factory() as s:
+                self.assertEqual((await s.get(AdCampaign, campaign_id)).joins_total, 0)
+
 
 class ChatMemberHandlerTests(unittest.IsolatedAsyncioTestCase):
     def event(self, invite_link, old_status, new_status, user_id=555):
@@ -476,6 +491,23 @@ class AdChannelInputTests(unittest.IsolatedAsyncioTestCase):
         from handlers.admin import ad_channel, AdminAdCampaign
         await self.state.set_state(AdminAdCampaign.CHANNEL)
         message = self.message("@abc")
+        await ad_channel(message, self.state)
+        self.assertIn("5–32 символа", message.answer.await_args.args[0])
+        self.assertEqual(await self.state.get_state(), AdminAdCampaign.CHANNEL.state)
+
+    async def test_non_ascii_username_is_rejected(self):
+        # str.isalnum() accepts non-ASCII letters; Telegram usernames don't.
+        from handlers.admin import ad_channel, AdminAdCampaign
+        await self.state.set_state(AdminAdCampaign.CHANNEL)
+        message = self.message("@приветик")
+        await ad_channel(message, self.state)
+        self.assertIn("5–32 символа", message.answer.await_args.args[0])
+        self.assertEqual(await self.state.get_state(), AdminAdCampaign.CHANNEL.state)
+
+    async def test_all_underscore_username_is_rejected(self):
+        from handlers.admin import ad_channel, AdminAdCampaign
+        await self.state.set_state(AdminAdCampaign.CHANNEL)
+        message = self.message("@_____")
         await ad_channel(message, self.state)
         self.assertIn("5–32 символа", message.answer.await_args.args[0])
         self.assertEqual(await self.state.get_state(), AdminAdCampaign.CHANNEL.state)

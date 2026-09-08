@@ -10,6 +10,7 @@ attributed only when the advertiser granted the bot admin rights, which is
 what lets a per-campaign invite link exist in the first place (see
 handlers/admin.py's launch flow and handlers/ads.py's join listener).
 """
+import re
 from sqlalchemy import select, func
 from redis.exceptions import RedisError
 from models.base import async_session
@@ -23,6 +24,10 @@ from utils.time import utcnow
 
 STATUSES = {"draft", "active", "paused", "completed"}
 COOLDOWN_KEY = "ad:cooldown:{}"
+# ASCII only (Telegram usernames can't be anything else), 5-32 chars, and not
+# all underscores -- shared with handlers/admin.py's ad_channel input step so
+# the UI-level and service-level checks can't drift apart again.
+CHANNEL_USERNAME_RE = re.compile(r"(?=.*[A-Za-z0-9])[A-Za-z0-9_]{5,32}$")
 
 
 async def _eligible_campaign(s, now):
@@ -80,7 +85,7 @@ class AdCampaignService:
 
     async def create(self, admin, channel_username, title, subtitle, body, daily_limit, total_limit):
         authorize(admin)
-        if not (5 <= len(channel_username) <= 32) or not channel_username.replace("_", "").isalnum():
+        if not CHANNEL_USERNAME_RE.fullmatch(channel_username):
             return ServiceResult(False, "INVALID_CHANNEL")
         if not title or len(title) > 64 or len(subtitle) > 64:
             return ServiceResult(False, "INVALID_TITLE")
@@ -148,7 +153,7 @@ async def record_join(invite_link, telegram_user_id, joined_at):
     that just means the channel is using its link for something else too."""
     async with async_session.begin() as s:
         campaign = await s.scalar(select(AdCampaign).where(
-            AdCampaign.invite_link == invite_link).with_for_update())
+            AdCampaign.invite_link == invite_link, AdCampaign.status == "active").with_for_update())
         if not campaign:
             return
         key = f"adjoin:{campaign.id}:{telegram_user_id}:{joined_at.isoformat()}"

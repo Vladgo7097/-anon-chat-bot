@@ -83,7 +83,7 @@ class PaymentService:
                     user.is_premium = user.premium_expires > now
             p.status = "refunded"
             if user:
-                user.total_stars_spent = max(0, user.total_stars_spent-amount)
+                user.total_stars_spent = max(0, (user.total_stars_spent or 0)-amount)
             from services.growth import event
             await event(s, user_id, "payment_refunded", f"refund:{p.id}")
             logging.getLogger(__name__).info("payment_refunded", extra={"payment_id": p.id, "user_id": user_id})

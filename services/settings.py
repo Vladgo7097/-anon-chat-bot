@@ -21,7 +21,6 @@ class SettingsService:
             return ServiceResult(False, "INVALID")
         if age_range is not None and not config.MIN_AGE <= age_range[0] <= age_range[1] <= config.MAX_AGE:
             return ServiceResult(False, "INVALID")
-        await MatchingService().cancel(user_id)
         async with async_session.begin() as s:
             from repositories.chats import lock_matching
             from models.chat import ActiveParticipant
@@ -39,4 +38,8 @@ class SettingsService:
                 user.settings_gender_filter = gender
             if age_range:
                 user.settings_age_min, user.settings_age_max = age_range
+        # Only drop the user's queue entry once the change actually lands --
+        # a rejected change (bad input, active chat, no entitlement) must not
+        # have the side effect of silently pulling them out of the queue.
+        await MatchingService().cancel(user_id)
         return ServiceResult(True, "SAVED")

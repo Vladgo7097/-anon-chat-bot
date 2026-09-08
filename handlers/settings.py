@@ -37,9 +37,14 @@ async def cb_save(callback: CallbackQuery):
             await callback.answer("Недопустимый диапазон.")
             return
         result = await SettingsService().save_search(callback.from_user.id, age_range=ages[parts[-1]])
-    await callback.answer("Сохранено" if result.ok else "Нужен доступ к фильтру.")
     if result.ok:
+        await callback.answer("Сохранено")
         await show_settings(callback.message, callback.from_user.id)
-    else:
+        return
+    if result.code == "PREMIUM_REQUIRED":
+        await callback.answer("Нужен доступ к фильтру.")
         from handlers.premium import product_keyboard
         await callback.message.answer("Выбери доступ к фильтрам:", reply_markup=await product_keyboard(["gender_filter_one_match", "gender_filter_1m", "premium_1m"]))
+        return
+    await callback.answer({"ACTIVE_CHAT": "Настройки нельзя менять во время диалога. Сначала заверши его.",
+                            "NOT_FOUND": "Профиль не найден. Попробуй /start."}.get(result.code, "Не удалось сохранить."), show_alert=True)

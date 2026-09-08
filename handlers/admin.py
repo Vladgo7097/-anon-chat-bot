@@ -12,7 +12,7 @@ from handlers import admin_router
 from keyboards import texts as T
 from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb
 from services.admin import AdminService, StatsService, authorize
-from services.ads import AdCampaignService
+from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
 
@@ -619,7 +619,7 @@ async def ad_channel(message: Message, state: FSMContext):
         await message.answer("Нужно с @ в начале, например @anon_chat_news. Попробуй ещё раз.")
         return
     value = raw.lstrip("@")
-    if not (5 <= len(value) <= 32) or not value.replace("_", "").isalnum():
+    if not CHANNEL_USERNAME_RE.fullmatch(value):
         await message.answer("Username: 5–32 символа после @, латиница/цифры/подчёркивание. Попробуй ещё раз.")
         return
     await state.update_data(channel_username=value)
