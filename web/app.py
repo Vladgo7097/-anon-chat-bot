@@ -3,6 +3,7 @@
 sharing the same Postgres/Redis and the same services/repositories/models.
 """
 from pathlib import Path
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -64,21 +65,8 @@ async def logout():
     )
     response.set_cookie(
         auth.LOGOUT_GUARD_COOKIE,
-        "1",
+        str(int(time.time())),
         max_age=config.WEB_SESSION_MAX_AGE,
-        path="/",
-        secure=config.WEB_COOKIE_SECURE,
-        httponly=True,
-        samesite="lax",
-    )
-    return response
-
-
-@app.post("/auth/prepare-login")
-async def prepare_login():
-    response = JSONResponse({"ok": True})
-    response.delete_cookie(
-        auth.LOGOUT_GUARD_COOKIE,
         path="/",
         secure=config.WEB_COOKIE_SECURE,
         httponly=True,
@@ -93,16 +81,20 @@ def _issue_session(response, telegram_id: int):
         auth.SESSION_COOKIE, token, max_age=config.WEB_SESSION_MAX_AGE,
         httponly=True, secure=config.WEB_COOKIE_SECURE, samesite="lax",
     )
+    response.delete_cookie(
+        auth.LOGOUT_GUARD_COOKIE, path="/", secure=config.WEB_COOKIE_SECURE,
+        httponly=True, samesite="lax",
+    )
 
 
 @app.get("/auth/telegram/callback")
 async def telegram_login_callback(request: Request):
     """Redirect target of the Telegram Login Widget (browser)."""
-    if request.cookies.get(auth.LOGOUT_GUARD_COOKIE):
-        return RedirectResponse(url="/?logged_out=1", status_code=302)
     data = dict(request.query_params)
     if not auth.verify_login_widget(data):
         raise HTTPException(status_code=401, detail="BAD_SIGNATURE")
+    if not auth.is_fresh_after_logout(data.get("auth_date"), request.cookies.get(auth.LOGOUT_GUARD_COOKIE)):
+        return RedirectResponse(url="/?logged_out=1", status_code=302)
     telegram_id = int(data["id"])
     from repositories.users import UserRepository
     await UserRepository().get_or_create(telegram_id, username=data.get("username"), first_name=data.get("first_name"))
@@ -114,11 +106,12 @@ async def telegram_login_callback(request: Request):
 @app.post("/auth/miniapp")
 async def miniapp_login(payload: dict, request: Request):
     """Telegram Mini App: the page posts window.Telegram.WebApp.initData here."""
-    if request.cookies.get(auth.LOGOUT_GUARD_COOKIE):
-        raise HTTPException(status_code=401, detail="LOGGED_OUT")
-    user_data = auth.verify_miniapp_init_data(payload.get("init_data", ""))
+    init_data = payload.get("init_data", "")
+    user_data = auth.verify_miniapp_init_data(init_data)
     if user_data is None or "id" not in user_data:
         raise HTTPException(status_code=401, detail="BAD_SIGNATURE")
+    if not auth.is_fresh_after_logout(auth.init_data_auth_date(init_data), request.cookies.get(auth.LOGOUT_GUARD_COOKIE)):
+        raise HTTPException(status_code=401, detail="LOGGED_OUT")
     telegram_id = int(user_data["id"])
     from repositories.users import UserRepository
     await UserRepository().get_or_create(

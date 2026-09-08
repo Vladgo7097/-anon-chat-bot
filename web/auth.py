@@ -22,6 +22,18 @@ LOGOUT_GUARD_COOKIE = "logged_out"
 LOGIN_WIDGET_MAX_AGE = 86400  # Telegram's own recommendation for auth_date freshness.
 
 
+def is_fresh_after_logout(auth_date: str | None, logout_at: str | None) -> bool:
+    if logout_at is None:
+        return True
+    if auth_date is None or not auth_date.isdigit() or not logout_at.isdigit():
+        return False
+    return int(auth_date) >= int(logout_at)
+
+
+def init_data_auth_date(init_data: str) -> str | None:
+    return dict(parse_qsl(init_data, keep_blank_values=True)).get("auth_date")
+
+
 def _serializer():
     if not config.WEB_SESSION_SECRET:
         raise RuntimeError("WEB_SESSION_SECRET is not set")

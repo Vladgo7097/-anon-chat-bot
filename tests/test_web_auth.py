@@ -82,7 +82,9 @@ class SessionTokenTests(unittest.TestCase):
 
     def test_tampered_token_rejected(self):
         token = auth.create_session_token(4242)
-        self.assertIsNone(auth.read_session_token(token[:-1] + ("0" if token[-1] != "0" else "1")))
+        parts = token.split(".")
+        parts[0] = ("A" if parts[0][0] != "A" else "B") + parts[0][1:]
+        self.assertIsNone(auth.read_session_token(".".join(parts)))
 
 
 if __name__ == "__main__":
