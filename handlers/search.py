@@ -154,6 +154,16 @@ async def search_loop(status, user_id, bot=None):
                     if requeued.code == "SEARCH_STARTED":
                         started = time.monotonic()
                         continue
+                    if requeued.code == "ALREADY_CHATTING":
+                        # A concurrent match already covered this: the other
+                        # side's search_loop sent the match notice and called
+                        # cancel_task for both of us. Saying anything here
+                        # would just contradict that message.
+                        return
+                    try:
+                        await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Поиск остановлен.", reply_markup=main_menu_kb())
+                    except (TelegramForbiddenError, TelegramBadRequest):
+                        pass
                     return
                 try:
                     await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())

@@ -166,9 +166,26 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.enqueue.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
-    async def test_premium_search_exits_when_reenqueue_rejected(self):
+    async def test_premium_search_notifies_when_reenqueue_rejected(self):
         # Still inside the cap, so the re-enqueue is attempted and refused.
+        # The user paid for Premium and is left with a stale "searching" card
+        # otherwise, with no explanation and no working button.
         self.service.enqueue = AsyncMock(return_value=ServiceResult(False, "BANNED"))
+        self.redis.get.return_value = str(time.time() - 70)
+        settings = {"search_timeout": 60, "premium_search_timeout": 180}
+        with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
+             patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
+             patch("utils.db.is_premium", AsyncMock(return_value=True)), \
+             patch("handlers.search.asyncio.sleep", AsyncMock()):
+            await search.search_loop(None, 1, self.bot)
+        self.service.enqueue.assert_awaited_once_with(1)
+        self.bot.send_message.assert_awaited_once()
+        self.assertIn("остановлен", self.bot.send_message.await_args.args[1])
+
+    async def test_premium_search_stays_silent_when_reenqueue_finds_concurrent_match(self):
+        # A concurrent match already sent its own notice to both sides;
+        # sending a second, contradictory message here would be a bug too.
+        self.service.enqueue = AsyncMock(return_value=ServiceResult(False, "ALREADY_CHATTING"))
         self.redis.get.return_value = str(time.time() - 70)
         settings = {"search_timeout": 60, "premium_search_timeout": 180}
         with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
