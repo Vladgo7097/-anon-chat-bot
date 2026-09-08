@@ -52,3 +52,10 @@ MAX_AGE = 99
 CURRENT_RULES_VERSION = 1
 AGE_PAGE_SIZE = 12
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "")
+
+# Веб-сайт (Telegram Login Widget / Mini App)
+BOT_USERNAME = os.getenv("BOT_USERNAME", "anonim_chatqbot")
+WEB_SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "")
+WEB_SESSION_MAX_AGE = int(os.getenv("WEB_SESSION_MAX_AGE", str(30 * 86400)))
+# Off only for local http:// testing before the real domain/TLS exist.
+WEB_COOKIE_SECURE = os.getenv("WEB_COOKIE_SECURE", "1") == "1"

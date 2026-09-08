@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анонимный чат — разговор без имени</title>
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<div class="atmosphere"><div class="glow-a"></div><div class="glow-b"></div></div>
+<div class="grain"></div>
+
+<div class="page">
+  <div class="nav">
+    <div class="logo mono"><span>АНОНИМ</span><span style="color:var(--accent)">_ЧАТ</span><span class="cursor"></span></div>
+    <div class="mono" style="font-size:13px;color:var(--muted)"><a href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">открыть бота</a></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:56px;align-items:center;padding:40px 0 80px;">
+    <div>
+      <div class="mono" style="font-size:12px;letter-spacing:.2em;color:var(--accent);margin-bottom:20px;">СЛУЧАЙНЫЙ СОБЕСЕДНИК · 0 АНКЕТ · 0 ФОТО</div>
+      <h1 class="serif" style="font-size:52px;line-height:1.08;font-weight:500;margin:0 0 24px;">Разговор<br>без имени.</h1>
+      <p class="serif" style="font-style:italic;font-size:21px;color:var(--muted);margin:0 0 32px;max-width:460px;">Личность вымарана. Слова — настоящие.</p>
+      <p style="font-size:15px;line-height:1.7;color:var(--muted);margin:0 0 36px;max-width:440px;">
+        Входишь через Telegram — тот же аккаунт, что и в боте. Дальше — случайный собеседник,
+        без анкеты и фото. Контакты раскрываются, только если согласны оба.
+      </p>
+      <div id="telegram-login"></div>
+      <p class="mono" id="auth-error" hidden style="color:#c0524a;font-size:12px;margin-top:14px;"></p>
+    </div>
+
+    <div class="card-glass" style="padding:28px;position:relative;">
+      <div style="position:absolute;top:-11px;left:24px;background:#1c1815;padding:0 10px;border-radius:2px;" class="mono">
+        <span style="font-size:11px;letter-spacing:.16em;color:var(--muted);">ДОСЬЕ № 0000</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;margin-top:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span class="mono" style="font-size:12px;color:var(--muted);">ИМЯ</span><span class="redact" style="width:110px;"></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span class="mono" style="font-size:12px;color:var(--muted);">ГОРОД</span><span class="redact" style="width:80px;"></span>
+        </div>
+        <div style="height:1px;background:var(--glass-border);margin:2px 0;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span class="mono" style="font-size:12px;color:var(--muted);">СТАТУС</span>
+          <span style="display:flex;align-items:center;gap:8px;font-size:14px;"><span class="dot"></span>на связи</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="border-top:1px solid var(--border);padding:24px 0;display:flex;justify-content:space-between;color:var(--muted);font-size:12px;" class="mono">
+    <span>© АНОНИМ_ЧАТ</span>
+    <span>работает как сайт и как Mini App в Telegram</span>
+  </div>
+</div>
+
+<script>
+  // Built at runtime so the same static file works over the server's IP
+  // during setup and over the real domain afterwards without editing HTML.
+  var s = document.createElement('script');
+  s.async = true;
+  s.src = 'https://telegram.org/js/telegram-widget.js?22';
+  s.setAttribute('data-telegram-login', 'anonim_chatqbot');
+  s.setAttribute('data-size', 'large');
+  s.setAttribute('data-radius', '3');
+  s.setAttribute('data-auth-url', location.origin + '/auth/telegram/callback');
+  s.setAttribute('data-request-access', 'write');
+  document.getElementById('telegram-login').appendChild(s);
+
+  // Telegram Mini App: if opened inside Telegram, skip the widget and
+  // authenticate with initData instead, then go straight to the app.
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+    window.Telegram.WebApp.ready();
+    fetch('/auth/miniapp', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({init_data: window.Telegram.WebApp.initData}),
+    }).then(function (r) {
+      if (r.ok) { location.href = '/app.html'; }
+      else { document.getElementById('auth-error').hidden = false; document.getElementById('auth-error').textContent = 'Не удалось войти. Попробуй ещё раз.'; }
+    });
+  }
+</script>
+</body>
+</html>

@@ -37,6 +37,8 @@ class ChatService:
         for uid in (chat.user1_id, chat.user2_id):
             await r.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1],KEYS[2],KEYS[3]) end return 0",
                          3, f"active_session:{uid}", f"active_chat:{uid}", f"chat_started:{uid}", chat.session_id)
+        from services.relay import RelayService
+        await RelayService().publish_delivery(chat.session_id, {"type": "chat_ended", "reason": reason, "by": user_id})
         return ServiceResult(True, "CHAT_ENDED", {"chat": chat})
 
     async def reconcile(self):
