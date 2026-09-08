@@ -1,0 +1,47 @@
+# Sized for a single-core, 2 GB host that also serves production.
+# Every service is capped so a runaway run dies inside its own cgroup instead of
+# triggering a host-wide OOM, and the combined CPU share stays below one core.
+# The data directory lives in tmpfs: without an explicit size it would grow into
+# half of the host's RAM, which is exactly how this host was taken down before.
+services:
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: anon_chat_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: isolated_test_only
+    tmpfs:
+      - /var/lib/postgresql/data:size=192m
+    mem_limit: 256m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d anon_chat_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  test-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: 96m
+    cpus: 0.10
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  tests:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test:isolated_test_only@test-db/anon_chat_test
+      REDIS_URL: redis://test-redis:6379/0
+      RUN_POSTGRES_TESTS: "1"
+      RUN_STRESS_TESTS: "${RUN_STRESS_TESTS:-0}"
+      BOT_TOKEN: ""
+    mem_limit: 512m
+    cpus: 0.35
+    depends_on:
+      test-db:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    command: ["sh", "-c", "pip install --disable-pip-version-check -q -r requirements-dev.txt && python -m pytest -q"]

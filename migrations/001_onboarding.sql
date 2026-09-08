@@ -1,0 +1,11 @@
+ALTER TABLE users ALTER COLUMN gender TYPE VARCHAR(8);
+UPDATE users SET gender = CASE gender WHEN 'm' THEN 'male' WHEN 'f' THEN 'female' ELSE NULL END
+WHERE gender IS NOT NULL AND gender NOT IN ('male', 'female');
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_step VARCHAR(16) NOT NULL DEFAULT 'WELCOME';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS rules_version INTEGER;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS rules_accepted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_blocked_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS ix_users_created_at ON users(created_at);
+CREATE INDEX IF NOT EXISTS ix_users_last_online ON users(last_online);

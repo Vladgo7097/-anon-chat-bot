@@ -1,0 +1,12 @@
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS telegram_payment_charge_id VARCHAR(255);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS payload VARCHAR(32);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'XTR';
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS duration_seconds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS target_session VARCHAR(32);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+UPDATE payments SET status='paid', paid_at=created_at WHERE status='completed';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_payload ON payments(payload);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_charge ON payments(telegram_payment_charge_id);
+ALTER TABLE premium_subscriptions ADD COLUMN IF NOT EXISTS source_payment_id INTEGER;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_payment ON premium_subscriptions(source_payment_id);
