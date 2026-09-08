@@ -12,6 +12,13 @@ config.WEB_COOKIE_SECURE = True
 from web.app import app  # noqa: E402
 
 
+def test_logo_is_served_as_webp():
+    response = TestClient(app).get("/img/logo.webp")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+
+
 def test_logout_expires_the_session_cookie_with_matching_attributes():
     client = TestClient(app)
     client.cookies.set("session", "signed-value")

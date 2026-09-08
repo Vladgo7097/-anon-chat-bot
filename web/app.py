@@ -2,6 +2,7 @@
 (`uvicorn web.app:app`), separate from the bot's aiogram polling process,
 sharing the same Postgres/Redis and the same services/repositories/models.
 """
+import mimetypes
 from pathlib import Path
 import time
 
@@ -17,6 +18,7 @@ from web.routes_chat import router as chat_router
 from web.ws import router as ws_router
 
 STATIC_DIR = Path(__file__).parent / "static"
+mimetypes.add_type("image/webp", ".webp")
 
 app = FastAPI(title="anon-chat-bot web")
 app.include_router(chat_router)
