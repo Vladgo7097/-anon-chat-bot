@@ -188,13 +188,14 @@ class PaymentService:
             user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
             now = utcnow()
             p.status, p.paid_at, p.telegram_payment_charge_id = "paid", now, charge_id
-            p.telegram_payment_id = charge_id
+            p.telegram_payment_id = payload
             user.total_stars_spent = (user.total_stars_spent or 0) + amount
             from models.operations import Offer
             from services.growth import event
             if p.offer_id:
                 discount = await s.scalar(select(Offer).where(Offer.id==p.offer_id).with_for_update())
-                discount.status, discount.redeemed_at = "redeemed", now
+                if discount:
+                    discount.status, discount.redeemed_at = "redeemed", now
             await event(s, user_id, "payment_success", f"payment:{p.id}")
             if p.product.startswith("premium_"):
                 base = max(now, user.premium_expires or now)

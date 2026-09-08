@@ -152,73 +152,70 @@ class NotificationService:
                           f"За сегодня: {today} новых, из них дошли до меню {reached_menu}.")
 
     async def next(self):
-        async with async_session.begin() as s:
-            now = utcnow()
-            n = await s.scalar(select(Notification).where(Notification.status.in_(["queued","sending"]), Notification.scheduled_at<=now)
-                # Time-critical notices go before bulk marketing, FIFO within
-                # each class. A 1162-message nudge run once queued ahead of ten
-                # "Собеседник найден!" notices; every one of them expired
-                # unsent while the chat it announced was already over.
-                .order_by(Notification.marketing, Notification.id).with_for_update(skip_locked=True).limit(1))
-            if not n:
-                return None
-            if n.type == "onboarding_nudge" and await s.scalar(select(User.onboarding_completed).where(
-                    User.telegram_id == n.user_id)):
-                n.status = "skipped"  # finished the form while the nudge waited
-                return None
-            if n.type == "reveal_request":
-                from models.chat import RevealRequest
-                request = await s.get(RevealRequest, n.callback_data)
-                current = await s.scalar(select(Chat.id).where(Chat.session_id == n.callback_data, Chat.status == "active"))
-                if not current or not request or request.status != "pending":
+        while True:
+            async with async_session.begin() as s:
+                now = utcnow()
+                n = await s.scalar(select(Notification).where(Notification.status.in_(["queued","sending"]), Notification.scheduled_at<=now)
+                    .order_by(Notification.marketing, Notification.id).with_for_update(skip_locked=True).limit(1))
+                if not n:
+                    return None
+                if n.type == "onboarding_nudge" and await s.scalar(select(User.onboarding_completed).where(
+                        User.telegram_id == n.user_id)):
+                    n.status = "skipped"
+                    continue
+                if n.type == "reveal_request":
+                    from models.chat import RevealRequest
+                    request = await s.get(RevealRequest, n.callback_data)
+                    current = await s.scalar(select(Chat.id).where(Chat.session_id == n.callback_data, Chat.status == "active"))
+                    if not current or not request or request.status != "pending":
+                        n.status = "skipped"
+                        continue
+                if n.type=="match" and not await s.scalar(select(Chat.id).where(Chat.session_id==n.callback_data,Chat.status=="active")):
+                    n.status="skipped"
+                    continue
+                if n.type in {"chat_ended", "reconnect_prompt"} and await s.get(ActiveParticipant, n.user_id):
+                    n.status = "skipped"
+                    continue
+                user = await s.scalar(select(User).where(User.telegram_id==n.user_id))
+                marketing_disabled = n.marketing and not json.loads(user.notification_settings or "{}").get("marketing", True) if user else True
+                if n.marketing:
+                    from models.operations import BotSetting
+                    flag=await s.get(BotSetting,"marketing_enabled")
+                    marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
+                owner_types = {"owner_new_user", "startup", "backup_failed"}
+                owner_notice = n.type in owner_types and n.user_id == config.OWNER_ID
+                if (n.type in owner_types and not owner_notice) or (not owner_notice and (
+                        not user or (banned(user) and n.type != "ban") or user.deleted_at
+                        or user.bot_blocked_at or marketing_disabled)):
                     n.status = "skipped"
                     return None
-            if n.type=="match" and not await s.scalar(select(Chat.id).where(Chat.session_id==n.callback_data,Chat.status=="active")):
-                n.status="skipped"
-                return None
-            if n.type in {"chat_ended", "reconnect_prompt"} and await s.get(ActiveParticipant, n.user_id):
-                n.status = "skipped"
-                return None
-            user = await s.scalar(select(User).where(User.telegram_id==n.user_id))
-            marketing_disabled = n.marketing and not json.loads(user.notification_settings or "{}").get("marketing", True) if user else True
-            if n.marketing:
-                from models.operations import BotSetting
-                flag=await s.get(BotSetting,"marketing_enabled")
-                marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
-            owner_types = {"owner_new_user", "startup", "backup_failed"}
-            owner_notice = n.type in owner_types and n.user_id == config.OWNER_ID
-            if (n.type in owner_types and not owner_notice) or (not owner_notice and (
-                    not user or (banned(user) and n.type != "ban") or user.deleted_at
-                    or user.bot_blocked_at or marketing_disabled)):
-                n.status = "skipped"
-                return None
-            cooldown = await s.scalar(select(func.max(Notification.scheduled_at)).where(
-                Notification.user_id == n.user_id, Notification.id != n.id,
-                Notification.status.in_(["queued", "sending"]),
-                Notification.last_error == "rate_limit"))
-            if owner_notice:
-                sent = await s.scalar(select(func.max(Notification.sent_at)).where(
-                    Notification.user_id == n.user_id, Notification.type == "owner_new_user",
-                    Notification.status == "sent"))
-                if sent:
-                    cooldown = max(cooldown or sent, sent+timedelta(seconds=3))
-            if cooldown and cooldown > now:
-                n.scheduled_at = cooldown
-                return None
-            if n.attempt_count >= 5:
-                n.status = "failed"
-                if n.broadcast_id:
-                    job=await s.get(Broadcast,n.broadcast_id,with_for_update=True)
-                    job.failed+=1
-                return None
-            if n.marketing:
-                recent=await s.scalar(select(Notification.id).where(Notification.user_id==n.user_id,Notification.id!=n.id,Notification.marketing.is_(True),Notification.status=="sent",Notification.sent_at>now-timedelta(days=1)).limit(1))
-                if recent:
-                    n.scheduled_at=now+timedelta(days=1)
+                cooldown = await s.scalar(select(func.max(Notification.scheduled_at)).where(
+                    Notification.user_id == n.user_id, Notification.id != n.id,
+                    Notification.status.in_(["queued", "sending"]),
+                    Notification.last_error == "rate_limit"))
+                if owner_notice:
+                    sent = await s.scalar(select(func.max(Notification.sent_at)).where(
+                        Notification.user_id == n.user_id, Notification.type == "owner_new_user",
+                        Notification.status == "sent"))
+                    if sent:
+                        cooldown = max(cooldown or sent, sent+timedelta(seconds=3))
+                if cooldown and cooldown > now:
+                    n.scheduled_at = cooldown
                     return None
-            n.status, n.scheduled_at = "sending", now+timedelta(minutes=2)
-            n.attempt_count += 1
-        return n
+                if n.attempt_count >= 5:
+                    n.status = "failed"
+                    if n.broadcast_id:
+                        job=await s.get(Broadcast,n.broadcast_id,with_for_update=True)
+                        job.failed+=1
+                    return None
+                if n.marketing:
+                    recent=await s.scalar(select(Notification.id).where(Notification.user_id==n.user_id,Notification.id!=n.id,Notification.marketing.is_(True),Notification.status=="sent",Notification.sent_at>now-timedelta(days=1)).limit(1))
+                    if recent:
+                        n.scheduled_at=now+timedelta(days=1)
+                        return None
+                n.status, n.scheduled_at = "sending", now+timedelta(minutes=2)
+                n.attempt_count += 1
+            return n
 
     async def finish(self, notification_id, status, error=None, retry_after=None):
         async with async_session.begin() as s:
