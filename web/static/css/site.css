@@ -81,7 +81,12 @@ a:hover { color: #f0a860; }
 .brand-logo:hover { filter: brightness(1.08); }
 .brand-logo img, .brand-logo-image { display: block; height: auto; object-fit: contain; }
 .brand-logo-compact:hover { filter: none; }
-.call-brand-logo { width: 130px; }
+.call-brand-logo { width: 180px; }
+@media (max-width: 520px) {
+  .nav .brand-logo img { width: 210px; }
+  .app-header .brand-logo img { width: 150px; }
+  .call-brand-logo { width: 135px; }
+}
 @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 
 /* app shell (search + chat) */
