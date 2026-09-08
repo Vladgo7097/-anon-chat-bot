@@ -27,6 +27,9 @@
       </p>
       <div id="telegram-login"></div>
       <p class="mono" id="auth-error" hidden style="color:#c0524a;font-size:12px;margin-top:14px;"></p>
+      <p class="mono" id="account-switch-help" hidden style="color:var(--muted);font-size:12px;line-height:1.6;margin-top:10px;max-width:390px;">
+        Другой аккаунт: нажмите аватар справа от кнопки Telegram, выйдите из Telegram Login и авторизуйтесь заново.
+      </p>
     </div>
 
     <div class="card-glass" style="padding:28px;position:relative;">
@@ -75,6 +78,7 @@
     document.getElementById('auth-error').hidden = false;
     document.getElementById('auth-error').style.color = 'var(--muted)';
     document.getElementById('auth-error').textContent = 'Сеанс завершён. Войдите через Telegram заново.';
+    document.getElementById('account-switch-help').hidden = false;
   }
 
   // Telegram Mini App: if opened inside Telegram, skip the widget and

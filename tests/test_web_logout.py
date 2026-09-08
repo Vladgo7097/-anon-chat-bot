@@ -38,3 +38,4 @@ def test_logged_out_page_suppresses_automatic_miniapp_login():
     assert "miniApp && !loggedOut" in page
     assert 'id="login-again"' not in page
     assert "Сеанс завершён. Войдите через Telegram заново." in page
+    assert "Другой аккаунт: нажмите аватар справа" in page
