@@ -135,7 +135,23 @@ a:hover { color: #f0a860; }
 .landing-facts span { padding: 8px 10px; border: 1px solid rgba(69, 191, 255, .35); border-radius: 4px; color: #9feaff; font-size: 10px; }
 .landing-bot-link { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; margin-top: 25px; padding: 0 28px; border: 1px solid rgba(133,239,255,.7); border-radius: 999px; color: #fff; font-weight: 600; background: linear-gradient(105deg,#08d5f4,#087cff 46%,#5136f5 72%,#b63dff); box-shadow: 0 0 26px rgba(20,166,255,.4); transition: transform .16s ease, filter .16s ease; }
 .landing-bot-link:hover { color: #fff; transform: translateY(-2px); filter: brightness(1.12); }
-.landing-auth #telegram-login { padding: 4px; border: 1px solid transparent; border-radius: 999px; background: linear-gradient(#041238,#041238) padding-box, linear-gradient(110deg,var(--neon-cyan),var(--neon-violet)) border-box; box-shadow: 0 0 24px rgba(26,158,255,.3); }
+.landing-auth #telegram-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  overflow: hidden;
+  line-height: 0;
+  border: 1px solid rgba(91, 213, 255, .82);
+  border-radius: 8px;
+  background: rgba(3, 16, 48, .82);
+  box-shadow: 0 0 0 1px rgba(124, 104, 255, .18), 0 0 18px rgba(26, 158, 255, .22);
+}
+.landing-auth #telegram-login iframe {
+  display: block !important;
+  margin: 0 !important;
+  border-radius: 4px;
+}
 .landing-footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px 0 24px; color: #8193ba; font-size: 11px; border-top: 1px solid rgba(80, 143, 255, .2); }
 .landing-section { padding: 92px 0; scroll-margin-top: 20px; }
 .landing-section-head { max-width: 650px; margin-bottom: 30px; }
