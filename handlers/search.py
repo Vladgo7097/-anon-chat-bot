@@ -51,6 +51,11 @@ async def has_active_participation(user_id):
 
 async def cancel_task(user_id):
     task = _tasks.pop(user_id, None)
+    # Whoever removes the task entry also owns clearing the status message
+    # reference: search_loop's own `finally` can no longer do it once its
+    # _tasks entry has already been popped here (e.g. on a match, where both
+    # participants' tasks are cancelled from the task that found the match).
+    _status_messages.pop(user_id, None)
     if task and task is not asyncio.current_task():
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -150,7 +155,10 @@ async def search_loop(status, user_id, bot=None):
                         started = time.monotonic()
                         continue
                     return
-                await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                try:
+                    await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                except (TelegramForbiddenError, TelegramBadRequest):
+                    pass
                 return
             chat = await MatchingService().find(user_id)
             if chat:
@@ -177,7 +185,10 @@ async def search_loop(status, user_id, bot=None):
     except Exception:
         logger.exception("event=search_failed user_id=%s", user_id)
         await MatchingService().cancel(user_id)
-        await bot.send_message(user_id, "Поиск временно недоступен. Попробуй ещё раз.", reply_markup=main_menu_kb())
+        try:
+            await bot.send_message(user_id, "Поиск временно недоступен. Попробуй ещё раз.", reply_markup=main_menu_kb())
+        except (TelegramForbiddenError, TelegramBadRequest):
+            pass
     finally:
         if _tasks.get(user_id) is asyncio.current_task():
             _tasks.pop(user_id, None)

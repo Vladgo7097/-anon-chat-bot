@@ -1,7 +1,7 @@
 from html import escape
 from aiogram import F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, TelegramBadRequest
 from handlers import reveal_router
 from services.chats import ChatService
 from services.reveal import RevealService
@@ -87,6 +87,15 @@ async def cb_consent(callback: CallbackQuery):
                     await callback.bot.send_message(uid, caption)
             except TelegramForbiddenError:
                 pass
+            except (TelegramRetryAfter, TelegramBadRequest):
+                # A transient send failure here (rate limit, oversized photo, ...)
+                # must not silently lose the only notice of a mutual reveal the
+                # other side gets. Fall back to the durable outbox (text only,
+                # like the initial reveal request already does).
+                from services.notifications import enqueue
+                from models.base import async_session
+                async with async_session.begin() as s:
+                    await enqueue(s, uid, "reveal_mutual", f"reveal_mutual:{sid}:{uid}", caption)
     else:
         await callback.message.answer("<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Запрос отправлен. Ждём согласия собеседника.")
 

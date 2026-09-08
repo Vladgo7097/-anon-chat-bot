@@ -215,7 +215,7 @@ class NotificationService:
                         return None
                 n.status, n.scheduled_at = "sending", now+timedelta(minutes=2)
                 n.attempt_count += 1
-            return n
+                return n
 
     async def finish(self, notification_id, status, error=None, retry_after=None):
         async with async_session.begin() as s:

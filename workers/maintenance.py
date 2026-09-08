@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 def notification_content(notification):
-    if notification.type not in {"match", "rating", "unban", "inactive", "reward", "startup", "owner_new_user"}:
+    if notification.type not in {"match", "rating", "unban", "inactive", "reward", "startup", "owner_new_user", "reveal_mutual"}:
         return notification.text, None
-    if notification.type in {"startup", "owner_new_user"}:
+    if notification.type in {"startup", "owner_new_user", "reveal_mutual"}:
         return notification.text, "HTML"
     # Escape dynamic text, then restore only the supported custom emoji markup.
     text = escape(notification.text)
