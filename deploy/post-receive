@@ -37,7 +37,7 @@ $GIT checkout -f
 
 echo "[post-receive] Rebuilding and restarting Docker..."
 cd "$DEPLOY_DIR" || exit 1
-docker compose build bot 2>&1 | tail -3
-docker compose up -d bot 2>&1
+docker compose build bot web 2>&1 | tail -6
+docker compose up -d bot web 2>&1
 
 echo "[post-receive] Deploy complete!"
