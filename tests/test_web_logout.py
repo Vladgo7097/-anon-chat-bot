@@ -57,6 +57,9 @@ def test_logged_out_page_suppresses_automatic_miniapp_login():
     assert "Другой аккаунт: нажмите аватар справа" in page
     assert 'class="landing-auth"' in page
     assert "Случайный подбор, переписка, фото и звонки." in page
+    for section_id in ("features", "about", "faq", "support"):
+        assert f'id="{section_id}"' in page
+        assert f'href="#{section_id}"' in page
 
 
 def test_button_theme_covers_every_site_control_family():

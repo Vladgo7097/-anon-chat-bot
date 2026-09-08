@@ -15,6 +15,12 @@
     <a class="brand-logo" href="/" aria-label="Анонимный чат">
       <img src="/img/logo.webp" alt="Логотип Анонимного чата" width="260" height="130">
     </a>
+    <nav class="landing-nav" aria-label="Разделы сайта">
+      <a href="#features">Возможности</a>
+      <a href="#about">О боте</a>
+      <a href="#faq">Вопросы</a>
+      <a href="#support">Поддержка</a>
+    </nav>
     <div class="landing-auth">
       <div id="telegram-login"></div>
       <p class="mono" id="auth-error" hidden></p>
@@ -37,6 +43,56 @@
       <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Открыть в Telegram</a>
     </div>
   </main>
+
+  <section class="landing-section" id="features">
+    <div class="landing-section-head">
+      <span class="landing-kicker mono">ВОЗМОЖНОСТИ</span>
+      <h2>Всё для живого общения</h2>
+      <p>Один аккаунт работает на сайте и в Telegram-боте.</p>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-card card-glass"><span class="feature-num mono">01</span><h3>Случайный поиск</h3><p>Бот подбирает свободного собеседника с учётом выбранных настроек.</p></article>
+      <article class="feature-card card-glass"><span class="feature-num mono">02</span><h3>Сообщения и фото</h3><p>Общайтесь анонимно, не открывая имя, телефон или профиль Telegram.</p></article>
+      <article class="feature-card card-glass"><span class="feature-num mono">03</span><h3>Голос и видео</h3><p>Звонки доступны пользователям Premium. Камера включается только вручную.</p></article>
+      <article class="feature-card card-glass"><span class="feature-num mono">04</span><h3>Контроль общения</h3><p>Диалог можно завершить, оценить или отправить жалобу на собеседника.</p></article>
+    </div>
+  </section>
+
+  <section class="landing-section about-section" id="about">
+    <div class="about-copy card-glass">
+      <span class="landing-kicker mono">О БОТЕ</span>
+      <h2>Как начать диалог</h2>
+      <ol class="steps-list">
+        <li><b>Войдите через Telegram.</b><span>Сайт подключит тот же аккаунт, который используется в боте.</span></li>
+        <li><b>Настройте поиск.</b><span>Укажите возрастной диапазон и предпочтения собеседника.</span></li>
+        <li><b>Начните общение.</b><span>Поиск, чат и завершение диалога работают прямо на сайте.</span></li>
+      </ol>
+    </div>
+    <div class="privacy-card card-glass">
+      <span class="landing-kicker mono">ПРИВАТНОСТЬ</span>
+      <h2>Вы решаете, что показать</h2>
+      <p>Контакт и фото профиля открываются собеседнику только после взаимного согласия. При отправке жалобы модератор получает лишь необходимый контекст последних сообщений.</p>
+      <div class="privacy-points mono"><span>ВЗАИМНОЕ СОГЛАСИЕ</span><span>БЛОКИРОВКИ</span><span>ЖАЛОБЫ</span></div>
+    </div>
+  </section>
+
+  <section class="landing-section" id="faq">
+    <div class="landing-section-head">
+      <span class="landing-kicker mono">ЧАСТЫЕ ВОПРОСЫ</span>
+      <h2>Коротко о главном</h2>
+    </div>
+    <div class="landing-faq">
+      <details class="faq-card card-glass"><summary>Собеседник увидит мой Telegram?</summary><p>Нет. Username, контакт и фото профиля скрыты, пока оба участника не согласятся раскрыться.</p></details>
+      <details class="faq-card card-glass"><summary>Можно пользоваться без Premium?</summary><p>Да. Поиск и переписка доступны бесплатно. Premium открывает дополнительные возможности, включая звонки.</p></details>
+      <details class="faq-card card-glass"><summary>Как сменить собеседника?</summary><p>Завершите текущий диалог и запустите поиск снова с теми же или новыми настройками.</p></details>
+      <details class="faq-card card-glass"><summary>Что делать при нарушении правил?</summary><p>Завершите диалог, отправьте жалобу и при необходимости заблокируйте пользователя.</p></details>
+    </div>
+  </section>
+
+  <section class="landing-section support-section card-glass" id="support">
+    <div><span class="landing-kicker mono">ПОДДЕРЖКА</span><h2>Нужна помощь?</h2><p>Откройте Telegram-бот и напишите через раздел помощи. Там же доступны правила и управление аккаунтом.</p></div>
+    <a class="btn btn-primary" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Открыть поддержку</a>
+  </section>
 
   <div class="landing-footer mono">
     <span>© АНОНИМНЫЙ ЧАТ</span>
