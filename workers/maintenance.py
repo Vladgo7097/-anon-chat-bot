@@ -104,7 +104,14 @@ async def run(bot):
                     await service.finish(notification.id,"failed","bad_request")
                 except Exception:
                     await service.finish(notification.id,"queued","network",min(300,2**notification.attempt_count))
-            await asyncio.sleep(0.1 if notification else 1)
+            # Broadcasts get a much slower pace than one-off notifications --
+            # confirmed on prod: a bulk send at the normal 0.1s/~10 msg/s pace
+            # tripped Telegram's flood protection and got the whole broadcast
+            # a ~24h TelegramRetryAfter, stalling hundreds of recipients.
+            if notification and notification.type == "broadcast":
+                await asyncio.sleep(0.35)
+            else:
+                await asyncio.sleep(0.1 if notification else 1)
         except asyncio.CancelledError:
             raise
         except Exception:
