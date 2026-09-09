@@ -33,7 +33,7 @@ async def refresh_broadcast_progress(bot, service):
     for update in await service.progress_updates():
         job = update["job"]
         try:
-            await bot.edit_message_text(broadcast_card(job, update["counts"]),
+            await bot.edit_message_text(broadcast_card(job, update["counts"], update.get("poll_totals")),
                                         chat_id=update["chat_id"], message_id=update["message_id"],
                                         reply_markup=broadcast_card_kb(job.id))
         except TelegramRetryAfter as error:
@@ -88,7 +88,8 @@ async def run(bot):
                     poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None
                     if poll:
                         options, question = poll
-                        await bot.send_poll(notification.user_id, question, options, is_anonymous=True)
+                        sent = await bot.send_poll(notification.user_id, question, options, is_anonymous=True)
+                        await service.record_poll(sent.poll.id, notification.broadcast_id, len(options))
                     else:
                         text, parse_mode = notification_content(notification)
                         await bot.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)

@@ -51,8 +51,10 @@ class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
                                   drop_progress=AsyncMock(),
                                   next=AsyncMock(side_effect=[notification, asyncio.CancelledError()]),
                                   finish=AsyncMock(),
-                                  broadcast_poll=AsyncMock(return_value=(["Да", "Нет"], "Нравится сайт?")))
-        bot = SimpleNamespace(send_message=AsyncMock(), send_poll=AsyncMock())
+                                  broadcast_poll=AsyncMock(return_value=(["Да", "Нет"], "Нравится сайт?")),
+                                  record_poll=AsyncMock())
+        sent_poll = SimpleNamespace(poll=SimpleNamespace(id="poll-xyz"))
+        bot = SimpleNamespace(send_message=AsyncMock(), send_poll=AsyncMock(return_value=sent_poll))
         with (
             patch.object(maintenance, "NotificationService", return_value=service),
             patch.object(maintenance.Path, "write_text"),
@@ -63,5 +65,6 @@ class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 await maintenance.run(bot)
         service.broadcast_poll.assert_awaited_once_with(7)
         bot.send_poll.assert_awaited_once_with(123, "Нравится сайт?", ["Да", "Нет"], is_anonymous=True)
+        service.record_poll.assert_awaited_once_with("poll-xyz", 7, 2)
         bot.send_message.assert_not_awaited()
         service.finish.assert_awaited_once_with(1, "sent")

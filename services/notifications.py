@@ -4,7 +4,7 @@ import config
 from datetime import timedelta
 from sqlalchemy import select, func, or_, update
 from models.base import async_session
-from models.operations import Notification, Broadcast, Offer
+from models.operations import Notification, Broadcast, Offer, PollVote
 from models.payment import Payment
 from models.user import User
 from models.chat import Chat, ActiveParticipant
@@ -49,6 +49,35 @@ class NotificationService:
             if not job or job.kind != "poll":
                 return None
             return json.loads(job.poll_options), job.content
+
+    async def record_poll(self, poll_id, broadcast_id, option_count):
+        """Register a just-sent recipient poll so a later Poll update (see
+        handlers/admin.py's @admin_router.poll()) has somewhere to land."""
+        async with async_session.begin() as s:
+            s.add(PollVote(poll_id=poll_id, broadcast_id=broadcast_id,
+                counts=json.dumps([0]*option_count), updated_at=utcnow()))
+
+    async def update_poll(self, poll_id, counts):
+        """Store Telegram's latest per-option vote snapshot for one recipient's
+        poll. Silently a no-op for poll_ids we never sent (nothing to update)."""
+        async with async_session.begin() as s:
+            row = await s.get(PollVote, poll_id, with_for_update=True)
+            if row:
+                row.counts, row.updated_at = json.dumps(counts), utcnow()
+
+    async def poll_totals(self, broadcast_id):
+        """Sum every recipient's snapshot into one campaign-wide tally, or
+        None if no poll has reported in yet."""
+        async with async_session() as s:
+            rows = (await s.scalars(select(PollVote.counts).where(
+                PollVote.broadcast_id == broadcast_id))).all()
+            if not rows:
+                return None
+            totals = None
+            for raw in rows:
+                counts = json.loads(raw)
+                totals = counts if totals is None else [a+b for a, b in zip(totals, counts)]
+            return totals
 
     async def schedule(self):
         from services.settings import bot_value
@@ -300,8 +329,16 @@ class NotificationService:
                 .order_by(Broadcast.id).with_for_update(skip_locked=True).limit(5))).all()
             for job in jobs:
                 counts = await self.broadcast_counts(s, job.id)
+                poll_totals = None
+                if job.kind == "poll":
+                    poll_rows = (await s.scalars(select(PollVote.counts).where(
+                        PollVote.broadcast_id == job.id))).all()
+                    for raw in poll_rows:
+                        parsed = json.loads(raw)
+                        poll_totals = parsed if poll_totals is None else [a+b for a, b in zip(poll_totals, parsed)]
                 updates.append({"chat_id": job.progress_chat_id, "message_id": job.progress_message_id,
-                                "job": job, "counts": counts, "final": job.status == "completed"})
+                                "job": job, "counts": counts, "poll_totals": poll_totals,
+                                "final": job.status == "completed"})
                 job.progress_at = now
         return updates
 

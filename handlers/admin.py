@@ -398,8 +398,13 @@ def progress_bar(done, total, width=16):
     return FILLED*filled + EMPTY*(width-filled)
 
 
-def broadcast_card(job, counts):
-    """One renderer for the live progress message and the status screen."""
+def broadcast_card(job, counts, poll_totals=None):
+    """One renderer for the live progress message and the status screen.
+
+    poll_totals: campaign-wide vote sums (see NotificationService.poll_totals/
+    progress_updates), aligned index-for-index with json.loads(job.poll_options).
+    None until at least one recipient has voted; omitted entirely for text jobs.
+    """
     sent, failed = counts.get("sent", 0), counts.get("failed", 0)
     skipped, expanded = counts.get("skipped", 0), sum(counts.values())
     processed = sent + failed + skipped
@@ -423,6 +428,15 @@ def broadcast_card(job, counts):
         lines.append(f"Запущена: {job.started_at:%d.%m.%Y %H:%M} UTC")
     if job.finished_at:
         lines.append(f"Завершена: {job.finished_at:%d.%m.%Y %H:%M} UTC")
+    if getattr(job, "kind", "text") == "poll":
+        if poll_totals:
+            import json
+            labels = json.loads(job.poll_options)
+            voters = sum(poll_totals)
+            lines.append(f"\n📊 Голосов: {amount(voters)}")
+            lines += [f"{label} — {amount(count)}" for label, count in zip(labels, poll_totals)]
+        else:
+            lines.append("\nГолосов пока нет.")
     return "\n".join(lines)
 
 
@@ -467,6 +481,15 @@ async def broadcast_text(message: Message,state: FSMContext):
     await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
+
+
+@admin_router.poll()
+async def poll_vote_update(poll):
+    # Fires for ANY recipient's poll, not just admins -- AdminOnly middleware
+    # is bound only to .message/.callback_query, never to .poll, so this must
+    # not assume an admin is voting. A no-op for poll_ids we never sent.
+    from services.notifications import NotificationService
+    await NotificationService().update_poll(poll.id, [o.voter_count for o in poll.options])
 
 
 @admin_router.callback_query(F.data=="admin:poll")
@@ -546,7 +569,11 @@ async def cb_broadcast_status(callback: CallbackQuery):
             await callback.answer("Рассылка не найдена",show_alert=True)
             return
         job,counts=found
-        text,markup=broadcast_card(job,counts),broadcast_card_kb(job.id)
+        poll_totals=None
+        if job.kind=="poll":
+            from services.notifications import NotificationService
+            poll_totals=await NotificationService().poll_totals(job.id)
+        text,markup=broadcast_card(job,counts,poll_totals),broadcast_card_kb(job.id)
         try:
             await callback.message.edit_text(text,reply_markup=markup)
             await callback.answer("Обновлено")

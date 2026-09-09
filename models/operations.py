@@ -117,6 +117,20 @@ class Broadcast(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
 
 
+class PollVote(Base):
+    """Latest vote-count snapshot for one recipient's copy of a broadcast poll.
+
+    A broadcast poll is sent as a separate Poll object per recipient chat --
+    Telegram never aggregates votes across chats on its own -- so this stores
+    one row per poll_id, summed by broadcast_id to get the campaign tally.
+    """
+    __tablename__ = "poll_votes"
+    poll_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    broadcast_id: Mapped[int] = mapped_column(Integer, index=True)
+    counts: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
 class AdCampaign(Base):
     """A cross-promo slot sold to another Telegram channel, shown between chats.
 
