@@ -65,6 +65,14 @@ async def track_click():
     return {"ok": True}
 
 
+@app.get("/api/online")
+async def online():
+    """Real online-user count, same source the bot itself uses -- not a
+    made-up marketing number."""
+    from services.chat_manager import get_online_count
+    return {"online": await get_online_count()}
+
+
 @app.get("/api/stats")
 async def stats(request: Request):
     """Aggregate counters only, gated by a shared secret in the query string
