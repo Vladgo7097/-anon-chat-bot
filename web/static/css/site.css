@@ -172,7 +172,7 @@ a:hover { color: #8defff; }
   -webkit-mask-composite: xor; mask-composite: exclude;
   opacity: .85; filter: drop-shadow(0 0 9px rgba(90,160,255,.45));
 }
-.benefit-icon svg { position: relative; z-index: 1; filter: drop-shadow(0 0 6px rgba(120,210,255,.55)); }
+.benefit-icon svg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; filter: drop-shadow(0 0 6px rgba(120,210,255,.55)); }
 .benefit-icon .ring-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 1; }
 .benefit-icon .ring-dot.a { top: 6%; right: 8%; background: #4fe0ff; box-shadow: 0 0 8px rgba(79,224,255,.9); }
 .benefit-icon .ring-dot.b { bottom: 8%; left: 6%; background: #c968ff; box-shadow: 0 0 8px rgba(201,104,255,.9); }
