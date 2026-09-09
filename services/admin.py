@@ -296,15 +296,26 @@ class AdminService:
             audit(s,admin,"setting","setting",key,before,{"value":value})
         return ServiceResult(True,"SAVED")
 
-    async def broadcast(self,admin,segment,content):
+    async def broadcast(self,admin,segment,content,kind="text",poll_options=None):
         authorize(admin)
-        if segment not in {"all","premium","inactive","nopay"} or not 1<=len(content)<=4000:
+        if segment not in {"all","premium","inactive","nopay"} or kind not in {"text","poll"}:
             return ServiceResult(False,"INVALID")
+        if kind=="text":
+            if not 1<=len(content)<=4000:
+                return ServiceResult(False,"INVALID")
+        else:
+            # Telegram's own send_poll limits: question <=300 chars, 2-10 options, each <=100 chars.
+            if not 1<=len(content)<=300:
+                return ServiceResult(False,"INVALID")
+            if not poll_options or not 2<=len(poll_options)<=10 or any(not 1<=len(o)<=100 for o in poll_options):
+                return ServiceResult(False,"INVALID")
+        import json
         async with async_session.begin() as s:
-            job=Broadcast(admin_id=admin,segment=segment,content=content)
+            job=Broadcast(admin_id=admin,segment=segment,content=content,kind=kind,
+                poll_options=json.dumps(poll_options) if kind=="poll" else None)
             s.add(job)
             await s.flush()
-            audit(s,admin,"broadcast_draft","broadcast",job.id,after={"segment":segment})
+            audit(s,admin,"broadcast_draft","broadcast",job.id,after={"segment":segment,"kind":kind})
         return ServiceResult(True,"DRAFT",{"job":job})
 
     async def audience_size(self,admin,segment):

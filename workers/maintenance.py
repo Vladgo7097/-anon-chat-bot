@@ -85,8 +85,13 @@ async def run(bot):
                                 callback_data="search:repeat", style="primary")]])
                     elif notification.callback_data:
                         markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть",callback_data=notification.callback_data,style="primary")]])
-                    text, parse_mode = notification_content(notification)
-                    await bot.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)
+                    poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None
+                    if poll:
+                        options, question = poll
+                        await bot.send_poll(notification.user_id, question, options, is_anonymous=True)
+                    else:
+                        text, parse_mode = notification_content(notification)
+                        await bot.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)
                     await service.finish(notification.id,"sent")
                 except TelegramForbiddenError:
                     await service.finish(notification.id,"failed","forbidden")

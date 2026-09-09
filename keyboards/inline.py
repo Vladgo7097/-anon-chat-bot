@@ -67,6 +67,9 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Рассылка", icon_custom_emoji_id="5463212105752664600", callback_data="admin:broadcast"),
         ],
         [
+            InlineKeyboardButton(text="Опрос", icon_custom_emoji_id="5253959125838090076", callback_data="admin:poll"),
+        ],
+        [
             InlineKeyboardButton(text="Рассылки (статус)", icon_custom_emoji_id="5467526417581357662", callback_data="admin:broadcasts"),
             InlineKeyboardButton(text="Воронка", icon_custom_emoji_id="5399909394525737759", callback_data="admin:funnel"),
         ],
@@ -90,7 +93,7 @@ def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
     ])
 
 
-def admin_broadcast_audience_kb(sizes=None) -> InlineKeyboardMarkup:
+def admin_broadcast_audience_kb(sizes=None, prefix="bc") -> InlineKeyboardMarkup:
     sizes = sizes or {}
 
     def label(text, segment):
@@ -98,10 +101,10 @@ def admin_broadcast_audience_kb(sizes=None) -> InlineKeyboardMarkup:
         return text if size is None else f"{text} ({size:,})".replace(",", " ")
 
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=label("Все", "all"), icon_custom_emoji_id="5942877472163892475", callback_data="bc:all")],
-        [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data="bc:premium")],
-        [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bc:inactive")],
-        [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bc:nopay")],
+        [InlineKeyboardButton(text=label("Все", "all"), icon_custom_emoji_id="5942877472163892475", callback_data=f"{prefix}:all")],
+        [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data=f"{prefix}:premium")],
+        [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data=f"{prefix}:inactive")],
+        [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data=f"{prefix}:nopay")],
     ])
 
 

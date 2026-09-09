@@ -101,6 +101,8 @@ class Broadcast(Base):
     admin_id: Mapped[int] = mapped_column(BigInteger)
     segment: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(16), default="text", server_default="text")
+    poll_options: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="draft")
     cursor: Mapped[int] = mapped_column(BigInteger, default=0)
     total: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

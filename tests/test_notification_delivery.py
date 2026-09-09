@@ -10,12 +10,12 @@ from workers import maintenance
 class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def deliver(self, kind, text):
         notification = SimpleNamespace(id=1, user_id=123, type=kind, text=text,
-                                       callback_data=None, attempt_count=1)
+                                       callback_data=None, attempt_count=1, broadcast_id=None)
         service = SimpleNamespace(schedule=AsyncMock(), expand_broadcast=AsyncMock(),
                                   progress_updates=AsyncMock(return_value=[]),
                                   drop_progress=AsyncMock(),
                                   next=AsyncMock(side_effect=[notification, asyncio.CancelledError()]),
-                                  finish=AsyncMock())
+                                  finish=AsyncMock(), broadcast_poll=AsyncMock(return_value=None))
         bot = SimpleNamespace(send_message=AsyncMock())
         with (
             patch.object(maintenance, "NotificationService", return_value=service),
@@ -42,3 +42,26 @@ class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
             request = await self.deliver(kind, text)
             self.assertIsNone(request.kwargs["parse_mode"])
             self.assertEqual(request.args[1], text)
+
+    async def test_poll_broadcast_uses_send_poll_not_send_message(self):
+        notification = SimpleNamespace(id=1, user_id=123, type="broadcast", text="Нравится сайт?",
+                                       callback_data=None, attempt_count=1, broadcast_id=7)
+        service = SimpleNamespace(schedule=AsyncMock(), expand_broadcast=AsyncMock(),
+                                  progress_updates=AsyncMock(return_value=[]),
+                                  drop_progress=AsyncMock(),
+                                  next=AsyncMock(side_effect=[notification, asyncio.CancelledError()]),
+                                  finish=AsyncMock(),
+                                  broadcast_poll=AsyncMock(return_value=(["Да", "Нет"], "Нравится сайт?")))
+        bot = SimpleNamespace(send_message=AsyncMock(), send_poll=AsyncMock())
+        with (
+            patch.object(maintenance, "NotificationService", return_value=service),
+            patch.object(maintenance.Path, "write_text"),
+            patch("workers.maintenance.ChatService.reconcile", AsyncMock()),
+            patch("workers.maintenance.asyncio.sleep", AsyncMock()),
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await maintenance.run(bot)
+        service.broadcast_poll.assert_awaited_once_with(7)
+        bot.send_poll.assert_awaited_once_with(123, "Нравится сайт?", ["Да", "Нет"], is_anonymous=True)
+        bot.send_message.assert_not_awaited()
+        service.finish.assert_awaited_once_with(1, "sent")

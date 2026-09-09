@@ -40,6 +40,16 @@ async def enqueue(s, user_id, kind, key, content, callback=None, marketing=False
 
 
 class NotificationService:
+    async def broadcast_poll(self, broadcast_id):
+        """(options, question) for a poll-kind broadcast, or None for a plain
+        text one / missing job -- lets the worker pick send_poll vs send_message
+        without loading the whole Broadcast row into notification dispatch."""
+        async with async_session() as s:
+            job = await s.get(Broadcast, broadcast_id)
+            if not job or job.kind != "poll":
+                return None
+            return json.loads(job.poll_options), job.content
+
     async def schedule(self):
         from services.settings import bot_value
         from models.ban import Ban

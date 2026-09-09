@@ -54,6 +54,8 @@ admin_router.callback_query.middleware(AdminOnly())
 
 class AdminBroadcast(StatesGroup):
     CONTENT=State()
+    POLL_QUESTION=State()
+    POLL_OPTIONS=State()
 
 
 class AdminMessage(StatesGroup):
@@ -403,8 +405,9 @@ def broadcast_card(job, counts):
     processed = sent + failed + skipped
     # Until expansion finishes, the audience snapshot is the honest denominator.
     scale = max(job.total, expanded, 1)
+    kind_note = " · опрос" if getattr(job, "kind", "text") == "poll" else ""
     lines = ["<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> "
-             f"Рассылка #{job.id} · {SEGMENT_TITLES.get(job.segment, job.segment)}"]
+             f"Рассылка #{job.id} · {SEGMENT_TITLES.get(job.segment, job.segment)}{kind_note}"]
     if job.status == "draft":
         lines.append("\nЧерновик, ещё не запущена.")
     else:
@@ -462,6 +465,55 @@ async def broadcast_text(message: Message,state: FSMContext):
     await state.clear()
     job=result.data['job']
     await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр · {audience}\n\n{message.text}",parse_mode=None,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
+
+
+@admin_router.callback_query(F.data=="admin:poll")
+async def cb_poll(callback: CallbackQuery):
+    service = AdminService()
+    sizes = {segment: await service.audience_size(callback.from_user.id, segment)
+             for segment in ("all", "premium", "inactive", "nopay")}
+    await callback.answer()
+    await callback.message.answer("<tg-emoji emoji-id=\"5253959125838090076\">📊</tg-emoji> Выбери аудиторию для опроса:",
+                                  reply_markup=admin_broadcast_audience_kb(sizes, prefix="bcp"))
+
+
+@admin_router.callback_query(F.data.startswith("bcp:"))
+async def cb_audience_poll(callback: CallbackQuery,state: FSMContext):
+    audience=callback.data.split(":")[-1]
+    if audience not in {"all","premium","inactive","nopay"}:
+        await callback.answer("Неизвестная аудитория")
+        return
+    await state.set_state(AdminBroadcast.POLL_QUESTION)
+    await state.update_data(audience=audience)
+    await callback.answer()
+    await callback.message.answer("Введи текст вопроса (до 300 символов).")
+
+
+@admin_router.message(AdminBroadcast.POLL_QUESTION, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def broadcast_poll_question(message: Message,state: FSMContext):
+    if not 1<=len(message.text)<=300:
+        await message.answer("Вопрос должен содержать от 1 до 300 символов.")
+        return
+    await state.update_data(question=message.text)
+    await state.set_state(AdminBroadcast.POLL_OPTIONS)
+    await message.answer("Теперь варианты ответов — по одному на строку, от 2 до 10 штук, каждый до 100 символов.")
+
+
+@admin_router.message(AdminBroadcast.POLL_OPTIONS, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def broadcast_poll_options(message: Message,state: FSMContext):
+    options=[line.strip() for line in message.text.split("\n") if line.strip()]
+    data=await state.get_data()
+    audience,question=data.get("audience","all"),data.get("question","")
+    result=await AdminService().broadcast(message.from_user.id,audience,question,kind="poll",poll_options=options)
+    if not result.ok:
+        await message.answer("Нужно от 2 до 10 вариантов, каждый от 1 до 100 символов. Пришли варианты заново.")
+        return
+    await state.clear()
+    job=result.data['job']
+    preview="\n".join(f"{i+1}. {o}" for i,o in enumerate(options))
+    await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр опроса · {audience}\n\n{question}\n\n{preview}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
 
