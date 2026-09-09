@@ -21,17 +21,14 @@
       <a href="#faq">Вопросы</a>
       <a href="#support">Поддержка</a>
     </nav>
-    <div class="landing-auth">
-      <div id="telegram-login"></div>
-      <p class="mono" id="auth-error" hidden></p>
-    </div>
+    <a class="btn btn-primary" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Открыть в Telegram</a>
   </div>
 
   <main class="landing-hero">
     <div class="landing-copy card-glass">
       <span class="landing-kicker mono">АНОНИМНЫЙ ЧАТ 1-НА-1</span>
       <h1>Найди собеседника прямо сейчас</h1>
-      <p>Случайный подбор, переписка, фото и звонки. Контакты открываются только по взаимному согласию.</p>
+      <p>Случайный подбор, переписка, фото и звонки — всё в Telegram-боте. Контакты открываются только по взаимному согласию.</p>
       <div class="landing-facts mono">
         <span>АНОНИМНО</span>
         <span>БЕЗ АНКЕТ В ЧАТЕ</span>
@@ -45,7 +42,7 @@
     <div class="landing-section-head">
       <span class="landing-kicker mono">ВОЗМОЖНОСТИ</span>
       <h2>Всё для живого общения</h2>
-      <p>Один аккаунт работает на сайте и в Telegram-боте.</p>
+      <p>Всё это происходит прямо в боте — этот сайт лишь рассказывает, что внутри.</p>
     </div>
     <div class="feature-grid">
       <article class="feature-card card-glass"><span class="feature-num mono">01</span><h3>Случайный поиск</h3><p>Бот подбирает свободного собеседника с учётом выбранных настроек.</p></article>
@@ -60,9 +57,9 @@
       <span class="landing-kicker mono">О БОТЕ</span>
       <h2>Как начать диалог</h2>
       <ol class="steps-list">
-        <li><b>Войдите через Telegram.</b><span>Сайт подключит тот же аккаунт, который используется в боте.</span></li>
-        <li><b>Настройте поиск.</b><span>Укажите возрастной диапазон и предпочтения собеседника.</span></li>
-        <li><b>Начните общение.</b><span>Поиск, чат и завершение диалога работают прямо на сайте.</span></li>
+        <li><b>Откройте бота в Telegram.</b><span>Кнопка выше или @anonim_chatqbot.</span></li>
+        <li><b>Пройдите короткую регистрацию.</b><span>Пол, возраст и правила — прямо в чате с ботом.</span></li>
+        <li><b>Начните поиск.</b><span>Бот подберёт случайного собеседника за секунды.</span></li>
       </ol>
     </div>
     <div class="privacy-card card-glass">
@@ -93,55 +90,8 @@
 
   <div class="landing-footer mono">
     <span>© АНОНИМНЫЙ ЧАТ</span>
-    <span>Сайт и Telegram Mini App</span>
+    <span>Работает в Telegram</span>
   </div>
 </div>
-
-<script>
-  var loggedOut = new URLSearchParams(location.search).get('logged_out') === '1';
-  var miniApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
-
-  function mountLoginWidget() {
-    // Built at runtime so the same static file works over the server's IP
-    // during setup and over the real domain afterwards without editing HTML.
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://telegram.org/js/telegram-widget.js?22';
-    s.setAttribute('data-telegram-login', 'anonim_chatqbot');
-    s.setAttribute('data-size', 'large');
-    s.setAttribute('data-radius', '3');
-    s.setAttribute('data-auth-url', location.origin + '/auth/telegram/callback');
-    s.setAttribute('data-request-access', 'write');
-    document.getElementById('telegram-login').appendChild(s);
-  }
-
-  // Telegram Mini App: if opened inside Telegram, skip the widget and
-  // authenticate with initData instead, then go straight to the app.
-  if (miniApp && !loggedOut) {
-    window.Telegram.WebApp.ready();
-    fetch('/auth/miniapp', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({init_data: window.Telegram.WebApp.initData}),
-    }).then(function (r) {
-      if (r.ok) { location.href = '/app.html'; }
-      else { document.getElementById('auth-error').hidden = false; document.getElementById('auth-error').textContent = 'Не удалось войти. Попробуй ещё раз.'; }
-    });
-  } else {
-    // Already signed in? Let them stay right here on the landing page --
-    // show a way into the account instead of a login widget that would be
-    // confusing to see while already logged in, and don't force a redirect.
-    fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
-      return r.ok ? r.json() : null;
-    }).catch(function () { return null; }).then(function (me) {
-      if (!me) { mountLoginWidget(); return; }
-      var box = document.getElementById('telegram-login');
-      var link = document.createElement('a');
-      link.className = 'btn btn-primary';
-      link.href = '/app.html';
-      link.textContent = 'Мой аккаунт · ' + me.anon_id;
-      box.appendChild(link);
-    });
-  }
-</script>
 </body>
 </html>

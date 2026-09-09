@@ -1,126 +1,24 @@
-"""FastAPI entry point for the website. Runs as its own container
-(`uvicorn web.app:app`), separate from the bot's aiogram polling process,
-sharing the same Postgres/Redis and the same services/repositories/models.
+"""Static informational site: what the bot is and a link to open it.
+
+No accounts, no browser search/chat/calls -- all of that lives in the bot
+itself. Runs as its own container (`uvicorn web.app:app`) only because that
+was already the deploy shape; it does nothing beyond serving static files.
 """
 import mimetypes
 from pathlib import Path
-import time
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-
-import config
-from web import auth
-from web.routes_account import router as account_router
-from web.routes_call import router as call_router
-from web.routes_chat import router as chat_router
-from web.ws import router as ws_router
 
 STATIC_DIR = Path(__file__).parent / "static"
 mimetypes.add_type("image/webp", ".webp")
 
-app = FastAPI(title="anon-chat-bot web")
-app.include_router(chat_router)
-app.include_router(account_router)
-app.include_router(call_router)
-app.include_router(ws_router)
+app = FastAPI(title="anon-chat-bot site")
 
 
 @app.get("/health")
 async def health():
     return {"ok": True}
-
-
-@app.get("/api/me")
-async def me(request: Request):
-    token = request.cookies.get(auth.SESSION_COOKIE)
-    telegram_id = auth.read_session_token(token) if token else None
-    if telegram_id is None:
-        raise HTTPException(status_code=401, detail="NOT_AUTHENTICATED")
-    from repositories.users import UserRepository
-    from services.chat_manager import get_online_count
-    from services.onboarding import step_for
-    from utils.db import is_premium
-    user = await UserRepository().get(telegram_id)
-    if user is None or user.deleted_at is not None:
-        raise HTTPException(status_code=401, detail="NOT_AUTHENTICATED")
-    return {
-        "telegram_id": telegram_id,
-        "anon_id": user.anon_id,
-        "onboarding_complete": step_for(user) == "MENU",
-        "bot_username": config.BOT_USERNAME,
-        "is_premium": await is_premium(telegram_id),
-        "online": await get_online_count(),
-    }
-
-
-@app.post("/auth/logout")
-async def logout():
-    response = JSONResponse({"ok": True})
-    response.delete_cookie(
-        auth.SESSION_COOKIE,
-        path="/",
-        secure=config.WEB_COOKIE_SECURE,
-        httponly=True,
-        samesite="lax",
-    )
-    response.set_cookie(
-        auth.LOGOUT_GUARD_COOKIE,
-        str(int(time.time())),
-        max_age=config.WEB_SESSION_MAX_AGE,
-        path="/",
-        secure=config.WEB_COOKIE_SECURE,
-        httponly=True,
-        samesite="lax",
-    )
-    return response
-
-
-def _issue_session(response, telegram_id: int):
-    token = auth.create_session_token(telegram_id)
-    response.set_cookie(
-        auth.SESSION_COOKIE, token, max_age=config.WEB_SESSION_MAX_AGE,
-        httponly=True, secure=config.WEB_COOKIE_SECURE, samesite="lax",
-    )
-    response.delete_cookie(
-        auth.LOGOUT_GUARD_COOKIE, path="/", secure=config.WEB_COOKIE_SECURE,
-        httponly=True, samesite="lax",
-    )
-
-
-@app.get("/auth/telegram/callback")
-async def telegram_login_callback(request: Request):
-    """Redirect target of the Telegram Login Widget (browser)."""
-    data = dict(request.query_params)
-    if not auth.verify_login_widget(data):
-        raise HTTPException(status_code=401, detail="BAD_SIGNATURE")
-    if not auth.is_fresh_after_logout(data.get("auth_date"), request.cookies.get(auth.LOGOUT_GUARD_COOKIE)):
-        return RedirectResponse(url="/?logged_out=1", status_code=302)
-    telegram_id = int(data["id"])
-    from repositories.users import UserRepository
-    await UserRepository().get_or_create(telegram_id, username=data.get("username"), first_name=data.get("first_name"))
-    response = RedirectResponse(url="/app.html", status_code=302)
-    _issue_session(response, telegram_id)
-    return response
-
-
-@app.post("/auth/miniapp")
-async def miniapp_login(payload: dict, request: Request):
-    """Telegram Mini App: the page posts window.Telegram.WebApp.initData here."""
-    init_data = payload.get("init_data", "")
-    user_data = auth.verify_miniapp_init_data(init_data)
-    if user_data is None or "id" not in user_data:
-        raise HTTPException(status_code=401, detail="BAD_SIGNATURE")
-    if not auth.is_fresh_after_logout(auth.init_data_auth_date(init_data), request.cookies.get(auth.LOGOUT_GUARD_COOKIE)):
-        raise HTTPException(status_code=401, detail="LOGGED_OUT")
-    telegram_id = int(user_data["id"])
-    from repositories.users import UserRepository
-    await UserRepository().get_or_create(
-        telegram_id, username=user_data.get("username"), first_name=user_data.get("first_name"))
-    response = JSONResponse({"ok": True})
-    _issue_session(response, telegram_id)
-    return response
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

@@ -72,20 +72,6 @@ class RelayService:
     async def delivered(self,user_id,session_id,source_chat,message_id):
         await ChatRepository().touch(session_id)
 
-    async def publish_delivery(self, session_id, payload):
-        """Fan a delivered message out to any open website WebSocket for
-        either side of the chat, regardless of which surface (bot or web)
-        the message actually originated from. Best-effort: a subscriber
-        that misses this still has the message through Telegram itself."""
-        from services.chat_manager import get_redis
-        from redis.exceptions import RedisError
-        import json
-        try:
-            r = await get_redis()
-            await r.publish(f"chat:{session_id}", json.dumps(payload))
-        except RedisError:
-            pass
-
     async def reply_target(self, session_id, user_id, message_id):
         from services.chat_manager import get_redis
         from redis.exceptions import RedisError

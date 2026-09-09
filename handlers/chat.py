@@ -167,13 +167,6 @@ async def forward_message(message: Message, album=None):
             await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
         await service.remember_context(result.data["session_id"], message.from_user.id, content)
-        # Let a connected website session for either side see this live, on
-        # top of the normal Telegram delivery above (unaffected either way).
-        await service.publish_delivery(result.data["session_id"], {
-            "type": "message", "from": message.from_user.id,
-            "content_type": message.content_type,
-            "text": content if message.content_type == "text" else None,
-        })
     except TelegramForbiddenError:
         await finish(message, message.from_user.id, "unreachable")
     except TelegramBadRequest:
