@@ -19,7 +19,11 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 28px; }
+html { scroll-behavior: smooth; scroll-padding-top: 28px; scrollbar-width: thin; scrollbar-color: #2f6fd6 transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #18dcff, #315cff 55%, #8d35ff); border-radius: 999px; border: 2px solid #020717; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #4fe6ff, #4a7bff 55%, #a552ff); background-clip: padding-box; }
 html, body { margin: 0; padding: 0; }
 body {
   background: linear-gradient(90deg, rgba(1, 5, 20, .9), rgba(1, 6, 24, .62)), url('/img/background.webp') center center / cover fixed no-repeat, var(--bg);
