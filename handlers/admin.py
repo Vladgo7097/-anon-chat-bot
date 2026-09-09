@@ -475,7 +475,7 @@ async def cb_poll(callback: CallbackQuery):
     sizes = {segment: await service.audience_size(callback.from_user.id, segment)
              for segment in ("all", "premium", "inactive", "nopay")}
     await callback.answer()
-    await callback.message.answer("<tg-emoji emoji-id=\"5253959125838090076\">📊</tg-emoji> Выбери аудиторию для опроса:",
+    await callback.message.answer("📊 Выбери аудиторию для опроса:",
                                   reply_markup=admin_broadcast_audience_kb(sizes, poll=True))
 
 
@@ -513,7 +513,7 @@ async def broadcast_poll_options(message: Message,state: FSMContext):
     await state.clear()
     job=result.data['job']
     preview="\n".join(f"{i+1}. {o}" for i,o in enumerate(options))
-    await message.answer(f"<tg-emoji emoji-id=\"5253959125838090076\">👁</tg-emoji> Предпросмотр опроса · {audience}\n\n{question}\n\n{preview}",parse_mode=None,
+    await message.answer(f"👁 Предпросмотр опроса · {audience}\n\n{question}\n\n{preview}",parse_mode=None,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Запустить рассылку",icon_custom_emoji_id="5188481279963715781",callback_data=f"admin:send:{job.id}",style="danger")]]))
 

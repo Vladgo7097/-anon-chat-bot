@@ -67,7 +67,7 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Рассылка", icon_custom_emoji_id="5463212105752664600", callback_data="admin:broadcast"),
         ],
         [
-            InlineKeyboardButton(text="Опрос", icon_custom_emoji_id="5253959125838090076", callback_data="admin:poll"),
+            InlineKeyboardButton(text="📊 Опрос", callback_data="admin:poll"),
         ],
         [
             InlineKeyboardButton(text="Рассылки (статус)", icon_custom_emoji_id="5467526417581357662", callback_data="admin:broadcasts"),
