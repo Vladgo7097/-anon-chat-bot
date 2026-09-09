@@ -233,7 +233,15 @@
       fetch('/api/track/' + kind, { method: 'POST', keepalive: true });
     } catch (e) {}
   }
-  track('view');
+  // One count per browser tab/visit, not per page reload -- sessionStorage
+  // never leaves the browser and clears itself when the tab closes, so this
+  // stays purely a client-side dedup, not a persistent visitor identity.
+  try {
+    if (!sessionStorage.getItem('site-view-tracked')) {
+      sessionStorage.setItem('site-view-tracked', '1');
+      track('view');
+    }
+  } catch (e) { track('view'); }
   document.querySelectorAll('a[href*="t.me/anonim_chatqbot"]').forEach(function (a) {
     a.addEventListener('click', function () { track('click'); });
   });
