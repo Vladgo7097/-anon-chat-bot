@@ -206,6 +206,14 @@
     <div><span class="landing-kicker mono">SUPPORT</span><h2>Need help?</h2><p>Help, rules and account management all live inside the bot. The entry button is at the top of the page.</p></div>
   </section>
 
+  <div class="visits-row" id="visits-row" hidden>
+    <span class="visits-badge">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span class="visits-value" id="visits-value">0</span>
+      <span class="visits-label">site views</span>
+    </span>
+  </div>
+
   <div class="landing-footer">
     <span>Anonymous Chat&nbsp; &bull; &nbsp;Talk without borders&nbsp; &bull; &nbsp;2026</span>
     <div class="footer-links">
@@ -236,6 +244,25 @@
   if (onlineEl) {
     fetch('/api/online').then(function (r) { return r.json(); }).then(function (d) {
       onlineEl.textContent = (typeof d.online === 'number' ? d.online : '—') + ' online';
+    }).catch(function () {});
+  }
+
+  // Real page-view total -- hidden entirely rather than showing a
+  // placeholder if Redis is unavailable (never fake a number).
+  var visitsRow = document.getElementById('visits-row');
+  var visitsEl = document.getElementById('visits-value');
+  if (visitsRow && visitsEl) {
+    fetch('/api/visits').then(function (r) { return r.json(); }).then(function (d) {
+      if (typeof d.total !== 'number') return;
+      visitsRow.hidden = false;
+      var from = 0, to = d.total, start = null, dur = 900;
+      function step(ts) {
+        if (!start) start = ts;
+        var p = Math.min(1, (ts - start) / dur);
+        visitsEl.textContent = Math.floor(from + (to - from) * (1 - Math.pow(1 - p, 3))).toLocaleString('en-US');
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
     }).catch(function () {});
   }
 </script>

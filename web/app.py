@@ -55,8 +55,27 @@ async def health():
 
 @app.post("/api/track/view")
 async def track_view():
+    from redis.exceptions import RedisError
     await _bump("views")
+    try:
+        r = _get_redis()
+        await r.incr("landing:views:total")
+    except RedisError:
+        pass
     return {"ok": True}
+
+
+@app.get("/api/visits")
+async def visits():
+    """Public, honest running total of page loads since the counter was
+    added -- not unique visitors (we don't fingerprint anyone), just views."""
+    from redis.exceptions import RedisError
+    try:
+        r = _get_redis()
+        total = int(await r.get("landing:views:total") or 0)
+        return {"total": total}
+    except RedisError:
+        return {"total": None}
 
 
 @app.post("/api/track/click")
