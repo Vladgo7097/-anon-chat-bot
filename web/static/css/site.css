@@ -164,7 +164,8 @@ a:hover { color: #8defff; }
 .landing-copy p { max-width: 630px; margin: 0; color: #c6d0e2; font-size: 19px; font-weight: 400; line-height: 1.55; }
 .benefits-row { display: flex; flex-wrap: wrap; gap: 42px; margin-top: 34px; }
 .benefit { display: flex; align-items: center; gap: 16px; }
-.benefit-icon { width: 60px; height: 60px; flex-shrink: 0; border-radius: 20px; display: flex; align-items: center; justify-content: center; color: #6fe3ff; background: linear-gradient(145deg, rgba(16,49,100,.7), rgba(7,14,37,.85)); border: 1px solid rgba(54,122,255,.36); }
+.benefit-icon { width: 54px; height: 54px; flex-shrink: 0; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: #7fe8ff; background: radial-gradient(circle at 30% 25%, rgba(60,150,255,.25), transparent 60%), linear-gradient(145deg, rgba(16,49,100,.7), rgba(6,12,32,.9)); border: 1px solid rgba(70,160,255,.4); box-shadow: 0 10px 22px -8px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06); }
+.benefit-icon svg { filter: drop-shadow(0 0 5px rgba(80,200,255,.35)); }
 .benefit span { display: block; font-size: 17px; font-weight: 500; line-height: 1.35; color: #edf3ff; }
 .landing-cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 36px; }
 .landing-bot-link { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 30px; border: 1px solid rgba(133,239,255,.7); border-radius: 999px; color: #fff; font-weight: 700; font-size: 16px; background: linear-gradient(105deg,#08d5f4,#087cff 46%,#5136f5 72%,#b63dff); box-shadow: 0 0 26px rgba(20,166,255,.4); transition: transform .16s ease, filter .16s ease; }
