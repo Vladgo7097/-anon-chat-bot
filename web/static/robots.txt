@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://anonim.chat.mooo.com/sitemap.xml
+Sitemap: https://anonimchat.pp.ua/sitemap.xml
