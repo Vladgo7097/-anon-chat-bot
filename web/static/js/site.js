@@ -305,11 +305,32 @@
       toast("Браузер не даёт доступ к устройствам");
       return;
     }
-    navigator.mediaDevices.enumerateDevices().then(function (devices) {
+    primeDevicePermissions().then(function () {
+      return navigator.mediaDevices.enumerateDevices();
+    }).then(function (devices) {
       fillSelect($("dv-mic"), devices.filter(function (d) { return d.kind === "audioinput"; }), devicePrefs.micId, "Микрофон");
       fillSelect($("dv-out"), devices.filter(function (d) { return d.kind === "audiooutput"; }), devicePrefs.outId, "Динамик");
       fillSelect($("dv-cam"), devices.filter(function (d) { return d.kind === "videoinput"; }), devicePrefs.camId, "Камера");
     });
+  }
+
+  var devicesUnlocked = false;
+  function primeDevicePermissions() {
+    // Chrome/Firefox hide real device ids and labels (every entry reads as
+    // deviceId "") until getUserMedia has been granted at least once on this
+    // origin -- so before that, every dropdown option looks identical and
+    // "the chosen one" cannot be told apart or saved correctly. Ask once,
+    // release the tracks immediately, and only then enumerate for real.
+    if (devicesUnlocked) return Promise.resolve();
+    return navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+      .then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        devicesUnlocked = true;
+      })
+      .catch(function () {
+        // Denied, or no camera on this machine: fall back to whatever
+        // enumerate() can still tell us rather than blocking the screen.
+      });
   }
 
   function fillSelect(select, devices, chosen, fallback) {

@@ -3,6 +3,14 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  function toast(text) {
+    var el = document.createElement("div");
+    el.className = "toast";
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(function () { el.remove(); }, 3200);
+  }
+
   var me = null;              // telegram_id
   var sessionId = null;
   var isInitiator = false;
@@ -119,15 +127,22 @@
       }
     };
 
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: prefs.micId ? { exact: prefs.micId } : undefined,
-        noiseSuppression: prefs.noiseSuppression !== false,
-        echoCancellation: prefs.echoCancellation !== false,
-        autoGainControl: prefs.autoGainControl !== false,
-      },
-      video: false,
-    });
+    var audioPrefs = {
+      noiseSuppression: prefs.noiseSuppression !== false,
+      echoCancellation: prefs.echoCancellation !== false,
+      autoGainControl: prefs.autoGainControl !== false,
+    };
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: Object.assign({ deviceId: prefs.micId ? { exact: prefs.micId } : undefined }, audioPrefs),
+        video: false,
+      });
+    } catch (e) {
+      // The saved microphone id no longer matches a real device (unplugged,
+      // or saved before device ids were reliably captured) -- a call must
+      // still connect with whatever default mic is available, not fail outright.
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: audioPrefs, video: false });
+    }
     localStream.getTracks().forEach(function (t) { pc.addTrack(t, localStream); });
   }
 
@@ -180,12 +195,18 @@
   async function enableCamera(blurred) {
     hideCameraModal();
     var raw;
+    var videoPrefs = { width: { ideal: 640 }, height: { ideal: 480 } };
     try {
       raw = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: prefs.camId ? { exact: prefs.camId } : undefined,
-                 width: { ideal: 640 }, height: { ideal: 480 } },
+        video: Object.assign({ deviceId: prefs.camId ? { exact: prefs.camId } : undefined }, videoPrefs),
       });
-    } catch (e) { return; }
+    } catch (e) {
+      // Same fallback as the microphone: a stale saved camera id must not
+      // just silently fail to turn the camera on at all.
+      try {
+        raw = await navigator.mediaDevices.getUserMedia({ video: videoPrefs });
+      } catch (e2) { toast("Не удалось включить камеру"); return; }
+    }
 
     var track = raw.getVideoTracks()[0];
     if (blurred) track = blurTrack(raw);
