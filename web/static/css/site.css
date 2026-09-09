@@ -253,6 +253,25 @@ a:hover { color: #8defff; }
 .send-btn { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg,var(--neon-cyan),var(--neon-blue) 55%,var(--neon-violet)); color:#fff; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 1px solid rgba(156,243,255,.65); box-shadow: 0 0 22px rgba(16,164,255,.42); flex-shrink: 0; transition: transform .16s ease, filter .16s ease; }
 .send-btn:hover { transform: translateY(-1px) scale(1.04); filter: brightness(1.12); }
 
+/* Tactile press feedback + icon zoom -- applies on top of the hover states
+   above (the pointer is already over the element when it's pressed, so both
+   match; putting :active after :hover in the source is what makes it win). */
+.icon-btn svg, .send-btn svg, .back-btn svg { transition: transform .16s ease; }
+.icon-btn:hover svg, .send-btn:hover svg, .back-btn:hover svg { transform: scale(1.12); }
+.icon-btn:active:not(:disabled), .send-btn:active:not(:disabled), .back-btn:active:not(:disabled) { transform: scale(.9); filter: brightness(.96); }
+.menu-item:active:not(:disabled) { transform: translateY(0) scale(.98); }
+
+/* Loading state for buttons that wait on a server round-trip (Premium
+   purchase, saving settings) -- the click needs to visibly register instead
+   of the button just sitting there while nothing seems to happen. */
+.btn.is-loading, .icon-btn.is-loading { color: transparent !important; pointer-events: none; position: relative; }
+.btn.is-loading::after, .icon-btn.is-loading::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+  animation: btn-spin .7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
 .banner { text-align: center; padding: 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 
 /* ---- account area ---- */

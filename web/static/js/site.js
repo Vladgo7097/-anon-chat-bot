@@ -150,8 +150,10 @@
 
   $("pf-delete").addEventListener("click", function () {
     if (!confirm("Удалить профиль? Анкета, фото и история диалогов будут стёрты.")) return;
+    var btn = $("pf-delete");
+    btn.classList.add("is-loading");
     api("/api/profile/delete", { method: "POST" }).then(function () { location.href = "/"; })
-      .catch(function () { toast("Не удалось удалить профиль"); });
+      .catch(function () { toast("Не удалось удалить профиль"); btn.classList.remove("is-loading"); });
   });
 
   /* ---------- search settings ---------- */
@@ -180,6 +182,8 @@
     var active = document.querySelector("#st-gender button.active");
     var min = parseInt($("st-min").value, 10), max = parseInt($("st-max").value, 10);
     if (min > max) { toast("Минимальный возраст больше максимального"); return; }
+    var btn = $("st-save");
+    btn.classList.add("is-loading");
     api("/api/settings/search", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gender: active ? active.getAttribute("data-g") : "a", age_min: min, age_max: max }),
@@ -188,7 +192,7 @@
         if (e.detail === "PREMIUM_REQUIRED") toast("Фильтры доступны с Premium");
         else if (e.detail === "ACTIVE_CHAT") toast("Нельзя менять во время диалога");
         else toast("Не удалось сохранить");
-      });
+      }).finally(function () { btn.classList.remove("is-loading"); });
   });
 
   /* ---------- premium ---------- */
@@ -233,6 +237,7 @@
 
   function buyPlan(code, button) {
     button.disabled = true;
+    button.classList.add("is-loading");
     api("/api/premium/buy", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: code }),
@@ -242,7 +247,7 @@
         : "Счёт отправлен в Telegram — оплати его в чате с ботом");
     }).catch(function (e) {
       toast(e.detail === "BOT_BLOCKED" ? "Разблокируй бота в Telegram, чтобы получить счёт" : "Не удалось выставить счёт");
-    }).finally(function () { button.disabled = false; });
+    }).finally(function () { button.disabled = false; button.classList.remove("is-loading"); });
   }
 
   /* ---------- stats ---------- */
