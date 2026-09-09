@@ -68,7 +68,7 @@ async def cb_buy(callback: CallbackQuery):
         await callback.message.answer("Счёт уже отправлен выше или отправляется. Если он не появился, попробуй ещё раз через 30 секунд.")
         return
     invoice=await callback.bot.send_invoice(chat_id=callback.from_user.id, title=result.data["title"],
-        description="Улучшение анонимного чата. Приоритет не гарантирует наличие подходящего собеседника; контакты требуют взаимного согласия.",
+        description="Улучшение анонимного чата. Приоритет не гарантирует наличие подходящего собеседника; контакты требуют взаимного согласия. Не хватает звёзд — Telegram сам предложит купить их на этом экране.",
         payload=p.payload, currency="XTR", prices=[LabeledPrice(label=result.data["title"], amount=p.stars_amount)])
     await PaymentService().invoice_sent(p.id,invoice.message_id)
     if p.product=="instant_search":
