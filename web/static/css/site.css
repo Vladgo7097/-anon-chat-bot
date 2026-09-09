@@ -180,6 +180,12 @@ a:hover { color: #8defff; }
 .landing-visual { position: relative; display: flex; align-items: center; justify-content: center; min-height: 520px; }
 .hero-ring { position: absolute; width: min(560px, 82%); aspect-ratio: 1; border-radius: 50%; border: 2px solid transparent; background: conic-gradient(from 200deg, #10d9f9, #315cff, #9b45ff, #eb4aff, #10d9f9) border-box; -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: .55; filter: drop-shadow(0 0 26px rgba(120,90,255,.25)); animation: ring-spin 55s linear infinite; }
 .hero-orbit { position: absolute; width: min(660px, 92%); aspect-ratio: 1; border-radius: 50%; border: 1px solid rgba(120,150,255,.18); }
+/* filled circle inside the ring: site-color backdrop (covers the page's own
+   background art in this one spot) with the owner's cutout photo on top --
+   the PNG's alpha edge (hair strands etc.) blends into this fill instead of
+   the mismatched art behind it. */
+.hero-portrait { position: absolute; width: min(500px, 76%); aspect-ratio: 1; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 28%, rgba(24,220,255,.14), transparent 62%), linear-gradient(160deg, #071a3e, #020817); box-shadow: inset 0 0 70px rgba(0,0,0,.5); }
+.hero-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%; display: block; }
 @keyframes ring-spin { to { transform: rotate(360deg); } }
 .chat-bubble { position: absolute; z-index: 2; display: flex; align-items: center; justify-content: center; border-radius: 22px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); animation: floaty 6s ease-in-out infinite; }
 .chat-bubble.msg { top: 8%; left: 2%; width: 108px; height: 88px; transform: rotate(-8deg); background: rgba(15,65,160,.4); border: 1.5px solid #22c9ff; box-shadow: 0 0 25px rgba(0,180,255,.3); gap: 6px; }
