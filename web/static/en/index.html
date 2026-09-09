@@ -46,34 +46,6 @@
   }
 }
 </script>
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "Will my chat partner see my Telegram?",
-      "acceptedAnswer": { "@type": "Answer", "text": "No. Your username, contact and profile photo stay hidden until both sides agree to reveal them." }
-    },
-    {
-      "@type": "Question",
-      "name": "Can I use it without Premium?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Search and text chat are free. Premium adds gender/age filters, search queue priority, an instant \"Next\" button and up to 3 profile photos." }
-    },
-    {
-      "@type": "Question",
-      "name": "How do I switch to a new chat partner?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Tap \"Next\" — the bot ends the current chat and starts a new search right away." }
-    },
-    {
-      "@type": "Question",
-      "name": "What if someone breaks the rules?",
-      "acceptedAnswer": { "@type": "Answer", "text": "End the conversation, send a report, and block the user if needed." }
-    }
-  ]
-}
-</script>
 </head>
 <body class="landing-page">
 <div class="atmosphere"><div class="glow-a"></div><div class="glow-b"></div></div>
@@ -85,10 +57,9 @@
       <img src="/img/logo.webp" alt="Anonymous Chat logo" width="260" height="130">
     </a>
     <nav class="landing-nav" aria-label="Page sections">
-      <a href="#features">Features</a>
-      <a href="#about">About</a>
-      <a href="#faq">FAQ</a>
-      <a href="#support">Support</a>
+      <a href="/en/features/">Features</a>
+      <a href="/en/faq/">FAQ</a>
+      <a href="/en/support/">Support</a>
       <a href="/en/about/">About the project</a>
     </nav>
     <div class="landing-auth">
@@ -121,7 +92,7 @@
       </div>
       <div class="landing-cta-row">
         <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Open in Telegram <span aria-hidden="true">→</span></a>
-        <a class="landing-secondary-link" href="#about">How it works</a>
+        <a class="landing-secondary-link" href="/en/about/">How it works</a>
       </div>
     </div>
     <div class="landing-visual">
@@ -141,71 +112,6 @@
       </div>
     </div>
   </main>
-
-  <section class="landing-section" id="features">
-    <div class="landing-section-head">
-      <span class="landing-kicker mono">FEATURES</span>
-      <h2>Everything for a real conversation</h2>
-      <p>It all happens inside the bot — this page just explains what's there.</p>
-    </div>
-    <div class="feature-grid">
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5h16v11H9l-4 4V5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9h8M8 12.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-        <h3>New connections</h3>
-        <p>Meet people from all over the world</p>
-      </article>
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.6" stroke="currentColor" stroke-width="1.6"/><path d="m5 16 4.5-4.5L13 15l2.5-2.5L20 17" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
-        <h3>Media sharing</h3>
-        <p>Send photos right in the chat</p>
-      </article>
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="6" r="2" fill="currentColor" stroke="none"/></svg></span>
-        <h3>Premium filters</h3>
-        <p>Gender, age and search queue priority</p>
-      </article>
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 5 6v5.5c0 4.4 3 8.2 7 9 4-.8 7-4.6 7-9V6l-7-2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <h3>Safety</h3>
-        <p>Reports, blocking, contacts only by consent</p>
-      </article>
-    </div>
-  </section>
-
-  <section class="landing-section about-section" id="about">
-    <div class="about-copy card-glass">
-      <span class="landing-kicker mono">ABOUT THE BOT</span>
-      <h2>How to start a conversation</h2>
-      <ol class="steps-list">
-        <li><b>Open the bot in Telegram.</b><span>Use the button above or @anonim_chatqbot.</span></li>
-        <li><b>Complete a short sign-up.</b><span>Gender, age and rules — right inside the chat with the bot.</span></li>
-        <li><b>Start a search.</b><span>The bot finds you a random partner in seconds.</span></li>
-      </ol>
-    </div>
-    <div class="privacy-card card-glass">
-      <span class="landing-kicker mono">PRIVACY</span>
-      <h2>You decide what to show</h2>
-      <p>Your contact and profile photo are shown to your partner only after mutual consent. If you file a report, the moderator only sees the necessary context from recent messages.</p>
-      <div class="privacy-points mono"><span>MUTUAL CONSENT</span><span>BLOCKING</span><span>REPORTS</span></div>
-    </div>
-  </section>
-
-  <section class="landing-section" id="faq">
-    <div class="landing-section-head">
-      <span class="landing-kicker mono">FAQ</span>
-      <h2>The short version</h2>
-    </div>
-    <div class="landing-faq">
-      <details class="faq-card card-glass"><summary>Will my chat partner see my Telegram?</summary><p>No. Your username, contact and profile photo stay hidden until both sides agree to reveal them.</p></details>
-      <details class="faq-card card-glass"><summary>Can I use it without Premium?</summary><p>Yes. Search and text chat are free. Premium adds gender/age filters, search queue priority, an instant "Next" button and up to 3 profile photos.</p></details>
-      <details class="faq-card card-glass"><summary>How do I switch to a new chat partner?</summary><p>Tap "Next" — the bot ends the current chat and starts a new search right away.</p></details>
-      <details class="faq-card card-glass"><summary>What if someone breaks the rules?</summary><p>End the conversation, send a report, and block the user if needed.</p></details>
-    </div>
-  </section>
-
-  <section class="landing-section support-section card-glass" id="support">
-    <div><span class="landing-kicker mono">SUPPORT</span><h2>Need help?</h2><p>Help, rules and account management all live inside the bot. The entry button is at the top of the page.</p></div>
-  </section>
 
   <div class="visits-row" id="visits-row" hidden>
     <span class="visits-badge">

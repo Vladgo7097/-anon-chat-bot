@@ -46,34 +46,6 @@
   }
 }
 </script>
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "Собеседник увидит мой Telegram?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Нет. Username, контакт и фото профиля скрыты, пока оба участника не согласятся раскрыться." }
-    },
-    {
-      "@type": "Question",
-      "name": "Можно пользоваться без Premium?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Да. Поиск и переписка бесплатны. Premium добавляет фильтры по полу и возрасту, приоритет в очереди поиска, кнопку «Следующий» без задержки и до 3 фото в профиле." }
-    },
-    {
-      "@type": "Question",
-      "name": "Как сменить собеседника?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Нажмите «Следующий» — бот завершит текущий диалог и сразу начнёт новый поиск." }
-    },
-    {
-      "@type": "Question",
-      "name": "Что делать при нарушении правил?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Завершите диалог, отправьте жалобу и при необходимости заблокируйте пользователя." }
-    }
-  ]
-}
-</script>
 </head>
 <body class="landing-page">
 <div class="atmosphere"><div class="glow-a"></div><div class="glow-b"></div></div>
@@ -85,10 +57,9 @@
       <img src="/img/logo.webp" alt="Логотип Анонимного чата" width="260" height="130">
     </a>
     <nav class="landing-nav" aria-label="Разделы сайта">
-      <a href="#features">Возможности</a>
-      <a href="#about">О боте</a>
-      <a href="#faq">Вопросы</a>
-      <a href="#support">Поддержка</a>
+      <a href="/vozmozhnosti/">Возможности</a>
+      <a href="/voprosy/">Вопросы</a>
+      <a href="/podderzhka/">Поддержка</a>
       <a href="/o-proekte/">О проекте</a>
     </nav>
     <div class="landing-auth">
@@ -121,7 +92,7 @@
       </div>
       <div class="landing-cta-row">
         <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Открыть в Telegram <span aria-hidden="true">→</span></a>
-        <a class="landing-secondary-link" href="#about">Как это работает</a>
+        <a class="landing-secondary-link" href="/o-proekte/">Как это работает</a>
       </div>
     </div>
     <div class="landing-visual">
@@ -141,71 +112,6 @@
       </div>
     </div>
   </main>
-
-  <section class="landing-section" id="features">
-    <div class="landing-section-head">
-      <span class="landing-kicker mono">ВОЗМОЖНОСТИ</span>
-      <h2>Всё для живого общения</h2>
-      <p>Всё это происходит прямо в боте — этот сайт лишь рассказывает, что внутри.</p>
-    </div>
-    <div class="feature-grid">
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5h16v11H9l-4 4V5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9h8M8 12.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-        <h3>Новые знакомства</h3>
-        <p>Общайся с людьми со всего мира</p>
-      </article>
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.6" stroke="currentColor" stroke-width="1.6"/><path d="m5 16 4.5-4.5L13 15l2.5-2.5L20 17" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
-        <h3>Обмен медиа</h3>
-        <p>Отправляй фото прямо в чате</p>
-      </article>
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="6" r="2" fill="currentColor" stroke="none"/></svg></span>
-        <h3>Premium-фильтры</h3>
-        <p>Пол, возраст и приоритет в очереди поиска</p>
-      </article>
-      <article class="feature-card">
-        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 5 6v5.5c0 4.4 3 8.2 7 9 4-.8 7-4.6 7-9V6l-7-2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <h3>Безопасность</h3>
-        <p>Жалобы, блокировки и контакты только по согласию</p>
-      </article>
-    </div>
-  </section>
-
-  <section class="landing-section about-section" id="about">
-    <div class="about-copy card-glass">
-      <span class="landing-kicker mono">О БОТЕ</span>
-      <h2>Как начать диалог</h2>
-      <ol class="steps-list">
-        <li><b>Откройте бота в Telegram.</b><span>Кнопка выше или @anonim_chatqbot.</span></li>
-        <li><b>Пройдите короткую регистрацию.</b><span>Пол, возраст и правила — прямо в чате с ботом.</span></li>
-        <li><b>Начните поиск.</b><span>Бот подберёт случайного собеседника за секунды.</span></li>
-      </ol>
-    </div>
-    <div class="privacy-card card-glass">
-      <span class="landing-kicker mono">ПРИВАТНОСТЬ</span>
-      <h2>Вы решаете, что показать</h2>
-      <p>Контакт и фото профиля открываются собеседнику только после взаимного согласия. При отправке жалобы модератор получает лишь необходимый контекст последних сообщений.</p>
-      <div class="privacy-points mono"><span>ВЗАИМНОЕ СОГЛАСИЕ</span><span>БЛОКИРОВКИ</span><span>ЖАЛОБЫ</span></div>
-    </div>
-  </section>
-
-  <section class="landing-section" id="faq">
-    <div class="landing-section-head">
-      <span class="landing-kicker mono">ЧАСТЫЕ ВОПРОСЫ</span>
-      <h2>Коротко о главном</h2>
-    </div>
-    <div class="landing-faq">
-      <details class="faq-card card-glass"><summary>Собеседник увидит мой Telegram?</summary><p>Нет. Username, контакт и фото профиля скрыты, пока оба участника не согласятся раскрыться.</p></details>
-      <details class="faq-card card-glass"><summary>Можно пользоваться без Premium?</summary><p>Да. Поиск и переписка бесплатны. Premium добавляет фильтры по полу и возрасту, приоритет в очереди поиска, кнопку «Следующий» без задержки и до 3 фото в профиле.</p></details>
-      <details class="faq-card card-glass"><summary>Как сменить собеседника?</summary><p>Нажмите «Следующий» — бот завершит текущий диалог и сразу начнёт новый поиск.</p></details>
-      <details class="faq-card card-glass"><summary>Что делать при нарушении правил?</summary><p>Завершите диалог, отправьте жалобу и при необходимости заблокируйте пользователя.</p></details>
-    </div>
-  </section>
-
-  <section class="landing-section support-section card-glass" id="support">
-    <div><span class="landing-kicker mono">ПОДДЕРЖКА</span><h2>Нужна помощь?</h2><p>Раздел помощи, правила и управление аккаунтом — прямо в боте. Кнопка входа — в начале страницы.</p></div>
-  </section>
 
   <div class="visits-row" id="visits-row" hidden>
     <span class="visits-badge">
