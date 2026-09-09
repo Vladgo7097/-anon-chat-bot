@@ -92,6 +92,7 @@
     </nav>
     <div class="landing-auth">
       <div class="lang-switch" aria-label="Page language">
+        <svg class="lang-globe" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3 12h18M12 3c2.5 2.6 4 5.8 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.8-4-9s1.5-6.4 4-9Z" stroke="currentColor" stroke-width="1.6"/></svg>
         <a href="/" hreflang="ru">RU</a>
         <a href="/en/" class="active" hreflang="en">EN</a>
       </div>
@@ -109,25 +110,33 @@
         <span>REPORTS &amp; BLOCKING</span>
       </div>
       <div class="landing-cta-row">
-        <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Open in Telegram</a>
+        <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Open in Telegram <span aria-hidden="true">→</span></a>
         <a class="landing-secondary-link" href="#about">
           <span class="play-dot" aria-hidden="true">▸</span>
           How it works
         </a>
       </div>
       <div class="landing-stats">
-        <div class="stat"><b>2,500+</b><span>USERS</span></div>
-        <div class="stat"><b>500+</b><span>CHATS COMPLETED</span></div>
-        <div class="stat"><b>100%</b><span>ANONYMOUS</span></div>
+        <div class="stat">
+          <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20M12 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM21 20v-1.2a3 3 0 0 0-2.2-2.9M16 4.7a3 3 0 0 1 0 5.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div><b>2,500+</b><span>USERS</span></div>
+        </div>
+        <div class="stat">
+          <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.3A8 8 0 1 1 21 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <div><b>500+</b><span>CHATS COMPLETED</span></div>
+        </div>
+        <div class="stat">
+          <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 5 6v5.5c0 4.4 3 8.2 7 9 4-.8 7-4.6 7-9V6l-7-2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div><b>100%</b><span>ANONYMOUS</span></div>
+        </div>
       </div>
     </div>
     <div class="landing-visual">
-      <div class="visual-card">
-        <img src="/img/apple-touch-icon.png" alt="Anonymous Chat character" width="420" height="420" loading="eager">
-        <span class="visual-badge b1"><span class="dot-ok"></span>Someone's online</span>
-        <span class="visual-badge b2"><span class="dot-ok"></span>Matched in seconds</span>
-        <span class="visual-badge b3"><span class="dot-ok"></span>Contacts by consent</span>
-      </div>
+      <div class="visual-orbit"></div>
+      <img class="visual-figure" src="/img/apple-touch-icon.png" alt="Anonymous Chat character" width="460" height="460" loading="eager">
+      <span class="visual-badge b1"><span class="badge-icon">🎭</span>New connections</span>
+      <span class="visual-badge b2"><span class="badge-icon">💬</span>Interesting talks</span>
+      <span class="visual-badge b3"><span class="badge-icon">🔒</span>Full anonymity</span>
       <div class="landing-quote card-glass">
         <p>No name, no photo, no profile — just a conversation with a real person.</p>
         <span>ANONYMOUS CHAT</span>
