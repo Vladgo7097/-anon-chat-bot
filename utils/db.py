@@ -1,4 +1,5 @@
 """Read compatibility helpers. Mutations belong in transactional services."""
+import json
 from repositories.users import UserRepository
 from repositories.chats import premium_active
 
@@ -28,4 +29,6 @@ async def get_user_stats(user_id):
         "streak": user.streak_days, "is_premium": premium_active(user),
         "premium_expires": user.premium_expires, "total_spent": user.total_stars_spent,
         "total_chat_seconds": user.total_chat_seconds, "gender": user.gender, "age": user.age,
+        "profile_photo": user.profile_photo,
+        "extra_photos_count": len(json.loads(user.extra_photos or "[]")),
     }

@@ -56,7 +56,18 @@ async def show_profile(message, user_id):
     gender = {"male": "Парень", "female": "Девушка"}.get(s['gender'], "Не указан")
     gender_icon = GENDER_ICONS.get(s['gender'], UNKNOWN_GENDER_ICON)
     premium = f"до {s['premium_expires']:%d.%m.%Y}" if s['is_premium'] else "нет"
-    await message.answer(f"<tg-emoji emoji-id=\"5976585328985643006\">🧑‍🧑‍🧒</tg-emoji> Твой профиль\n\n<tg-emoji emoji-id=\"5965485570124681987\">🆔</tg-emoji> ID: {s['anon_id']}\n<tg-emoji emoji-id=\"{gender_icon[0]}\">{gender_icon[1]}</tg-emoji> Пол: {gender}\n<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Возраст: {s['age']}\n<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> В боте с: {s['created_at']:%d.%m.%Y}\n\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов проведено: {s['chats_count']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Лайков: {s['likes']}   <tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Дизлайков: {s['dislikes']}\n<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}", reply_markup=profile_kb())
+    photos_line = ""
+    if s['profile_photo']:
+        extra = f" (+{s['extra_photos_count']})" if s['extra_photos_count'] else ""
+        photos_line = f"\n<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> Фото: 1{extra}"
+    text = (f"<tg-emoji emoji-id=\"5976585328985643006\">🧑‍🧑‍🧒</tg-emoji> Твой профиль\n\n<tg-emoji emoji-id=\"5965485570124681987\">🆔</tg-emoji> ID: {s['anon_id']}\n<tg-emoji emoji-id=\"{gender_icon[0]}\">{gender_icon[1]}</tg-emoji> Пол: {gender}\n<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Возраст: {s['age']}\n<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> В боте с: {s['created_at']:%d.%m.%Y}{photos_line}\n\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов проведено: {s['chats_count']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Лайков: {s['likes']}   <tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Дизлайков: {s['dislikes']}\n<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}")
+    if s['profile_photo']:
+        try:
+            await message.answer_photo(s['profile_photo'], caption=text, reply_markup=profile_kb())
+            return
+        except TelegramBadRequest:
+            pass
+    await message.answer(text, reply_markup=profile_kb())
 
 
 @profile_router.message(Command("profile"))
