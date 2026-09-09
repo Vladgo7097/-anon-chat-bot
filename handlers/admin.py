@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import admin_router
 from keyboards import texts as T
-from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb
+from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb
 from services.admin import AdminService, StatsService, authorize
 from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
@@ -225,7 +225,10 @@ async def cb_resolve(callback: CallbackQuery):
         return
     result=await AdminService().resolve(callback.from_user.id,int(parts[-1]),parts[1])
     await callback.answer("Решение сохранено" if result.ok else "Жалоба уже обработана")
-    await callback.message.edit_reply_markup(reply_markup=None)
+    # Leaving just "Следующая" (not clearing the keyboard outright) keeps the
+    # admin moving through the queue without a trip back through the menu.
+    await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Следующая жалоба",icon_custom_emoji_id="5967432491684860012",callback_data="admin:reports:0")]]))
 
 
 @admin_router.callback_query(F.data=="admin:bans")
@@ -233,13 +236,13 @@ async def cb_bans(callback: CallbackQuery):
     users=await AdminService().bans(callback.from_user.id)
     await callback.answer()
     text="\n".join(f"{u.anon_id} — "+(f"до {u.ban_expires:%d.%m.%Y}" if u.ban_expires else "навсегда") for u in users)
-    await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID")
+    await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID",reply_markup=back_kb())
 
 
 @admin_router.callback_query(F.data=="admin:users")
 async def cb_users(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Введи anon_id или telegram_id пользователя:")
+    await callback.message.answer("<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Введи anon_id или telegram_id пользователя:",reply_markup=back_kb())
 
 
 async def user_card_text(admin_id, user):
@@ -297,19 +300,47 @@ async def send_message_to_user(message: Message, state: FSMContext):
 async def cb_admin_ban_user(callback: CallbackQuery):
     target_id=int(callback.data.split(":")[-1])
     await callback.answer()
-    await callback.message.answer(
-        f"⛔ Забанить {target_id}?\n"
-        f"/ban_user {target_id} часы причина\n"
-        f"(0 часов = навсегда)")
+    await callback.message.answer(f"⛔ Забанить {target_id} на сколько?",reply_markup=admin_confirm_ban_kb(target_id))
 
 
 @admin_router.callback_query(F.data.startswith("admin:ugrant:"))
 async def cb_admin_grant_user(callback: CallbackQuery):
     target_id=int(callback.data.split(":")[-1])
     await callback.answer()
-    await callback.message.answer(
-        f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Выдать Premium {target_id}?\n"
-        f"/grant {target_id} дни причина")
+    await callback.message.answer(f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Выдать Premium {target_id} на сколько?",reply_markup=admin_confirm_grant_kb(target_id))
+
+
+@admin_router.callback_query(F.data.startswith("admin:ucard:"))
+async def cb_admin_ucard(callback: CallbackQuery):
+    target_id=int(callback.data.split(":")[-1])
+    await callback.answer()
+    user=await AdminService().find_user(callback.from_user.id,str(target_id))
+    if not user:
+        await callback.message.answer("Пользователь не найден.",reply_markup=back_kb())
+        return
+    await callback.message.answer(await user_card_text(callback.from_user.id, user),
+        reply_markup=admin_user_card_kb(user.telegram_id))
+
+
+@admin_router.callback_query(F.data.startswith("admin:doban:"))
+async def cb_admin_doban(callback: CallbackQuery):
+    parts=callback.data.split(":")
+    target_id,hours=int(parts[2]),int(parts[3])
+    result=await AdminService().ban(callback.from_user.id,target_id,"Решение администратора",hours or None)
+    await callback.answer("Забанен" if result.ok else "Не удалось забанить")
+    if result.ok:
+        await callback.message.edit_text(f"⛔ {target_id} забанен"+(" навсегда." if not hours else f" на {hours} ч."))
+
+
+@admin_router.callback_query(F.data.startswith("admin:dogrant:"))
+async def cb_admin_dogrant(callback: CallbackQuery):
+    parts=callback.data.split(":")
+    target_id,days=int(parts[2]),int(parts[3])
+    result=await AdminService().grant(callback.from_user.id,target_id,days,"Решение администратора",
+        request_key=f"grant:{callback.message.chat.id}:{callback.message.message_id}")
+    await callback.answer("Premium выдан" if result.ok else "Не удалось выдать")
+    if result.ok:
+        await callback.message.edit_text(f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> {target_id}: Premium на {days} дн.")
 
 
 @admin_router.message(Command("user","ban_user","unban","grant"))
@@ -366,7 +397,7 @@ async def cb_settings(callback: CallbackQuery):
     await callback.message.answer("<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Цены:\n"+"\n".join(f"{p.code}: {p.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for p in products)+
         "\n\n/price код цена\n/setting chat_delay_next 7\n/setting search_timeout 60\n/setting inactive_chat_ttl 300\n/setting marketing_enabled 0"
         "\n/setting stars_usd_cents_per_100 130 (курс: центов США за 100 звёзд; 0 — не показывать $)"
-        "\n/setting funnel_min_step_pct 50 (предупреждать в воронке о просадке ниже этого % между шагами; 0 — выключено)")
+        "\n/setting funnel_min_step_pct 50 (предупреждать в воронке о просадке ниже этого % между шагами; 0 — выключено)",reply_markup=back_kb())
 
 
 @admin_router.message(Command("price","setting"))
@@ -380,8 +411,6 @@ async def cmd_setting(message: Message):
     await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено" if result.ok else "Недопустимое значение.")
 
 
-SEGMENT_TITLES = {"all": "все пользователи", "premium": "Premium",
-                  "inactive": "неактивные 7+ дней", "nopay": "без покупок"}
 STATUS_TITLES = {"draft": "черновик", "queued": "готовим список",
                  "sending": "отправка", "completed": "готово"}
 FILLED, EMPTY, THIN_SPACE = "█", "░", " "
@@ -681,6 +710,18 @@ async def ads_settings_cooldown(message: Message, state: FSMContext):
     cooldown = await bot_value("ad_cooldown_seconds", 1800)
     await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Сохранено.")
     await message.answer(await ads_settings_text(cooldown), reply_markup=admin_ads_settings_kb(cooldown))
+
+
+@admin_router.message(Command("cancel"), StateFilter(
+    AdminAdCampaign.CHANNEL, AdminAdCampaign.TITLE, AdminAdCampaign.SUBTITLE,
+    AdminAdCampaign.BODY, AdminAdCampaign.LIMITS))
+async def ad_campaign_cancel(message: Message, state: FSMContext):
+    # The first prompt in this flow (cb_ad_new below) tells the admin to send
+    # /cancel to bail out -- but every step's message filter excludes text
+    # starting with "/", so that command was silently swallowed with no
+    # handler and no way out short of finishing all five steps.
+    await state.clear()
+    await message.answer("Создание рекламной кампании отменено.",reply_markup=admin_kb())
 
 
 @admin_router.callback_query(F.data == "admin:ad:new")

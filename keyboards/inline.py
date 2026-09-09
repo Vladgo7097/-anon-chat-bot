@@ -1,5 +1,16 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+SEGMENT_TITLES = {"all": "все пользователи", "premium": "Premium",
+                  "inactive": "неактивные 7+ дней", "nopay": "без покупок"}
+
+
+def back_kb() -> InlineKeyboardMarkup:
+    """Plain 'Назад' row for admin screens that dead-ended without one
+    (bans list, bot settings, user card) -- same admin:back target every
+    other admin screen's back button already uses."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")]])
+
 
 def profile_kb(has_photo: bool = False) -> InlineKeyboardMarkup:
     rows = [
@@ -118,7 +129,28 @@ def admin_broadcast_audience_kb(sizes=None, poll=False) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bc:inactive")],
             [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bc:nopay")],
         ]
+    rows.append([InlineKeyboardButton(text="Отмена", icon_custom_emoji_id="5210952531676504517", callback_data="admin:back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_confirm_ban_kb(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="1 день", callback_data=f"admin:doban:{telegram_id}:24", style="danger"),
+        InlineKeyboardButton(text="7 дней", callback_data=f"admin:doban:{telegram_id}:168", style="danger"),
+        InlineKeyboardButton(text="Навсегда", callback_data=f"admin:doban:{telegram_id}:0", style="danger"),
+    ], [
+        InlineKeyboardButton(text="Отмена", icon_custom_emoji_id="5210952531676504517", callback_data=f"admin:ucard:{telegram_id}"),
+    ]])
+
+
+def admin_confirm_grant_kb(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="1 месяц", callback_data=f"admin:dogrant:{telegram_id}:30", style="success"),
+        InlineKeyboardButton(text="3 месяца", callback_data=f"admin:dogrant:{telegram_id}:90", style="success"),
+        InlineKeyboardButton(text="12 месяцев", callback_data=f"admin:dogrant:{telegram_id}:365", style="success"),
+    ], [
+        InlineKeyboardButton(text="Отмена", icon_custom_emoji_id="5210952531676504517", callback_data=f"admin:ucard:{telegram_id}"),
+    ]])
 
 
 def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
@@ -129,6 +161,9 @@ def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="Написать от бота", icon_custom_emoji_id="5224455462178549802", callback_data=f"admin:message:{telegram_id}", style="primary"),
+        ],
+        [
+            InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back"),
         ],
     ])
 
@@ -144,7 +179,7 @@ def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
         # recipient that doesn't exist.
         progress = "черновик" if job.status == "draft" else f"{done}/{job.total}"
         rows.append([InlineKeyboardButton(
-            text=f"#{job.id} · {job.segment} · {status_label} · {progress}",
+            text=f"#{job.id} · {SEGMENT_TITLES.get(job.segment, job.segment)} · {status_label} · {progress}",
             icon_custom_emoji_id=emoji_id,
             callback_data=f"admin:broadcasts:{job.id}")])
     rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")])
