@@ -16,4 +16,20 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
+  <url>
+    <loc>https://anonimchat.pp.ua/o-proekte/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/o-proekte/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/about/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/o-proekte/"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://anonimchat.pp.ua/en/about/</loc>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/o-proekte/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/about/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/o-proekte/"/>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
 </urlset>

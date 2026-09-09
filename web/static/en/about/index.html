@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About the project — how Anonymous Chat works</title>
+<meta name="description" content="How the bot matches you with a chat partner, what happens to your messages, what Premium actually unlocks, and the age requirement -- the technical details of Anonymous Chat.">
+<link rel="canonical" href="https://anonimchat.pp.ua/en/about/">
+<link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/o-proekte/">
+<link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/about/">
+<link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/o-proekte/">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Anonymous Chat">
+<meta property="og:url" content="https://anonimchat.pp.ua/en/about/">
+<meta property="og:title" content="About the project — how Anonymous Chat works">
+<meta property="og:description" content="How the bot matches you with a chat partner, what happens to your messages, and what Premium actually unlocks.">
+<meta property="og:image" content="https://anonimchat.pp.ua/img/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="About the project — how Anonymous Chat works">
+<meta name="twitter:description" content="How matching works, what happens to your messages, and what Premium unlocks.">
+<meta name="twitter:image" content="https://anonimchat.pp.ua/img/og-image.jpg">
+
+<link rel="icon" href="/img/favicon.ico" sizes="any">
+<link rel="icon" href="/img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/img/favicon-16.png" type="image/png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
+<link rel="stylesheet" href="/css/site.css">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How does the bot match me with a partner?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Randomly, from the shared queue of everyone searching right now. Premium and the one-time \"Instant search\" give priority -- those users get matched before everyone else in the queue." }
+    },
+    {
+      "@type": "Question",
+      "name": "Are messages stored?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No, chat content is not stored in the bot's database. For handling reports, the last 8 messages of a conversation are kept for 30 minutes, then deleted automatically." }
+    },
+    {
+      "@type": "Question",
+      "name": "What's the minimum age to use the bot?",
+      "acceptedAnswer": { "@type": "Answer", "text": "18. The bot won't let you past registration if your stated age is outside the allowed range." }
+    }
+  ]
+}
+</script>
+</head>
+<body class="landing-page">
+<div class="atmosphere"><div class="glow-a"></div><div class="glow-b"></div></div>
+<div class="grain"></div>
+
+<div class="page">
+  <div class="nav">
+    <a class="brand-logo" href="/en/" aria-label="Anonymous Chat">
+      <img src="/img/logo.webp" alt="Anonymous Chat logo" width="260" height="130">
+    </a>
+    <nav class="landing-nav" aria-label="Page sections">
+      <a href="/en/#features">Features</a>
+      <a href="/en/#about">About</a>
+      <a href="/en/#faq">FAQ</a>
+      <a href="/en/#support">Support</a>
+      <a href="/en/about/" class="active-link">About the project</a>
+    </nav>
+    <div class="landing-auth">
+      <div class="lang-switch" aria-label="Page language">
+        <svg class="lang-globe" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3 12h18M12 3c2.5 2.6 4 5.8 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.8-4-9s1.5-6.4 4-9Z" stroke="currentColor" stroke-width="1.6"/></svg>
+        <a href="/o-proekte/" hreflang="ru">RU</a>
+        <a href="/en/about/" class="active" hreflang="en">EN</a>
+      </div>
+    </div>
+  </div>
+
+  <header class="subpage-hero">
+    <span class="landing-kicker mono">ABOUT THE PROJECT</span>
+    <h1>How it all works</h1>
+    <p>The details that didn't fit on the home page: how the bot matches you with someone, what happens to your messages, and what Premium is actually for.</p>
+  </header>
+
+  <section class="landing-section" id="matching">
+    <div class="landing-section-head">
+      <span class="landing-kicker mono">MATCHING</span>
+      <h2>How search works</h2>
+      <p>When you tap "Start search," the bot puts you in a shared queue and looks for a free partner who's also searching right now. Pairs form randomly -- no profiles, no interest-matching, just who's available right now.</p>
+    </div>
+    <div class="about-section">
+      <div class="about-copy card-glass">
+        <span class="landing-kicker mono">QUEUE</span>
+        <h2>Who gets matched faster</h2>
+        <ol class="steps-list">
+          <li><b>Free search.</b><span>A regular queue -- you're matched as free partners become available.</span></li>
+          <li><b>Premium and "Instant search."</b><span>Priority in the same queue -- these users get matched before everyone else.</span></li>
+          <li><b>Gender/age filters.</b><span>Premium only. Without it, the bot matches you randomly from everyone searching.</span></li>
+        </ol>
+      </div>
+      <div class="privacy-card card-glass">
+        <span class="landing-kicker mono">CHAT CONTENT</span>
+        <h2>What happens to your messages</h2>
+        <p>Messages aren't stored in the bot's database -- they're relayed directly through Telegram, like regular messaging. If you file a report, a moderator can temporarily see the last 8 messages of the conversation for 30 minutes -- just enough to review the situation -- then it's deleted automatically.</p>
+        <div class="privacy-points mono"><span>NO CHAT STORAGE</span><span>30 MIN FOR REPORTS</span><span>ONLY LAST 8 MESSAGES</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-section" id="reveal">
+    <div class="landing-section-head">
+      <span class="landing-kicker mono">CONTACT REVEAL</span>
+      <h2>You decide what to show</h2>
+      <p>Your username, phone number and profile photo are visible only to you until both sides of a conversation agree to reveal them. Consent is a separate, explicit action in the bot -- not a side effect of chatting -- your partner can't see your details by accident.</p>
+    </div>
+  </section>
+
+  <section class="landing-section" id="premium">
+    <div class="landing-section-head">
+      <span class="landing-kicker mono">PREMIUM</span>
+      <h2>What the subscription actually gives you</h2>
+      <p>Free, without Premium: search, text chat and photos. Premium adds four specific things -- no promises for features the bot doesn't have.</p>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="6" r="2" fill="currentColor" stroke="none"/></svg></span>
+        <h3>Filters</h3>
+        <p>Partner's gender and age -- more precise than random matching</p>
+      </article>
+      <article class="feature-card">
+        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 9-12h-6l1-6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+        <h3>Queue priority</h3>
+        <p>Matched faster than the free search</p>
+      </article>
+      <article class="feature-card">
+        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h11m0 0-4-4m4 4-4 4M19 6v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Instant "Next"</h3>
+        <p>Switch partners instantly, no cooldown between chats</p>
+      </article>
+      <article class="feature-card">
+        <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.6" stroke="currentColor" stroke-width="1.6"/><path d="m5 16 4.5-4.5L13 15l2.5-2.5L20 17" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+        <h3>Up to 3 profile photos</h3>
+        <p>Instead of the one free photo</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="landing-section" id="age">
+    <div class="landing-section-head">
+      <span class="landing-kicker mono">AGE REQUIREMENT</span>
+      <h2>18+</h2>
+      <p>Signing up is only available from age 18. If your stated age is outside the allowed range, the bot won't let you past registration.</p>
+    </div>
+  </section>
+
+  <section class="landing-section support-section card-glass" id="cta">
+    <div><span class="landing-kicker mono">TRY IT</span><h2>Ready to start?</h2><p>Search and text chat are free -- Premium can be added anytime, right inside the bot.</p></div>
+    <a class="landing-bot-link" href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener">Open in Telegram <span aria-hidden="true">→</span></a>
+  </section>
+
+  <div class="visits-row" id="visits-row" hidden>
+    <span class="visits-badge">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span class="visits-value" id="visits-value">0</span>
+      <span class="visits-label">site views</span>
+    </span>
+  </div>
+
+  <div class="landing-footer">
+    <span>Anonymous Chat&nbsp; &bull; &nbsp;Talk without borders&nbsp; &bull; &nbsp;2026</span>
+    <div class="footer-links">
+      <a href="https://t.me/anonim_chatqbot" target="_blank" rel="noopener" aria-label="Telegram">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 11 17-7-3 16-6-4.5L7.5 19 8 13.5 17 7 6.5 12.5 3 11Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  function track(kind) {
+    try {
+      if (navigator.sendBeacon) { navigator.sendBeacon('/api/track/' + kind); return; }
+      fetch('/api/track/' + kind, { method: 'POST', keepalive: true });
+    } catch (e) {}
+  }
+  try {
+    if (!sessionStorage.getItem('site-view-tracked')) {
+      sessionStorage.setItem('site-view-tracked', '1');
+      track('view');
+    }
+  } catch (e) { track('view'); }
+  document.querySelectorAll('a[href*="t.me/anonim_chatqbot"]').forEach(function (a) {
+    a.addEventListener('click', function () { track('click'); });
+  });
+
+  var visitsRow = document.getElementById('visits-row');
+  var visitsEl = document.getElementById('visits-value');
+  if (visitsRow && visitsEl) {
+    fetch('/api/visits').then(function (r) { return r.json(); }).then(function (d) {
+      if (typeof d.total !== 'number') return;
+      visitsRow.hidden = false;
+      var from = 0, to = d.total, start = null, dur = 900;
+      function step(ts) {
+        if (!start) start = ts;
+        var p = Math.min(1, (ts - start) / dur);
+        visitsEl.textContent = Math.floor(from + (to - from) * (1 - Math.pow(1 - p, 3))).toLocaleString('en-US');
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }).catch(function () {});
+  }
+</script>
+</body>
+</html>
