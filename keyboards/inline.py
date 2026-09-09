@@ -1,14 +1,19 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-def profile_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def profile_kb(has_photo: bool = False) -> InlineKeyboardMarkup:
+    rows = [
         [InlineKeyboardButton(text="Заполнить о себе", icon_custom_emoji_id="5301173701323028420", callback_data="profile:edit")],
         [InlineKeyboardButton(text="Добавить фото", icon_custom_emoji_id="5258254475386167466", callback_data="profile:photo")],
+    ]
+    if has_photo:
+        rows.append([InlineKeyboardButton(text="Удалить фото", icon_custom_emoji_id="5312229088876847138", callback_data="profile:photo:delete")])
+    rows += [
         [InlineKeyboardButton(text="Приватность", icon_custom_emoji_id="5350491749926058609", callback_data="profile:privacy")],
         [InlineKeyboardButton(text="Приглашения, стрик и награды", icon_custom_emoji_id="5345843457145453967", callback_data="profile:rewards",style="primary")],
         [InlineKeyboardButton(text="Удалить аккаунт", icon_custom_emoji_id="5337131193294938034", callback_data="profile:delete")],
-    ])
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def profile_edit_kb() -> InlineKeyboardMarkup:

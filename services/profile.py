@@ -51,6 +51,17 @@ class ProfileService:
             user.extra_photos = json.dumps(photos)
         return ServiceResult(True, "SAVED")
 
+    async def remove_photo(self, user_id):
+        async with async_session.begin() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
+            if not user:
+                return ServiceResult(False, "NOT_FOUND")
+            if not user.profile_photo:
+                return ServiceResult(False, "NO_PHOTO")
+            user.profile_photo = None
+            user.extra_photos = "[]"
+        return ServiceResult(True, "REMOVED")
+
     async def delete(self, user_id):
         # Mark unavailable before leaving the queue so a concurrent search cannot rematch.
         async with async_session.begin() as s:
