@@ -19,10 +19,11 @@
 
   <div id="app-frame" class="app-frame card-glass" hidden>
     <div class="app-header glass-bar">
-      <div class="brand-logo brand-logo-compact" aria-label="Анонимный чат">
+      <a class="brand-logo brand-logo-compact" href="/" aria-label="На главную страницу">
         <img src="/img/logo.webp" alt="Логотип Анонимного чата" width="200" height="100">
-      </div>
+      </a>
       <div style="display:flex;align-items:center;gap:16px;">
+        <a href="/" class="mono" style="font-size:12px;color:var(--muted);text-decoration:none;" title="На главную">ГЛАВНАЯ</a>
         <span id="my-id" class="mono" style="font-size:12px;color:var(--muted);"></span>
         <button id="logout-btn" class="icon-btn" title="Выйти" style="width:34px;height:34px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round"/></svg>
