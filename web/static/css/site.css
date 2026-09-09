@@ -164,15 +164,18 @@ a:hover { color: #8defff; }
 .landing-copy p { max-width: 630px; margin: 0; color: #c6d0e2; font-size: 19px; font-weight: 400; line-height: 1.55; }
 .benefits-row { display: flex; flex-wrap: wrap; gap: 42px; margin-top: 34px; }
 .benefit { display: flex; align-items: center; gap: 16px; }
-.benefit-icon {
-  width: 54px; height: 54px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  color: #8feaff; position: relative;
-  background: radial-gradient(circle at 32% 28%, rgba(60,160,255,.22), transparent 60%), linear-gradient(155deg, #071a3e, #030a20) padding-box,
-              conic-gradient(from 210deg, #10d9f9, #315cff, #9b45ff, #eb4aff, #10d9f9) border-box;
-  border: 1.5px solid transparent;
-  box-shadow: 0 10px 24px -10px rgba(0,0,0,.6);
+.benefit-icon { position: relative; width: 64px; height: 64px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #a9f2ff; }
+.benefit-icon::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; padding: 1.4px;
+  background: conic-gradient(from 200deg, #18dcff, #315cff 35%, #9b45ff 65%, #eb4aff, #18dcff);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: .85; filter: drop-shadow(0 0 9px rgba(90,160,255,.45));
 }
-.benefit-icon svg { filter: drop-shadow(0 0 5px rgba(80,200,255,.4)); }
+.benefit-icon svg { position: relative; z-index: 1; filter: drop-shadow(0 0 6px rgba(120,210,255,.55)); }
+.benefit-icon .ring-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 1; }
+.benefit-icon .ring-dot.a { top: 6%; right: 8%; background: #4fe0ff; box-shadow: 0 0 8px rgba(79,224,255,.9); }
+.benefit-icon .ring-dot.b { bottom: 8%; left: 6%; background: #c968ff; box-shadow: 0 0 8px rgba(201,104,255,.9); }
 .benefit span { display: block; font-size: 17px; font-weight: 500; line-height: 1.35; color: #edf3ff; }
 .landing-cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 36px; }
 .landing-bot-link { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 30px; border: 1px solid rgba(133,239,255,.7); border-radius: 999px; color: #fff; font-weight: 700; font-size: 16px; background: linear-gradient(105deg,#08d5f4,#087cff 46%,#5136f5 72%,#b63dff); box-shadow: 0 0 26px rgba(20,166,255,.4); transition: transform .16s ease, filter .16s ease; }
