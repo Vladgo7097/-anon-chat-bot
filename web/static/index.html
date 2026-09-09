@@ -4,6 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Анонимный чат — разговор без имени</title>
+<meta name="description" content="Случайный собеседник в Telegram без анкет и фото. Переписка, звонки для Premium, контакты открываются только по взаимному согласию.">
+<link rel="canonical" href="https://anonim.chat.mooo.com/">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Анонимный чат">
+<meta property="og:url" content="https://anonim.chat.mooo.com/">
+<meta property="og:title" content="Анонимный чат — разговор без имени">
+<meta property="og:description" content="Случайный собеседник в Telegram без анкет и фото. Переписка, звонки для Premium, контакты открываются только по взаимному согласию.">
+<meta property="og:image" content="https://anonim.chat.mooo.com/img/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Анонимный чат — разговор без имени">
+<meta name="twitter:description" content="Случайный собеседник в Telegram без анкет и фото. Контакты открываются только по взаимному согласию.">
+<meta name="twitter:image" content="https://anonim.chat.mooo.com/img/og-image.jpg">
+
+<link rel="icon" href="/img/favicon.ico" sizes="any">
+<link rel="icon" href="/img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/img/favicon-16.png" type="image/png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
 <link rel="stylesheet" href="/css/site.css">
 </head>
 <body class="landing-page">
@@ -91,5 +112,20 @@
     <span>Работает в Telegram</span>
   </div>
 </div>
+
+<script>
+  // Aggregate counters only (see web/app.py) -- fire-and-forget, never blocks
+  // the page and never sends anything if it fails.
+  function track(kind) {
+    try {
+      if (navigator.sendBeacon) { navigator.sendBeacon('/api/track/' + kind); return; }
+      fetch('/api/track/' + kind, { method: 'POST', keepalive: true });
+    } catch (e) {}
+  }
+  track('view');
+  document.querySelectorAll('a[href*="t.me/anonim_chatqbot"]').forEach(function (a) {
+    a.addEventListener('click', function () { track('click'); });
+  });
+</script>
 </body>
 </html>

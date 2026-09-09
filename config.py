@@ -52,3 +52,6 @@ MAX_AGE = 99
 CURRENT_RULES_VERSION = 1
 AGE_PAGE_SIZE = 12
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "")
+
+# Сайт: доступ к /api/stats (просмотры/переходы в бота), пусто = эндпоинт выключен.
+STATS_ACCESS_KEY = os.getenv("STATS_ACCESS_KEY", "")
