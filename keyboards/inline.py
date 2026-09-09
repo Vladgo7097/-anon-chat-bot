@@ -93,19 +93,32 @@ def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
     ])
 
 
-def admin_broadcast_audience_kb(sizes=None, prefix="bc") -> InlineKeyboardMarkup:
+def admin_broadcast_audience_kb(sizes=None, poll=False) -> InlineKeyboardMarkup:
     sizes = sizes or {}
 
     def label(text, segment):
         size = sizes.get(segment)
         return text if size is None else f"{text} ({size:,})".replace(",", " ")
 
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=label("Все", "all"), icon_custom_emoji_id="5942877472163892475", callback_data=f"{prefix}:all")],
-        [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data=f"{prefix}:premium")],
-        [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data=f"{prefix}:inactive")],
-        [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data=f"{prefix}:nopay")],
-    ])
+    # callback_data written as literal strings (not an f-string with a
+    # runtime prefix) so tests/test_callback_routing.py's static source scan
+    # can actually resolve and verify both variants -- it only understands
+    # quoted literals, not values built from a variable at call time.
+    if poll:
+        rows = [
+            [InlineKeyboardButton(text=label("Все", "all"), icon_custom_emoji_id="5942877472163892475", callback_data="bcp:all")],
+            [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data="bcp:premium")],
+            [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bcp:inactive")],
+            [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bcp:nopay")],
+        ]
+    else:
+        rows = [
+            [InlineKeyboardButton(text=label("Все", "all"), icon_custom_emoji_id="5942877472163892475", callback_data="bc:all")],
+            [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data="bc:premium")],
+            [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bc:inactive")],
+            [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bc:nopay")],
+        ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:

@@ -476,7 +476,7 @@ async def cb_poll(callback: CallbackQuery):
              for segment in ("all", "premium", "inactive", "nopay")}
     await callback.answer()
     await callback.message.answer("<tg-emoji emoji-id=\"5253959125838090076\">📊</tg-emoji> Выбери аудиторию для опроса:",
-                                  reply_markup=admin_broadcast_audience_kb(sizes, prefix="bcp"))
+                                  reply_markup=admin_broadcast_audience_kb(sizes, poll=True))
 
 
 @admin_router.callback_query(F.data.startswith("bcp:"))
