@@ -292,25 +292,73 @@ a:hover { color: #8defff; }
   .feature-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 700px) {
-  .landing-page { background-position: 62% center; }
+  body { min-height: 100dvh; background-attachment: scroll; }
+  .landing-page { min-height: 100dvh; background-position: 62% center; background-attachment: scroll; }
   .landing-page::before { background: rgba(1, 5, 20, .64); }
-  .landing-page .nav .brand-logo img { width: 170px; }
+  .landing-page .page { min-height: 100dvh; }
+  .landing-page .nav { gap: 10px; margin-top: 10px; padding: 12px 14px; min-height: 0; }
+  .landing-page .nav .brand-logo img { width: 150px; max-width: 100%; }
   .landing-auth { min-width: 0; }
   .landing-auth p { max-width: 210px; }
+  .lang-switch { min-height: 40px; padding: 6px 8px; }
+  .lang-switch a { padding: 4px 6px; font-size: 12px; }
+  .landing-nav { gap: 22px; padding: 5px 0 2px; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .landing-nav::-webkit-scrollbar { display: none; }
+  .landing-nav a { min-height: 40px; display: inline-flex; align-items: center; font-size: 14px; scroll-snap-align: start; }
+  .landing-hero { grid-template-columns: minmax(0,1fr); gap: 36px; padding: 42px 0 48px; }
+  .landing-copy { min-width: 0; }
+  .landing-visual { order: 0; min-height: 320px; margin-top: 0; }
+  .landing-copy h1 { font-size: clamp(40px, 11vw, 58px); }
+  .landing-copy p { font-size: 17px; }
+  .benefits-row { gap: 24px; }
+  .benefit { min-width: calc(50% - 12px); }
+  .landing-cta-row { align-items: stretch; }
+  .landing-bot-link { min-height: 54px; }
+  .hero-quote { right: 1%; max-width: 180px; font-size: 19px; }
+  .online-pill { max-width: 100%; }
   .about-section { grid-template-columns: 1fr; }
-  .landing-section { padding: 65px 0; }
+  .landing-section { padding: 56px 0; }
+  .feature-grid { gap: 16px; }
+  .feature-card, .about-copy, .privacy-card { padding: 22px; }
+  .faq-card summary { padding-left: 20px; }
   .support-section { align-items: flex-start; flex-direction: column; margin-bottom: 60px; }
 }
 @media (max-width: 480px) {
+  .landing-page .page { padding: 0 14px; }
+  .landing-page .nav { grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 10px 11px; border-radius: 18px; }
+  .landing-page .nav .brand-logo img { width: 132px; }
   .landing-nav { gap: 18px; }
   .landing-auth { align-items: flex-start; }
   .landing-auth p { max-width: 100%; text-align: left; }
-  .landing-hero { padding: 15px 0 35px; }
-  .landing-copy h1 { font-size: 42px; }
+  .lang-switch { padding: 5px 7px; }
+  .lang-globe { display: none; }
+  .landing-hero { gap: 28px; padding: 36px 0 38px; }
+  .hero-label { max-width: 100%; padding: 10px 14px; font-size: 11px; letter-spacing: .1em; }
+  .landing-copy h1 { margin-top: 18px; font-size: clamp(35px, 11.2vw, 42px); line-height: 1.02; overflow-wrap: anywhere; }
+  .landing-copy p { font-size: 16px; line-height: 1.5; }
   .benefits-row { flex-direction: column; gap: 18px; }
+  .benefit { min-width: 0; }
+  .benefit-icon { width: 54px; height: 54px; }
+  .benefit span { font-size: 16px; }
+  .landing-cta-row { flex-direction: column; gap: 14px; margin-top: 30px; }
+  .landing-bot-link { width: 100%; padding: 0 20px; }
+  .landing-secondary-link { align-self: center; padding: 8px; }
+  .landing-visual { min-height: 270px; }
+  .chat-bubble.msg { width: 76px; height: 62px; }
+  .chat-bubble.heart { width: 66px; height: 60px; }
+  .hero-quote { top: 3%; max-width: 145px; font-size: 16px; }
+  .online-pill { min-height: 64px; padding: 10px 16px 10px 12px; gap: 10px; }
+  .online-avatars span { width: 34px; height: 34px; }
+  .online-copy .label { font-size: 12px; }
+  .online-copy .value { font-size: 15px; }
+  .visits-row { padding-top: 18px; }
+  .visits-badge { max-width: 100%; padding: 9px 14px; font-size: 12px; }
+  .landing-section h2, .subpage-hero h1 { font-size: 32px; }
+  .subpage-hero { padding: 40px 0 12px; }
+  .subpage-hero p { font-size: 15px; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-card { min-height: 0; }
-  .support-section { padding: 28px 22px; }
+  .support-section { gap: 24px; margin: 35px 0 50px; padding: 24px 20px; }
   .support-section .btn { width: 100%; }
   .landing-footer { flex-direction: column; gap: 10px; text-align: center; }
 }
