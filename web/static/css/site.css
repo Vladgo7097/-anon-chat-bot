@@ -275,7 +275,14 @@ a:hover { color: #8defff; }
 .support-section .btn { flex: 0 0 auto; }
 @media (max-width: 980px) {
   .landing-page .nav { grid-template-columns: 1fr auto; grid-template-rows: auto auto; row-gap: 12px; border-radius: 18px; padding: 14px 18px; }
-  .landing-nav { grid-column: 1/-1; grid-row: 2; justify-self: start; gap: 24px; overflow-x: auto; width: 100%; }
+  /* The strip scrolls (4 links rarely fit under ~980px), but nothing said
+     so -- a flat cut at the edge reads as "that's all of it". A fade
+     toward the edge hints there's more; it only kicks in once scrolled. */
+  .landing-nav {
+    grid-column: 1/-1; grid-row: 2; justify-self: start; gap: 24px; overflow-x: auto; width: 100%;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent 100%);
+  }
   .feature-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 700px) {
