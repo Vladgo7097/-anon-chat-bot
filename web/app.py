@@ -9,8 +9,11 @@ whether the landing page is doing anything at all.
 No third-party analytics: this product's whole pitch is anonymity, and
 sending every visitor's IP/device fingerprint to Google would be a bad joke.
 The counters below are aggregate daily totals -- no per-visitor identity is
-ever stored.
+ever stored. The one exception is a one-way hash of the visitor's IP, kept
+under a day, used only to stop a script from inflating the counters by
+hammering /api/track/*; the address itself is never written anywhere.
 """
+import hashlib
 import mimetypes
 from pathlib import Path
 
@@ -126,14 +129,48 @@ async def _bump(counter: str, days: int = 90):
         pass
 
 
+def _visitor_hash(request: Request) -> str:
+    """One-way, unsalted hash of the caller's IP -- never the address itself.
+
+    uvicorn is started with --forwarded-allow-ips so request.client already
+    carries the real visitor IP from nginx's X-Forwarded-For, not the proxy's.
+    """
+    ip = request.client.host if request.client else "unknown"
+    return hashlib.sha256(ip.encode()).hexdigest()[:24]
+
+
+async def _first_today(kind: str, request: Request) -> bool:
+    """True only the first time this visitor hits `kind` today.
+
+    Without this, a script hitting /api/track/* repeatedly could inflate the
+    counters shown on the page as a trust signal; a real visitor's own
+    double-click or page reload just stops moving the numbers further.
+    """
+    from utils.time import utcnow
+    from redis.exceptions import RedisError
+    key = f"landing:seen:{kind}:{utcnow():%Y-%m-%d}:{_visitor_hash(request)}"
+    try:
+        r = _get_redis()
+        # NX+EX in one round trip: True only the first time today, and the
+        # marker outlives the day itself so a UTC-boundary visit can't double up.
+        return bool(await r.set(key, "1", nx=True, ex=90000))
+    except RedisError:
+        # Redis is already unreachable, so the increment this guards will
+        # no-op anyway (_bump catches the same error) -- don't count twice
+        # by treating an unreadable dedupe check as "go ahead and count".
+        return False
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}
 
 
 @app.post("/api/track/view")
-async def track_view():
+async def track_view(request: Request):
     from redis.exceptions import RedisError
+    if not await _first_today("view", request):
+        return {"ok": True}
     await _bump("views")
     try:
         r = _get_redis()
@@ -157,7 +194,9 @@ async def visits():
 
 
 @app.post("/api/track/click")
-async def track_click():
+async def track_click(request: Request):
+    if not await _first_today("click", request):
+        return {"ok": True}
     await _bump("bot_clicks")
     return {"ok": True}
 

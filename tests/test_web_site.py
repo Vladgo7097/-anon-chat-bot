@@ -12,7 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from unittest.mock import patch
 from fastapi.testclient import TestClient
+import web.app as web_app
 from web.app import PAGE_DIRECTORIES, STATIC_DIR, app
 
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -105,6 +107,92 @@ class LargestImageTests(unittest.TestCase):
         for page in PAGES:
             with self.subTest(page.name):
                 self.assertNotIn("avatar-owner-lg.png", read(page))
+
+
+class FakeCountersRedis:
+    """Just enough of redis-py's async API for _first_today/_bump/visits."""
+
+    def __init__(self):
+        self.store = {}
+
+    async def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def incr(self, key):
+        self.store[key] = str(int(self.store.get(key, 0)) + 1)
+        return int(self.store[key])
+
+    async def expire(self, key, seconds):
+        return True
+
+
+class LinkAttributionTests(unittest.TestCase):
+    """Every t.me link on the site must say which page it came from.
+
+    Without this, a click from the site was indistinguishable in the bot's
+    own start_source logging from someone finding the bot on their own.
+    """
+
+    def pages(self):
+        for path in sorted(STATIC_DIR.rglob("*.html")):
+            yield path.relative_to(STATIC_DIR).as_posix(), read(path)
+
+    def test_no_bare_bot_link_remains(self):
+        for name, text in self.pages():
+            with self.subTest(name):
+                self.assertNotIn('href="https://t.me/anonim_chatqbot"', text)
+
+    def test_every_source_label_matches_the_bots_own_sanitizer(self):
+        # services/onboarding.py strips anything outside A-Za-z0-9_- and
+        # caps at 48 chars; a label that needed stripping would silently
+        # turn into a different, undocumented source value.
+        pattern = re.compile(r"t\.me/anonim_chatqbot\?start=([^\"&]+)")
+        found = False
+        for name, text in self.pages():
+            for label in pattern.findall(text):
+                found = True
+                with self.subTest(name, label=label):
+                    self.assertRegex(label, r"^[A-Za-z0-9_-]{1,48}$")
+        self.assertTrue(found, "no tagged links found at all")
+
+
+class AntiInflationTests(unittest.TestCase):
+    def setUp(self):
+        self.redis = FakeCountersRedis()
+        web_app._redis = None
+        patcher = patch.object(web_app, "_get_redis", lambda: self.redis)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_repeat_view_from_the_same_visitor_does_not_double_count(self):
+        client = TestClient(app, client=("203.0.113.5", 1234))
+        client.post("/api/track/view")
+        client.post("/api/track/view")
+        client.post("/api/track/view")
+        self.assertEqual(client.get("/api/visits").json()["total"], 1)
+
+    def test_a_different_visitor_still_counts(self):
+        TestClient(app, client=("203.0.113.5", 1234)).post("/api/track/view")
+        TestClient(app, client=("203.0.113.6", 1234)).post("/api/track/view")
+        self.assertEqual(TestClient(app).get("/api/visits").json()["total"], 2)
+
+    def test_clicks_get_the_same_per_visitor_cap(self):
+        client = TestClient(app, client=("203.0.113.7", 1234))
+        for _ in range(5):
+            client.post("/api/track/click")
+        from utils.time import utcnow
+        key = f"landing:bot_clicks:{utcnow():%Y-%m-%d}"
+        self.assertEqual(self.redis.store.get(key), "1")
+
+    def test_the_stored_marker_is_a_hash_not_the_raw_address(self):
+        TestClient(app, client=("203.0.113.9", 1234)).post("/api/track/view")
+        self.assertFalse(any("203.0.113.9" in key for key in self.redis.store))
 
 
 class RobotsTests(unittest.TestCase):
