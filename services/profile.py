@@ -75,6 +75,12 @@ class ProfileService:
         await ChatService().end_chat(user_id, reason="account_deleted")
         async with async_session.begin() as s:
             user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
+            if not user:
+                # Users are never hard-deleted by this app, so this row should
+                # always still be here -- but a manual DB operation between
+                # the two transactions above must fail cleanly, not crash the
+                # whole handler with an AttributeError on a None user.
+                return ServiceResult(False, "NOT_FOUND")
             user.username = user.first_name = user.gender = user.age = user.bio = user.profile_photo = None
             user.extra_photos = "[]"
             user.rules_version = user.rules_accepted_at = None

@@ -2,3 +2,8 @@
 aiosqlite>=0.20
 pytest>=8
 pytest-asyncio>=0.24
+# Only starlette.testclient (used by tests/test_web_site.py) needs this --
+# a version bump on fastapi/starlette started requiring it by name, and
+# nothing here pinned it, so a fresh install (no lockfile) broke collection
+# for the whole suite on first use, not just the site tests.
+httpx2
