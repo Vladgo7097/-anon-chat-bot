@@ -1,3 +1,4 @@
+import re
 from sqlalchemy import select
 import config
 from models.user import User
@@ -25,7 +26,7 @@ class OnboardingService:
         self.repository = repository or UserRepository()
 
     async def start(self, telegram_id, username=None, first_name=None, payload="", notify_owner=False):
-        await self.repository.get_or_create(telegram_id, username, first_name)
+        _, is_new = await self.repository.get_or_create(telegram_id, username, first_name)
 
         async def apply(user, session):
             if banned(user):
@@ -44,6 +45,15 @@ class OnboardingService:
                         if not referral:
                             session.add(Referral(referrer_id=referrer.telegram_id, referred_id=telegram_id))
                             referrer.referrals_count += 1
+            if is_new and isinstance(self.repository, UserRepository):
+                # Every non-"ref_" /start payload used to be read and thrown away,
+                # which made it impossible to tell a low-intent bot-catalog
+                # visitor from a genuinely broken first screen. Telegram itself
+                # restricts start parameters to this character set already; the
+                # regex is a defensive cap, not a real sanitization need.
+                from services.growth import event
+                source = re.sub(r"[^A-Za-z0-9_-]", "", payload)[:48] or "none"
+                await event(session, telegram_id, "start_source", f"start_source:{telegram_id}:{source}")
             user.deleted_at = None
             return ServiceResult(True, step_for(user))
         result = await self.repository.transition(telegram_id, apply)

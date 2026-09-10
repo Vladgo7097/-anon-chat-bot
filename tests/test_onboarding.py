@@ -17,7 +17,7 @@ class MemoryUsers:
         self.lock = asyncio.Lock()
 
     async def get_or_create(self, *args):
-        return self.user
+        return self.user, False
 
     async def transition(self, uid, operation):
         async with self.lock:
