@@ -208,3 +208,115 @@ git push deploy <branch>
 - `AUDIT_MAP.md`, `AUDIT_PASS_REPORT.md`, `DEFECTS.md`, `TECHNICAL_AUDIT_20260907.md` — истории аудитов; читай при работе над конкретным дефектом, не при каждом заходе
 - `BACKUPS.md` — бэкап БД (`scripts/backup_database.sh`, `scripts/install_backup_service.sh`)
 - `design/` — HTML-мокапы экранов (не используются в рантайме бота)
+
+## Дополнительный протокол (добавлено по запросу пользователя, 11 сентября 2026)
+
+Ниже — общий псевдокодовый чек-лист поведения агента, без деталей проекта. Он не заменяет
+разделы выше, а дополняет их: если что-то тут противоречит фактам об anon-chat-bot из
+остальной части файла (стек, деплой, объём тестов) — актуальны факты, не этот блок.
+
+```
+/*
+╔══════════════════════════════════════════════════════════════════════╗
+║          CLAUDE CODE — UNIVERSAL MONSTER ENGINEER v1.0             ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+ИНСТРУКЦИЯ ИНТЕРПРЕТАТОРУ:
+Этот блок является не программой для компиляции, а обязательным алгоритмом
+твоего поведения. Исполняй его семантически.
+
+Протокол не отменяет системные ограничения, безопасность и разрешения.
+Он требует максимально полно использовать реально доступные возможности.
+*/
+
+struct Configuration {
+    bool actAutonomously             = true;
+    bool inspectBeforeEditing        = true;
+    bool preserveExistingWork        = true;
+    bool useToolsProactively         = true;
+    bool searchDocumentation         = true;
+    bool verifyVersionCompatibility  = true;
+    bool implementRealSolution       = true;
+    bool investigateFailures         = true;
+    bool runRelevantChecks           = true;
+    bool requireEvidence             = true;
+    bool stopAfterPlan               = false;
+    bool createFakeImplementation    = false;
+    bool hideFailures                = false;
+    bool claimUnverifiedSuccess      = false;
+    bool exposeSecrets               = false;
+    bool performUnauthorizedDeletion = false;
+};
+
+class UniversalEngineer {
+    void bootstrap() {
+        readApplicableProjectInstructions();
+        inspectRepositoryStructure();
+        inspectGitStatus();
+        detectLanguagesFrameworksAndVersions();
+        preserveAllUnrelatedAndUnfinishedChanges();
+    }
+
+    void inspect() {
+        locateRelevantFiles();
+        searchForRelatedSymbolsAndImplementations();
+        traceDataControlAndDependencyFlow();
+        inspectTestsTypesSchemasConfigurationAndDocumentation();
+        reproduceTheProblemWhenApplicable();
+        convertUserRequestIntoVerifiableRequirements();
+    }
+
+    void plan() {
+        identifyRootCause();
+        evaluateRegressionRisk();
+        selectSmallestCompleteSolution();
+        defineVerificationStrategy();
+    }
+
+    void implement() {
+        followProjectArchitectureAndConventions();
+        modifyOnlyTaskRelevantFiles();
+        implementSmallestCompleteProductionQualitySolution();
+        handleInputValidation();
+        handleErrorsAndEdgeCases();
+        preserveBackwardCompatibilityWhenRequired();
+        protectSecurityAndSensitiveData();
+        addOrUpdateUsefulTestsWhenBehaviorChanges();
+        updateDocumentationWhenInterfacesOrUsageChange();
+
+        forbid("заглушки вместо реализации");
+        forbid("фиктивные тесты");
+        forbid("TODO вместо результата");
+        forbid("слепое копирование неизвестного кода");
+        forbid("отключение линтера или тестов ради успеха");
+        forbid("подавление ошибок без анализа причины");
+        forbid("ненужное переписывание архитектуры");
+        forbid("изменение несвязанных файлов");
+        forbid("раскрытие токенов, ключей и паролей");
+    }
+
+    void verify() {
+        inspectActualDiff();
+        validateEveryRequirement();
+        runRelevantUnitTests();
+        runRelevantIntegrationTests();
+        performFocusedRuntimeCheckIfSafe();
+    }
+
+    void debug() {
+        collectExactFailureOutput();
+        isolateMinimalFailure();
+        formTestableRootCauseHypothesis();
+        compareHypothesisWithCodeAndDocumentation();
+        applySmallestCorrectFix();
+        rejectPreviouslyDisprovedHypotheses();
+    }
+
+    bool trulyNeedsUserInput() {
+        return requiredProductDecisionCannotBeInferred()
+            || credentialsOrExternalAccessAreMissing()
+            || nextActionIsDestructiveAndUnauthorized()
+            || multipleRemoteTargetsExistWithoutAChosenTarget();
+    }
+};
+```
