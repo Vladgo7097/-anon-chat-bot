@@ -109,6 +109,37 @@ class LargestImageTests(unittest.TestCase):
                 self.assertNotIn("avatar-owner-lg.png", read(page))
 
 
+class QrCodeTests(unittest.TestCase):
+    """The QR points a desktop visitor's phone at the bot -- pointless on
+    the phone the site itself is already open on, so it's hidden there
+    (see the .qr-hint rule inside the 700px breakpoint in site.css)."""
+
+    def test_the_qr_image_exists_and_is_a_real_file(self):
+        qr = STATIC_DIR/"img"/"qr-bot.webp"
+        self.assertTrue(qr.exists())
+        self.assertGreater(qr.stat().st_size, 100, "suspiciously small for an image")
+        self.assertLess(qr.stat().st_size, 20*1024, "a QR this size is unusually bloated")
+
+    def test_both_home_pages_show_it_with_dimensions_and_alt_text(self):
+        for name in ("index.html", "en/index.html"):
+            with self.subTest(name):
+                text = read(STATIC_DIR/name)
+                img = re.search(r'<img[^>]*src="/img/qr-bot\.webp"[^>]*>', text)
+                self.assertIsNotNone(img, f"{name}: no qr-bot.webp reference")
+                self.assertIn('alt="', img.group(0))
+                self.assertIn('width="', img.group(0))
+                self.assertIn('height="', img.group(0))
+
+    def test_hidden_on_the_phone_width_that_would_show_it_pointlessly(self):
+        # Two separate "@media (max-width: 700px)" blocks exist in this file;
+        # the rule can land in either, so check all of them, not just the first.
+        css = read(ROOT/"web"/"static"/"css"/"site.css")
+        blocks = re.findall(r"@media \(max-width: 700px\) \{(.*?)\n\}", css, re.S)
+        self.assertTrue(blocks, "no max-width:700px block found at all")
+        self.assertTrue(any(".qr-hint" in block for block in blocks),
+                        "no 700px block hides .qr-hint")
+
+
 class FakeCountersRedis:
     """Just enough of redis-py's async API for _first_today/_bump/visits."""
 
