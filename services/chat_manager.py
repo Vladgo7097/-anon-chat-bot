@@ -28,7 +28,12 @@ async def get_redis():
     global _pool, _pool_loop
     loop = asyncio.get_running_loop()
     if _pool is None or _pool_loop is not loop:
-        _pool = aioredis.from_url(config.REDIS_URL, decode_responses=True, max_connections=30)
+        # A stalled connection had no timeout at all, so a Redis-side hiccup
+        # (a network blip, a half-dead pooled connection) blocked the calling
+        # coroutine forever instead of raising -- which is how pressing
+        # "Найти собеседника" could hang with no error and no way out.
+        _pool = aioredis.from_url(config.REDIS_URL, decode_responses=True, max_connections=30,
+                                  socket_connect_timeout=3, socket_timeout=5, health_check_interval=30)
         _pool_loop = loop
     return _pool
 

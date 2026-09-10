@@ -74,6 +74,28 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.message.answer.await_args.kwargs["reply_markup"].inline_keyboard[-1][0].callback_data, "search:cancel")
         self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
 
+    async def test_start_status_carries_custom_emoji_and_no_elapsed_timer(self):
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        text = self.message.answer.await_args.args[0]
+        self.assertIn('<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji>', text)
+        self.assertIn('<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji>', text)
+        self.assertNotIn("Прошло", text)
+
+    async def test_periodic_status_update_also_has_no_elapsed_timer(self):
+        status = SimpleNamespace(edit_text=AsyncMock())
+        with patch("handlers.premium.product_keyboard", AsyncMock(return_value=None)), \
+             patch("utils.db.is_premium", AsyncMock(return_value=False)), \
+             patch("handlers.search.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError)):
+            with self.assertRaises(asyncio.CancelledError):
+                await search.search_loop(status, 1, self.bot)
+        text = status.edit_text.await_args.args[0]
+        self.assertIn('<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji>', text)
+        self.assertIn('<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji>', text)
+        self.assertNotIn("Прошло", text)
+        # The elapsed-timer's own custom emoji id must not linger either.
+        self.assertNotIn("5258258882022612173", text)
+
     async def test_rejected_status_does_not_leave_orphan_search(self):
         from aiogram.exceptions import TelegramRetryAfter
         from aiogram.methods import SendMessage

@@ -91,7 +91,11 @@ async def main():
     from utils.telegram import RetryTelegramRequests
     bot.session.middleware(RetryTelegramRequests())
     from utils.storage import AvailableRedisStorage
-    dp = Dispatcher(storage=AvailableRedisStorage.from_url(config.REDIS_URL))
+    # Same reasoning as services/chat_manager.get_redis(): without a socket
+    # timeout, a stalled Redis connection blocks FSM reads/writes forever
+    # rather than raising the RedisError this storage already falls back on.
+    dp = Dispatcher(storage=AvailableRedisStorage.from_url(config.REDIS_URL, connection_kwargs={
+        "socket_connect_timeout": 3, "socket_timeout": 5, "health_check_interval": 30}))
     from utils.deduplication import UpdateDeduplication
     dp.update.outer_middleware(UpdateDeduplication())
 

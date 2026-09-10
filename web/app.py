@@ -103,7 +103,12 @@ async def not_found(request: Request, exc: StarletteHTTPException):
 def _get_redis():
     global _redis
     if _redis is None:
-        _redis = aioredis.from_url(config.REDIS_URL, decode_responses=True)
+        # Same fix as the bot's own Redis pool (services/chat_manager.py):
+        # without a socket timeout a stalled connection hangs the request
+        # forever instead of raising, which the RedisError handlers below
+        # already expect to catch.
+        _redis = aioredis.from_url(config.REDIS_URL, decode_responses=True,
+                                    socket_connect_timeout=3, socket_timeout=5, health_check_interval=30)
     return _redis
 
 

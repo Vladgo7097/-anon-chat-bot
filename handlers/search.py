@@ -106,8 +106,9 @@ async def _begin_search(message, user_id):
     await cancel_task(user_id)
     try:
         status = await message.answer(
-            f"🔎 Ищу собеседника...\n\n⏱ Прошло: 00:00\n"
-            f"👥 Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard())
+            f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу собеседника...\n\n"
+            f"<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}",
+            reply_markup=search_status_keyboard())
     except Exception:
         # Do not leave an orphan queue entry when Telegram rejects the status.
         await MatchingService().cancel(user_id)
@@ -180,7 +181,7 @@ async def search_loop(status, user_id, bot=None):
                 from utils.db import is_premium
                 if status is not None and time.monotonic() >= status_retry_at:
                     offer = await product_keyboard(["instant_search"]) if elapsed > await bot_value("search_slow_offer_seconds", 20) and not await is_premium(user_id) else None
-                    await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5258258882022612173\">⏱</tg-emoji> Прошло: {elapsed//60:02d}:{elapsed%60:02d}\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard(offer))
+                    await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard(offer))
                     if offer and not offer_tracked:
                         from services.growth import track
                         await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")
