@@ -279,6 +279,12 @@ a:hover { color: #8defff; }
      so -- a flat cut at the edge reads as "that's all of it". A fade
      toward the edge hints there's more; it only kicks in once scrolled. */
   .landing-nav {
+    /* A grid item's default min-width is auto (= its content's intrinsic
+       width), so the track -- and the whole rounded nav bar -- grew to fit
+       all 4 links instead of letting overflow-x:auto contain them. That's
+       the page-level horizontal overflow a real phone showed; nothing in
+       the earlier devtools-emulated checks reproduced it. */
+    min-width: 0;
     grid-column: 1/-1; grid-row: 2; justify-self: start; gap: 24px; overflow-x: auto; width: 100%;
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent 100%);
