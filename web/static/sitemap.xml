@@ -2,82 +2,72 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://anonimchat.pp.ua/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/"/>
-    <changefreq>monthly</changefreq>
-    <priority>1.0</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/en/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.9</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/vozmozhnosti/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/vozmozhnosti/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/features/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/vozmozhnosti/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/en/features/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/vozmozhnosti/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/features/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/vozmozhnosti/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/voprosy/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/voprosy/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/faq/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/voprosy/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/en/faq/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/voprosy/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/faq/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/voprosy/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://anonimchat.pp.ua/podderzhka/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/podderzhka/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/support/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/podderzhka/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://anonimchat.pp.ua/en/support/</loc>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/podderzhka/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/support/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/podderzhka/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/o-proekte/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/o-proekte/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/about/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/o-proekte/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://anonimchat.pp.ua/en/about/</loc>
+    <lastmod>2026-09-09</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/o-proekte/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/about/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/o-proekte/"/>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://anonimchat.pp.ua/podderzhka/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/podderzhka/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/support/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/podderzhka/"/>
+  </url>
+  <url>
+    <loc>https://anonimchat.pp.ua/en/support/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/podderzhka/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/support/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/podderzhka/"/>
   </url>
 </urlset>

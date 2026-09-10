@@ -42,7 +42,13 @@ services:
     env_file: .env
     volumes:
       - ./.env:/app/.env:ro
-    command: uvicorn web.app:app --host 0.0.0.0 --port 8080
+    # List form so nothing depends on how the string would be re-lexed.
+    # --forwarded-allow-ips is what makes uvicorn trust nginx's
+    # X-Forwarded-Proto; its default of 127.0.0.1 never matches, because in
+    # Docker nginx arrives as the bridge gateway. The port is published on
+    # 127.0.0.1 only, so nginx is the sole possible client.
+    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8080",
+              "--proxy-headers", "--forwarded-allow-ips", "*"]
     depends_on:
       - db
       - redis
