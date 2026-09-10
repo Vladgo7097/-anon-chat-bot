@@ -40,4 +40,9 @@ cd "$DEPLOY_DIR" || exit 1
 docker compose build bot web 2>&1 | tail -6
 docker compose up -d bot web 2>&1
 
+# Every build leaves cache layers behind and nothing else ever cleared them --
+# this alone grew to 7.5 GB on a 24 GB disk before it was first noticed.
+# Keeping a day's worth still makes the next build fast; older layers go.
+docker builder prune -f --filter until=24h >/dev/null 2>&1
+
 echo "[post-receive] Deploy complete!"
