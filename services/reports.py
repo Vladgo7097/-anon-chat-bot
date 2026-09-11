@@ -8,7 +8,7 @@ from services.result import ServiceResult
 from services.chats import ChatService
 
 REASONS = {"18plus": "Контент 18+", "insult": "Оскорбления", "spam": "Спам/реклама",
-           "minor": "Подозрение на несовершеннолетнего", "other": "Другое"}
+           "fraud": "Мошенничество", "minor": "Подозрение на несовершеннолетнего", "other": "Другое"}
 
 
 class ReportService:
@@ -46,6 +46,11 @@ class ReportService:
                 s.add(Block(blocker_id=user_id, blocked_id=partner, reason=reason))
             await s.flush()
             report_id = report.id
+            import config
+            if config.OWNER_ID:
+                from services.notifications import enqueue
+                await enqueue(s, config.OWNER_ID, "owner_report", f"owner_report:{report_id}",
+                              f"🚩 Новая жалоба #{report_id}: {REASONS[reason]}.", "admin:reports:0")
         await ChatService().end_chat(user_id, session_id, "report")
         await relay.report_context(session_id, clear=True)
         logging.getLogger(__name__).info("report_created", extra={"user_id": user_id, "chat_session_id": session_id, "report_id": report_id})

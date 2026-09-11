@@ -9,6 +9,30 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/"/>
   </url>
   <url>
+    <loc>https://anonimchat.pp.ua/privacy/</loc>
+    <lastmod>2026-09-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="uk" href="https://anonimchat.pp.ua/uk/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/privacy/"/>
+  </url>
+  <url>
+    <loc>https://anonimchat.pp.ua/en/privacy/</loc>
+    <lastmod>2026-09-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="uk" href="https://anonimchat.pp.ua/uk/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/privacy/"/>
+  </url>
+  <url>
+    <loc>https://anonimchat.pp.ua/uk/privacy/</loc>
+    <lastmod>2026-09-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://anonimchat.pp.ua/en/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="uk" href="https://anonimchat.pp.ua/uk/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://anonimchat.pp.ua/privacy/"/>
+  </url>
+  <url>
     <loc>https://anonimchat.pp.ua/en/</loc>
     <lastmod>2026-09-11</lastmod>
     <xhtml:link rel="alternate" hreflang="ru" href="https://anonimchat.pp.ua/"/>

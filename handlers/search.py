@@ -44,6 +44,12 @@ SEARCH_UNAVAILABLE = {"ru": "Поиск временно недоступен. �
                        "uk": "Пошук тимчасово недоступний. Спробуй ще раз."}
 CANCEL_LABEL = {"ru": "Отменить поиск", "en": "Cancel search", "uk": "Скасувати пошук"}
 SEARCH_CANCELLED_TOAST = {"ru": "Поиск отменён", "en": "Search cancelled", "uk": "Пошук скасовано"}
+WAITING_SAVED = {"ru": "🔔 Хорошо, сообщим в течение 12 часов, когда кто-то начнёт поиск.",
+                 "en": "🔔 We’ll notify you within 12 hours when someone starts searching.",
+                 "uk": "🔔 Повідомимо протягом 12 годин, коли хтось почне пошук."}
+WAITING_AVAILABLE = {"ru": "🔔 Кто-то появился в поиске. Можно попробовать ещё раз!",
+                     "en": "🔔 Someone is searching now. You can try again!",
+                     "uk": "🔔 Хтось уже шукає співрозмовника. Спробуй ще раз!"}
 
 _tasks = {}
 _status_messages = {}
@@ -117,6 +123,44 @@ def search_status_keyboard(offer=None, lang="ru"):
         InlineKeyboardButton(text=T.tr(CANCEL_LABEL, lang), icon_custom_emoji_id="5273914604752216432", callback_data="search:cancel")]])
 
 
+def nobody_keyboard(lang="ru"):
+    labels = {
+        "ru": ("🔔 Сообщить, когда кто-то появится", "👥 Пригласить друга"),
+        "en": ("🔔 Notify me when someone appears", "👥 Invite a friend"),
+        "uk": ("🔔 Повідомити, коли хтось з’явиться", "👥 Запросити друга"),
+    }
+    wait, invite = labels.get(lang, labels["ru"])
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=wait, callback_data="search:wait"),
+    ], [
+        InlineKeyboardButton(text=invite, callback_data="search:invite"),
+    ]])
+
+
+async def notify_waiting_users(bot, newcomer_id):
+    """Wake opted-in users once a fresh potential partner enters the queue."""
+    r = await get_redis()
+    ids = await r.smembers("search:waiting_alerts")
+    if not ids:
+        return
+    from repositories.users import UserRepository
+    for raw_id in ids:
+        user_id = int(raw_id)
+        if user_id == newcomer_id or not await r.exists(f"search:waiting_alert:{user_id}"):
+            await r.srem("search:waiting_alerts", raw_id)
+            continue
+        await r.delete(f"search:waiting_alert:{user_id}")
+        await r.srem("search:waiting_alerts", raw_id)
+        row = await UserRepository().get(user_id)
+        lang = (getattr(row, "language", None) or "ru")
+        try:
+            await bot.send_message(user_id, T.tr(WAITING_AVAILABLE, lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=T.label(T.SEARCH, lang), callback_data="search:repeat", style="primary")
+            ]]))
+        except (TelegramForbiddenError, TelegramBadRequest):
+            continue
+
+
 async def _begin_search(message, user_id, lang="ru"):
     result = await MatchingService().enqueue(user_id)
     task = _tasks.get(user_id)
@@ -130,6 +174,7 @@ async def _begin_search(message, user_id, lang="ru"):
         markup = chat_kb_reply(lang) if result.code == "ALREADY_CHATTING" else None
         await message.answer(T.tr(FAIL_REASONS[result.code], lang), reply_markup=markup)
         return
+    await notify_waiting_users(message.bot, user_id)
     await cancel_task(user_id)
     try:
         status = await message.answer(
@@ -193,7 +238,7 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                         pass
                     return
                 try:
-                    await bot.send_message(user_id, T.tr(NOBODY_YET, lang), reply_markup=main_menu_kb(lang))
+                    await bot.send_message(user_id, T.tr(NOBODY_YET, lang), reply_markup=nobody_keyboard(lang))
                 except (TelegramForbiddenError, TelegramBadRequest):
                     pass
                 return
@@ -259,6 +304,40 @@ async def cb_cancel(callback: CallbackQuery, lang: str = "ru"):
     async with search_lock(callback.from_user.id):
         await cancel_search(callback.from_user.id)
     await callback.message.answer(T.menu_text(lang), reply_markup=main_menu_kb(lang))
+
+
+@search_router.callback_query(F.data == "search:wait")
+async def cb_wait_for_match(callback: CallbackQuery, lang: str = "ru"):
+    r = await get_redis()
+    await r.set(f"search:waiting_alert:{callback.from_user.id}", "1", ex=12 * 3600)
+    await r.sadd("search:waiting_alerts", str(callback.from_user.id))
+    await r.expire("search:waiting_alerts", 12 * 3600)
+    await callback.answer()
+    await callback.message.edit_text(T.tr(WAITING_SAVED, lang))
+
+
+NOT_ONBOARDED = {"ru": "Сначала заверши регистрацию.", "en": "Finish registration first.", "uk": "Спочатку заверши реєстрацію."}
+INVITE_MESSAGE = {
+    "ru": "Пригласи друга — так шанс найти собеседника станет выше:\n{link}",
+    "en": "Invite a friend — that raises the odds of finding a match:\n{link}",
+    "uk": "Запроси друга — так шанс знайти співрозмовника стане вищим:\n{link}",
+}
+
+
+@search_router.callback_query(F.data == "search:invite")
+async def cb_invite_friend(callback: CallbackQuery, lang: str = "ru"):
+    from models.base import async_session
+    from models.user import User
+    from sqlalchemy import select
+    async with async_session() as s:
+        code = await s.scalar(select(User.referral_code).where(User.telegram_id == callback.from_user.id))
+    if not code:
+        await callback.answer(T.tr(NOT_ONBOARDED, lang), show_alert=True)
+        return
+    await callback.answer()
+    bot = await callback.bot.get_me()
+    link = f"https://t.me/{bot.username}?start=ref_{code}"
+    await callback.message.answer(T.tr(INVITE_MESSAGE, lang).format(link=link))
 
 
 async def restore_searches(bot):

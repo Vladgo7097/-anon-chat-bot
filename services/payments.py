@@ -186,6 +186,8 @@ class PaymentService:
             if await s.scalar(select(Payment).where(Payment.telegram_payment_charge_id == charge_id)):
                 return ServiceResult(False, "ALREADY_PAID")
             user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
+            first_payment = not bool(await s.scalar(select(Payment.id).where(
+                Payment.user_id == user_id, Payment.status == "paid").limit(1)))
             now = utcnow()
             p.status, p.paid_at, p.telegram_payment_charge_id = "paid", now, charge_id
             p.telegram_payment_id = payload
@@ -197,6 +199,10 @@ class PaymentService:
                 if discount:
                     discount.status, discount.redeemed_at = "redeemed", now
             await event(s, user_id, "payment_success", f"payment:{p.id}")
+            if first_payment and config.OWNER_ID:
+                from services.notifications import enqueue
+                await enqueue(s, config.OWNER_ID, "owner_first_payment", f"owner_first_payment:{p.id}",
+                              f"💰 Первая оплата нового пользователя: {amount} ⭐ · {p.product}.")
             if p.product.startswith("premium_"):
                 base = max(now, user.premium_expires or now)
                 user.premium_expires = base + timedelta(seconds=p.duration_seconds)

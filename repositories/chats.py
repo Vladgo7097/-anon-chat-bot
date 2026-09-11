@@ -180,7 +180,7 @@ class ChatRepository:
                                   "😢 Собеседник покинул чат.", "menu")
                 for uid in (chat.user1_id, chat.user2_id):
                     await enqueue(s, uid, "rating_prompt", f"rate_prompt:{chat.session_id}:{uid}",
-                                  "Оцени собеседника:", chat.session_id)
+                                  "Нашли интересного собеседника?", chat.session_id)
         logging.getLogger(__name__).info("chat_ended", extra={"chat_session_id": chat.session_id, "user_id": user_id})
         return chat
 

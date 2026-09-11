@@ -12,7 +12,8 @@ from test_chat_duration import DatabaseCase
 
 class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.message = SimpleNamespace(answer=AsyncMock(), from_user=SimpleNamespace(id=1))
+        self.bot = SimpleNamespace(send_message=AsyncMock())
+        self.message = SimpleNamespace(answer=AsyncMock(), from_user=SimpleNamespace(id=1), bot=self.bot)
         self.message.answer.return_value.delete = AsyncMock()
         self.service = SimpleNamespace(
             enqueue=AsyncMock(return_value=ServiceResult(True, "ALREADY_SEARCHING")),
@@ -20,7 +21,9 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.redis = AsyncMock()
         self.redis.get.return_value = str(time.time())
         self.redis.zscore.return_value = 1
-        self.bot = SimpleNamespace(send_message=AsyncMock())
+        # notify_waiting_users() reads this set every time a search begins --
+        # empty by default so it's a no-op unless a test opts in.
+        self.redis.smembers.return_value = set()
         for target, value in (
             ("handlers.search.MatchingService", lambda: self.service),
             ("handlers.search.get_redis", AsyncMock(return_value=self.redis)),
@@ -296,3 +299,87 @@ class SearchLockTests(unittest.IsolatedAsyncioTestCase):
         released = await self.redis.eval(search._RELEASE_SCRIPT, 1, "search:lock:7", "my-token")
         self.assertEqual(released, 0)
         self.assertEqual(self.redis.store["search:lock:7"], "someone-elses-token")
+
+
+class FakeWaitingRedis:
+    """Just enough of the redis set/exists/delete surface notify_waiting_users
+    and cb_wait_for_match actually use."""
+
+    def __init__(self):
+        self.sets = {}
+        self.strings = {}
+
+    async def smembers(self, key):
+        return set(self.sets.get(key, set()))
+
+    async def sadd(self, key, *members):
+        self.sets.setdefault(key, set()).update(members)
+
+    async def srem(self, key, *members):
+        self.sets.get(key, set()).difference_update(members)
+
+    async def expire(self, key, ttl):
+        pass
+
+    async def set(self, key, value, ex=None, nx=False):
+        self.strings[key] = value
+        return True
+
+    async def exists(self, key):
+        return key in self.strings
+
+    async def delete(self, key):
+        self.strings.pop(key, None)
+
+
+class WaitingListTests(DatabaseCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.redis = FakeWaitingRedis()
+        p = patch("handlers.search.get_redis", AsyncMock(return_value=self.redis))
+        p.start()
+        self.addCleanup(p.stop)
+
+    async def test_opting_in_saves_the_alert_and_confirms_in_the_users_language(self):
+        callback = SimpleNamespace(from_user=SimpleNamespace(id=2), answer=AsyncMock(),
+                                    message=SimpleNamespace(edit_text=AsyncMock()))
+        await search.cb_wait_for_match(callback, lang="en")
+        self.assertIn(2, {int(m) for m in self.redis.sets["search:waiting_alerts"]})
+        self.assertTrue(await self.redis.exists("search:waiting_alert:2"))
+        callback.message.edit_text.assert_awaited_once()
+        self.assertIn("notify you", callback.message.edit_text.await_args.args[0])
+
+    async def test_a_newcomer_wakes_an_opted_in_user_in_their_own_language(self):
+        from sqlalchemy import select
+        from models.user import User
+        async with self.factory.begin() as s:
+            user2 = await s.scalar(select(User).where(User.telegram_id == 2))
+            user2.language = "uk"
+        await self.redis.set("search:waiting_alert:2", "1")
+        await self.redis.sadd("search:waiting_alerts", "2")
+        bot = SimpleNamespace(send_message=AsyncMock())
+        await search.notify_waiting_users(bot, newcomer_id=3)
+        bot.send_message.assert_awaited_once()
+        args = bot.send_message.await_args
+        self.assertEqual(args.args[0], 2)
+        self.assertIn("Хтось уже шукає", args.args[1])
+        # The alert is one-shot: consumed once fired, not left to refire.
+        self.assertEqual(self.redis.sets["search:waiting_alerts"], set())
+        self.assertFalse(await self.redis.exists("search:waiting_alert:2"))
+
+    async def test_the_newcomer_themself_is_never_notified(self):
+        await self.redis.set("search:waiting_alert:1", "1")
+        await self.redis.sadd("search:waiting_alerts", "1")
+        bot = SimpleNamespace(send_message=AsyncMock())
+        await search.notify_waiting_users(bot, newcomer_id=1)
+        bot.send_message.assert_not_awaited()
+
+    async def test_invite_link_uses_the_bots_own_username_not_a_hardcoded_one(self):
+        callback = SimpleNamespace(from_user=SimpleNamespace(id=1), answer=AsyncMock(),
+                                    message=SimpleNamespace(answer=AsyncMock()),
+                                    bot=SimpleNamespace(get_me=AsyncMock(
+                                        return_value=SimpleNamespace(username="totally_different_bot"))))
+        await search.cb_invite_friend(callback, lang="ru")
+        callback.message.answer.assert_awaited_once()
+        text = callback.message.answer.await_args.args[0]
+        self.assertIn("t.me/totally_different_bot?start=ref_", text)

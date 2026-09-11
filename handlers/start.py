@@ -21,7 +21,7 @@ class Onboarding(StatesGroup):
 LANGUAGE_TEXT = "🌐 Choose your language\nВыберите язык\nОберіть мову"
 
 WELCOME_TEXT = {
-    "ru": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привет!\n\nЭто анонимный чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nЗдесь можно знакомиться и общаться со случайными людьми,\nне раскрывая своё имя, username и Telegram ID.\n\nГотов начать?",
+    "ru": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привет!\n\nЭто анонимный чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nПоиск и переписка бесплатны. Собеседник не увидит твой username и Telegram ID, пока вы оба не согласитесь раскрыться.\n\nСервис для людей 18+. Для старта нужны только пол, возраст и принятие правил.\n\nГотов начать?",
     "en": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Hi!\n\nThis is an anonymous chat bot <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nHere you can meet and talk to random people\nwithout revealing your name, username or Telegram ID.\n\nReady to start?",
     "uk": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привіт!\n\nЦе анонімний чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nТут можна знайомитись і спілкуватися з випадковими людьми,\nне розкриваючи своє ім'я, username і Telegram ID.\n\nГотовий почати?",
 }

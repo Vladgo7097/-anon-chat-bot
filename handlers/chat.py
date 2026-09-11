@@ -65,8 +65,8 @@ UNDERSTAND_SEND_CONTACT = {"ru": "Понимаю, отправить конта�
 
 def rating_keyboard(session_id):
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='Понравилось', icon_custom_emoji_id="5350417283783084711", callback_data=f"v1:rate:{session_id}:1", style="success"),
-        InlineKeyboardButton(text='Не понравилось', icon_custom_emoji_id="5348132683304156113", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
+        InlineKeyboardButton(text='Да', icon_custom_emoji_id="5350417283783084711", callback_data=f"v1:rate:{session_id}:1", style="success"),
+        InlineKeyboardButton(text='Нет', icon_custom_emoji_id="5348132683304156113", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
     ]])
 
 
