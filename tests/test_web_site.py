@@ -295,7 +295,7 @@ class PageMarkupTests(unittest.TestCase):
         for name, text in self.pages():
             with self.subTest(name):
                 langs = set(re.findall(r'hreflang="([^"]+)"', text))
-                self.assertEqual(langs, {"ru", "en", "x-default"})
+                self.assertEqual(langs, {"ru", "en", "uk", "x-default"})
 
     def test_no_image_goes_without_a_description(self):
         for name, text in self.pages():
@@ -307,7 +307,7 @@ class PageMarkupTests(unittest.TestCase):
         # BreadcrumbList is one of the few rich results still shown for a
         # site like this one; FAQPage snippets were retired in 2023.
         for name, text in self.pages():
-            if name in {"index.html", "en/index.html"}:
+            if name in {"index.html", "en/index.html", "uk/index.html"}:
                 continue
             with self.subTest(name):
                 self.assertIn('"@type": "BreadcrumbList"', text)

@@ -92,12 +92,18 @@ async def not_found(request: Request, exc: StarletteHTTPException):
     """Themed 404 instead of a bare {"detail": "Not Found"} JSON blob --
     picks the RU or EN page by path prefix, same as the rest of the site."""
     if exc.status_code == 404:
-        # Named 404-ru.html/404-en.html (not 404.html) on purpose: Starlette's
-        # StaticFiles(html=True) auto-serves a root-level 404.html itself for
-        # any unmatched path -- bypassing this handler entirely and always
-        # answering in Russian regardless of /en/ -- so the real files live
-        # under names it won't recognize, and this handler picks between them.
-        page = "404-en.html" if request.url.path.startswith("/en/") else "404-ru.html"
+        # Named 404-ru.html/404-en.html/404-uk.html (not 404.html) on purpose:
+        # Starlette's StaticFiles(html=True) auto-serves a root-level 404.html
+        # itself for any unmatched path -- bypassing this handler entirely and
+        # always answering in Russian regardless of /en/ or /uk/ -- so the real
+        # files live under names it won't recognize, and this handler picks
+        # between them.
+        if request.url.path.startswith("/en/"):
+            page = "404-en.html"
+        elif request.url.path.startswith("/uk/"):
+            page = "404-uk.html"
+        else:
+            page = "404-ru.html"
         return FileResponse(STATIC_DIR / page, status_code=404,
                             headers={"Cache-Control": "no-cache"})
     return await http_exception_handler(request, exc)
