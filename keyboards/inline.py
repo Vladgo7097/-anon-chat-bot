@@ -33,6 +33,7 @@ def profile_kb(has_photo: bool = False) -> InlineKeyboardMarkup:
     rows += [
         [InlineKeyboardButton(text="Приватность", icon_custom_emoji_id="5350491749926058609", callback_data="profile:privacy")],
         [InlineKeyboardButton(text="Приглашения, стрик и награды", icon_custom_emoji_id="5345843457145453967", callback_data="profile:rewards",style="primary")],
+        [InlineKeyboardButton(text="🌐 Язык / Language", callback_data="language:menu:profile")],
         [InlineKeyboardButton(text="Удалить аккаунт", icon_custom_emoji_id="5337131193294938034", callback_data="profile:delete")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)

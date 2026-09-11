@@ -56,10 +56,11 @@ async def cmd_language(message: Message, lang: str = "ru"):
     await message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb())
 
 
-@settings_router.callback_query(F.data == "language:menu")
+@settings_router.callback_query(F.data.startswith("language:menu"))
 async def cb_language_menu(callback: CallbackQuery, lang: str = "ru"):
     await callback.answer()
-    await callback.message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb(back_callback="settings"))
+    back_callback = "profile" if callback.data == "language:menu:profile" else "settings"
+    await callback.message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb(back_callback=back_callback))
 
 
 @settings_router.callback_query(F.data.startswith("settings:gender:"))
