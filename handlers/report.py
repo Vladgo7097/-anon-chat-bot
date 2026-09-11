@@ -16,7 +16,7 @@ class ReportFlow(StatesGroup):
 
 
 @report_router.message(Command("report"))
-@report_router.message(F.text == T.REPORT)
+@report_router.message(F.text.in_(T.all_labels(T.REPORT)))
 async def cmd_report(message: Message):
     chat = await ChatService().active(message.from_user.id)
     if not chat:

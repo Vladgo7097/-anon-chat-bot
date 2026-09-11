@@ -13,7 +13,7 @@ class MemoryUsers:
     def __init__(self):
         self.user = SimpleNamespace(gender=None, age=None, onboarding_step="WELCOME",
             onboarding_completed=False, rules_version=None, rules_accepted_at=None,
-            is_banned=False, ban_expires=None, referrer_id=None, deleted_at=None)
+            is_banned=False, ban_expires=None, referrer_id=None, deleted_at=None, language="ru")
         self.lock = asyncio.Lock()
 
     async def get_or_create(self, *args):
@@ -25,6 +25,28 @@ class MemoryUsers:
 
 
 class OnboardingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_brand_new_user_picks_a_language_before_anything_else(self):
+        repo = MemoryUsers()
+        repo.user.language = None
+        service = OnboardingService(repo)
+        self.assertEqual((await service.start(1)).code, "LANGUAGE")
+        self.assertEqual((await service.advance(1, "begin")).code, "LANGUAGE")
+        self.assertEqual((await service.advance(1, "lang", "uk")).code, "WELCOME")
+        self.assertEqual(repo.user.language, "uk")
+
+    async def test_an_already_onboarded_user_with_no_language_skips_the_step(self):
+        # language is NULL for every account onboarded before this feature
+        # shipped -- step_for() must not knock a finished account back into
+        # onboarding just because that column happens to be unset.
+        repo = MemoryUsers()
+        repo.user.language = None
+        repo.user.gender, repo.user.age = "male", 23
+        repo.user.onboarding_completed = True
+        repo.user.rules_version = 1
+        from utils.time import utcnow
+        repo.user.rules_accepted_at = utcnow()
+        self.assertEqual(step_for(repo.user), "MENU")
+
     async def test_complete_and_resume_after_restart(self):
         repo = MemoryUsers()
         service = OnboardingService(repo)

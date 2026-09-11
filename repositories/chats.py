@@ -113,10 +113,18 @@ class ChatRepository:
             s.add_all([ActiveParticipant(user_id=uid, session_id=chat.session_id) for uid in (a_id, b_id)])
             from services.growth import event
             starter = icebreaker(chat.session_id)
+            by_id = {u.telegram_id: u for u in users}
+            MATCH_FOUND = {
+                "ru": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Если не знаешь, с чего начать: ",
+                "en": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Match found!\n\nSay hi first! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Not sure how to start: ",
+                "uk": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Співрозмовника знайдено!\n\nПиши першим! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Якщо не знаєш, з чого почати: ",
+            }
+            from locales import tr
             for uid in (a_id, b_id):
                 await event(s, uid, "chat_started", f"chat_started:{chat.session_id}:{uid}")
                 from services.notifications import enqueue
-                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Если не знаешь, с чего начать: "+starter,chat.session_id)
+                lang = getattr(by_id.get(uid), "language", None) or "ru"
+                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}",tr(MATCH_FOUND, lang)+starter,chat.session_id)
             for user in users:
                 entitlement = filters.get(user.telegram_id)
                 if entitlement and entitlement.kind == "gender_filter_one_match" and not premium_active(user) and user.settings_gender_filter != "a":

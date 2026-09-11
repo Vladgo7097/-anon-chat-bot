@@ -23,6 +23,9 @@ class User(Base):
     gender: Mapped[str | None] = mapped_column(String(8), nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     onboarding_step: Mapped[str] = mapped_column(String(16), default="WELCOME", server_default="WELCOME")
+    # NULL until the user picks one on the LANGUAGE onboarding step -- see
+    # services.onboarding.step_for().
+    language: Mapped[str | None] = mapped_column(String(2), nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     rules_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rules_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -56,7 +56,7 @@ class StartDispatchTests(unittest.TestCase):
                     await dp.feed_update(bot, update)
                     from handlers.start import WELCOME_TEXT
                     request = telegram.await_args.args[1]
-                    self.assertEqual(request.text, WELCOME_TEXT)
+                    self.assertEqual(request.text, WELCOME_TEXT["ru"])
                     self.assertEqual(request.chat_id, 123)
                 self.assertEqual(telegram.await_count, 2)
             from handlers.profile import ProfileEdit
@@ -79,7 +79,7 @@ class StartDispatchTests(unittest.TestCase):
                     from_user=User(id=123, is_bot=False, first_name="Test"), text="²")))
                 edit.assert_awaited_once_with(123, "age", None)
                 await state.clear()
-            from handlers.help import HELP_TEXT
+            from handlers.help import help_text
             from handlers.stats import format_stats
             stats = {"chats_count": 7, "total_chat_seconds": 3660, "rating_pct": 80}
             with (
@@ -90,7 +90,7 @@ class StartDispatchTests(unittest.TestCase):
                 patch.object(bot.session, "make_request", telegram),
             ):
                 for user_id in (123, 99):
-                    for text, expected in ((T.STATS, format_stats(stats)), (T.HELP, HELP_TEXT)):
+                    for text, expected in ((T.STATS, format_stats(stats)), (T.HELP, help_text("ru"))):
                         telegram.reset_mock()
                         await dp.feed_update(bot, Update(update_id=10, message=Message(
                             message_id=10, date=datetime.now(timezone.utc),
@@ -121,7 +121,7 @@ class StartDispatchTests(unittest.TestCase):
         from handlers.profile import ProfileEdit
         from handlers.report import ReportFlow
         from handlers.start import Onboarding
-        from handlers.help import HELP_TEXT
+        from handlers.help import help_text
         from keyboards import texts as T
 
         async def dispatch(text):
@@ -157,7 +157,7 @@ class StartDispatchTests(unittest.TestCase):
                     await state.set_state(flow)
                     await dispatch(action)
                     telegram.assert_awaited_once()
-                    self.assertEqual(telegram.await_args.args[1].text, HELP_TEXT)
+                    self.assertEqual(telegram.await_args.args[1].text, help_text("ru"))
             for flow in (AdminMessage.CONTENT, AdminBroadcast.CONTENT):
                 await state.set_state(flow)
                 await state.update_data(target_id=123)
@@ -178,7 +178,7 @@ class StartDispatchTests(unittest.TestCase):
         from utils.middleware import AccessMiddleware
         from handlers.profile import ProfileEdit
         from handlers.report import ReportFlow
-        from handlers.help import HELP_TEXT
+        from handlers.help import help_text
         from keyboards import texts as T
 
         dp.message.outer_middleware(AccessMiddleware())
@@ -236,7 +236,7 @@ class StartDispatchTests(unittest.TestCase):
                 self.assertIsNone(await state.get_state())
             step.return_value = "AGE"
             await dispatch("/help@offline_test_bot")
-            self.assertEqual(telegram.await_args.args[1].text, HELP_TEXT)
+            self.assertEqual(telegram.await_args.args[1].text, help_text("ru"))
 
         with (
             patch.object(bot.session, "make_request", telegram),

@@ -72,7 +72,7 @@ async def show_profile(message, user_id):
 
 
 @profile_router.message(Command("profile"))
-@profile_router.message(F.text == T.PROFILE)
+@profile_router.message(F.text.in_(T.all_labels(T.PROFILE)))
 async def cmd_profile(message: Message, state: FSMContext):
     await state.clear()
     await show_profile(message, message.from_user.id)
@@ -128,11 +128,12 @@ async def save_field(message: Message, state: FSMContext):
             return
         result = await ProfileService().add_photo(message.from_user.id, message.photo[-1].file_id)
     elif step == "GENDER":
-        result = await ProfileService().edit(message.from_user.id, "gender", {T.MALE: "male", T.FEMALE: "female"}.get(text))
+        value = "male" if text in T.all_labels(T.MALE) else "female" if text in T.all_labels(T.FEMALE) else None
+        result = await ProfileService().edit(message.from_user.id, "gender", value)
     else:
-        if text in {T.PAGE_NEXT, T.PAGE_PREV}:
+        if text in T.all_labels(T.PAGE_NEXT) | T.all_labels(T.PAGE_PREV):
             page = (await state.get_data()).get("age_page", 0)
-            page = max(0, min(6, page + (1 if text == T.PAGE_NEXT else -1)))
+            page = max(0, min(6, page + (1 if text in T.all_labels(T.PAGE_NEXT) else -1)))
             await state.update_data(age_page=page)
             await message.answer("🎂 Выбери возраст:", reply_markup=onboarding_kb("AGE", page))
             return

@@ -1,7 +1,18 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from keyboards import texts as T
+from locales import LANGS
 
 SEGMENT_TITLES = {"all": "все пользователи", "premium": "Premium",
                   "inactive": "неактивные 7+ дней", "nopay": "без покупок"}
+
+
+def language_kb(back_callback=None):
+    rows = [[InlineKeyboardButton(
+        text=f"{T.LANGUAGE_FLAGS[code]} {T.LANGUAGE_NAMES[code]}",
+        callback_data=f"lang:{code}")] for code in LANGS]
+    if back_callback:
+        rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data=back_callback)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def back_kb() -> InlineKeyboardMarkup:
@@ -46,6 +57,7 @@ def settings_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="36+", icon_custom_emoji_id="5386637391530317781", callback_data="settings:age:36+"),
             InlineKeyboardButton(text="Любой", icon_custom_emoji_id="5271934788037517525", callback_data="settings:age:any"),
         ],
+        [InlineKeyboardButton(text="🌐 Язык / Language", callback_data="language:menu")],
     ])
 
 

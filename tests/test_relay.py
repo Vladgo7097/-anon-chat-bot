@@ -46,7 +46,7 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.bot.copy_message.side_effect=TelegramForbiddenError(method=CopyMessage(chat_id=2,from_chat_id=1,message_id=10),message="blocked")
         with patch("handlers.chat.finish",AsyncMock()) as finish:
             await forward_message(self.message)
-        finish.assert_awaited_once_with(self.message,1,"unreachable")
+        finish.assert_awaited_once_with(self.message,1,"unreachable",lang="ru")
 
     async def test_reply_uses_partner_message_id(self):
         self.message.reply_to_message = SimpleNamespace(message_id=9)
@@ -70,10 +70,10 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
     async def test_next_ends_chat_before_starting_search(self):
         from handlers.chat import next_chat
         order = []
-        async def ended(*args):
+        async def ended(*args, **kwargs):
             order.append("ended")
             return True
-        async def started(*args):
+        async def started(*args, **kwargs):
             order.append("search")
         with patch("handlers.chat.get_redis", AsyncMock()), patch("services.settings.bot_value", AsyncMock(return_value=0)), \
              patch("handlers.chat.finish", AsyncMock(side_effect=ended)), patch("handlers.search.begin_search", AsyncMock(side_effect=started)):

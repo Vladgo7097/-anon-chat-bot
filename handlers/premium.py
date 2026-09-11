@@ -41,7 +41,7 @@ async def show_premium(message, user_id):
     await message.answer(text, reply_markup=await product_keyboard(["premium_1m", "premium_3m", "premium_12m"]))
 
 
-@premium_router.message(F.text == T.PREMIUM)
+@premium_router.message(F.text.in_(T.all_labels(T.PREMIUM)))
 async def cmd_premium(message: Message):
     await show_premium(message, message.from_user.id)
 

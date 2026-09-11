@@ -44,7 +44,7 @@ async def cb_reveal_upgrade(callback: CallbackQuery):
     await paid_reveal(callback.message,callback.from_user.id,parts[-1],"reveal_priority_request" if parts[1]=="rp" else "reveal_status")
 
 
-@reveal_router.message(F.text == T.REVEAL)
+@reveal_router.message(F.text.in_(T.all_labels(T.REVEAL)))
 async def cmd_reveal(message: Message):
     await show_reveal(message, message.from_user.id)
 

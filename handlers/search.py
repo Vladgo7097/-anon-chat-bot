@@ -16,6 +16,35 @@ from services.chats import ChatService
 import config
 
 logger = logging.getLogger(__name__)
+
+ALREADY_SEARCHING = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Поиск уже идёт.",
+                      "en": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Search is already running.",
+                      "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Пошук вже триває."}
+FAIL_REASONS = {
+    "BANNED": {"ru": "⛔ Ты заблокирован.", "en": "⛔ You are banned.", "uk": "⛔ Тебе заблоковано."},
+    "ALREADY_CHATTING": {"ru": "Ты уже в диалоге. Нажми «Стоп».", "en": "You're already chatting. Tap \"Stop\".",
+                          "uk": "Ти вже в діалозі. Натисни «Стоп»."},
+    "ONBOARDING_REQUIRED": {"ru": "Сначала заверши регистрацию: /start", "en": "Finish registration first: /start",
+                             "uk": "Спочатку заверши реєстрацію: /start"},
+}
+SEARCHING_STATUS = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу собеседника...\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {online}",
+                     "en": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Looking for a match...\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Online now: {online}",
+                     "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Шукаю співрозмовника...\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн зараз: {online}"}
+SEARCHING_PROGRESS = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{dots}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {online}",
+                       "en": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Searching{dots}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Online now: {online}",
+                       "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Шукаю{dots}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн зараз: {online}"}
+SEARCH_STOPPED = {"ru": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Поиск остановлен.",
+                   "en": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Search stopped.",
+                   "uk": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пошук зупинено."}
+NOBODY_YET = {"ru": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?",
+              "en": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> No one's around yet. Widen your search filters?",
+              "uk": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Поки що нікого немає. Розширити критерії пошуку?"}
+SEARCH_UNAVAILABLE = {"ru": "Поиск временно недоступен. Попробуй ещё раз.",
+                       "en": "Search is temporarily unavailable. Try again.",
+                       "uk": "Пошук тимчасово недоступний. Спробуй ще раз."}
+CANCEL_LABEL = {"ru": "Отменить поиск", "en": "Cancel search", "uk": "Скасувати пошук"}
+SEARCH_CANCELLED_TOAST = {"ru": "Поиск отменён", "en": "Search cancelled", "uk": "Пошук скасовано"}
+
 _tasks = {}
 _status_messages = {}
 # Compare-and-delete: only the holder that set the token releases the lock, so a
@@ -77,48 +106,45 @@ async def cancel_search(user_id):
             pass
 
 
-async def begin_search(message, user_id):
+async def begin_search(message, user_id, lang="ru"):
     async with search_lock(user_id):
-        await _begin_search(message, user_id)
+        await _begin_search(message, user_id, lang)
 
 
-def search_status_keyboard(offer=None):
+def search_status_keyboard(offer=None, lang="ru"):
     rows = list(offer.inline_keyboard) if offer else []
     return InlineKeyboardMarkup(inline_keyboard=rows + [[
-        InlineKeyboardButton(text="Отменить поиск", icon_custom_emoji_id="5273914604752216432", callback_data="search:cancel")]])
+        InlineKeyboardButton(text=T.tr(CANCEL_LABEL, lang), icon_custom_emoji_id="5273914604752216432", callback_data="search:cancel")]])
 
 
-async def _begin_search(message, user_id):
+async def _begin_search(message, user_id, lang="ru"):
     result = await MatchingService().enqueue(user_id)
     task = _tasks.get(user_id)
     if result.code == "ALREADY_SEARCHING" and task and not task.done():
-        await message.answer("<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Поиск уже идёт.", reply_markup=search_kb_reply())
+        await message.answer(T.tr(ALREADY_SEARCHING, lang), reply_markup=search_kb_reply(lang))
         return
     if not result.ok:
         # Send the chat keyboard along with the "press Стоп" answer: a user whose
         # match notice never arrived still has the menu keyboard on screen and no
         # Стоп button to press, which is a dead end.
-        markup = chat_kb_reply() if result.code == "ALREADY_CHATTING" else None
-        await message.answer({"BANNED": "⛔ Ты заблокирован.", "ALREADY_CHATTING": "Ты уже в диалоге. Нажми «Стоп».",
-                              "ONBOARDING_REQUIRED": "Сначала заверши регистрацию: /start"}[result.code],
-                             reply_markup=markup)
+        markup = chat_kb_reply(lang) if result.code == "ALREADY_CHATTING" else None
+        await message.answer(T.tr(FAIL_REASONS[result.code], lang), reply_markup=markup)
         return
     await cancel_task(user_id)
     try:
         status = await message.answer(
-            f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу собеседника...\n\n"
-            f"<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}",
-            reply_markup=search_status_keyboard())
+            T.tr(SEARCHING_STATUS, lang).format(online=await get_online_count()),
+            reply_markup=search_status_keyboard(lang=lang))
     except Exception:
         # Do not leave an orphan queue entry when Telegram rejects the status.
         await MatchingService().cancel(user_id)
         raise
-    task = asyncio.create_task(search_loop(status, user_id))
+    task = asyncio.create_task(search_loop(status, user_id, lang=lang))
     _tasks[user_id] = task
     _status_messages[user_id] = status
 
 
-async def search_loop(status, user_id, bot=None):
+async def search_loop(status, user_id, bot=None, lang="ru"):
     bot = bot or status.bot
     try:
         r = await get_redis()
@@ -162,12 +188,12 @@ async def search_loop(status, user_id, bot=None):
                         # would just contradict that message.
                         return
                     try:
-                        await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Поиск остановлен.", reply_markup=main_menu_kb())
+                        await bot.send_message(user_id, T.tr(SEARCH_STOPPED, lang), reply_markup=main_menu_kb(lang))
                     except (TelegramForbiddenError, TelegramBadRequest):
                         pass
                     return
                 try:
-                    await bot.send_message(user_id, "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?", reply_markup=main_menu_kb())
+                    await bot.send_message(user_id, T.tr(NOBODY_YET, lang), reply_markup=main_menu_kb(lang))
                 except (TelegramForbiddenError, TelegramBadRequest):
                     pass
                 return
@@ -181,7 +207,8 @@ async def search_loop(status, user_id, bot=None):
                 from utils.db import is_premium
                 if status is not None and time.monotonic() >= status_retry_at:
                     offer = await product_keyboard(["instant_search"]) if elapsed > await bot_value("search_slow_offer_seconds", 20) and not await is_premium(user_id) else None
-                    await status.edit_text(f"<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{'.' * (elapsed//2%3+1)}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {await get_online_count()}", reply_markup=search_status_keyboard(offer))
+                    dots = "." * (elapsed//2%3+1)
+                    await status.edit_text(T.tr(SEARCHING_PROGRESS, lang).format(dots=dots, online=await get_online_count()), reply_markup=search_status_keyboard(offer, lang))
                     if offer and not offer_tracked:
                         from services.growth import track
                         await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")
@@ -197,7 +224,7 @@ async def search_loop(status, user_id, bot=None):
         logger.exception("event=search_failed user_id=%s", user_id)
         await MatchingService().cancel(user_id)
         try:
-            await bot.send_message(user_id, "Поиск временно недоступен. Попробуй ещё раз.", reply_markup=main_menu_kb())
+            await bot.send_message(user_id, T.tr(SEARCH_UNAVAILABLE, lang), reply_markup=main_menu_kb(lang))
         except (TelegramForbiddenError, TelegramBadRequest):
             pass
     finally:
@@ -207,31 +234,31 @@ async def search_loop(status, user_id, bot=None):
 
 
 @search_router.message(Command("search"))
-@search_router.message(F.text == T.SEARCH)
-async def cmd_search(message: Message):
-    await begin_search(message, message.from_user.id)
+@search_router.message(F.text.in_(T.all_labels(T.SEARCH)))
+async def cmd_search(message: Message, lang: str = "ru"):
+    await begin_search(message, message.from_user.id, lang)
 
 
 @search_router.callback_query(F.data == "search:start")
 @search_router.callback_query(F.data == "search:repeat")
-async def cb_search_start(callback: CallbackQuery):
+async def cb_search_start(callback: CallbackQuery, lang: str = "ru"):
     await callback.answer()
-    await begin_search(callback.message, callback.from_user.id)
+    await begin_search(callback.message, callback.from_user.id, lang)
 
 
-@search_router.message(F.text == T.CANCEL)
-async def cmd_cancel(message: Message):
+@search_router.message(F.text.in_(T.all_labels(T.CANCEL)))
+async def cmd_cancel(message: Message, lang: str = "ru"):
     async with search_lock(message.from_user.id):
         await cancel_search(message.from_user.id)
-    await message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
+    await message.answer(T.menu_text(lang), reply_markup=main_menu_kb(lang))
 
 
 @search_router.callback_query(F.data == "search:cancel")
-async def cb_cancel(callback: CallbackQuery):
-    await callback.answer("Поиск отменён")
+async def cb_cancel(callback: CallbackQuery, lang: str = "ru"):
+    await callback.answer(T.tr(SEARCH_CANCELLED_TOAST, lang))
     async with search_lock(callback.from_user.id):
         await cancel_search(callback.from_user.id)
-    await callback.message.answer(T.MENU_TEXT, reply_markup=main_menu_kb())
+    await callback.message.answer(T.menu_text(lang), reply_markup=main_menu_kb(lang))
 
 
 async def restore_searches(bot):
@@ -245,6 +272,9 @@ async def restore_searches(bot):
             if not await r.exists(f"search:user:{user_id}"):
                 await MatchingService().cancel(user_id)
                 continue
+            # Bot-restart recovery only: no live event to read a language from,
+            # and this is rare/short-lived enough that defaulting to Russian
+            # here (rather than a real DB round-trip) is an acceptable trade.
             _tasks[user_id] = asyncio.create_task(search_loop(None, user_id, bot))
 
 

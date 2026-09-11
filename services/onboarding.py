@@ -12,6 +12,12 @@ def banned(user):
 
 
 def step_for(user):
+    # Only genuinely new/incomplete accounts are sent through LANGUAGE --
+    # a user who already finished onboarding before this column existed
+    # (language is NULL until the migration's backfill or a manual choice)
+    # must not be knocked back into onboarding just because it's unset.
+    if not getattr(user, "language", None) and not user.onboarding_completed:
+        return "LANGUAGE"
     if user.gender not in {"male", "female"}:
         return "WELCOME" if user.onboarding_step == "WELCOME" else "GENDER"
     if user.age is None or not config.MIN_AGE <= user.age <= config.MAX_AGE:
@@ -30,7 +36,7 @@ class OnboardingService:
 
         async def apply(user, session):
             if banned(user):
-                return ServiceResult(False, "BANNED", {"until": user.ban_expires})
+                return ServiceResult(False, "BANNED", {"until": user.ban_expires, "language": getattr(user, "language", None)})
             if payload.startswith("ref_") and not user.referrer_id and not user.onboarding_completed:
                 value = payload.removeprefix("ref_")
                 if value.isalnum() and len(value)<=32:
@@ -55,7 +61,7 @@ class OnboardingService:
                 source = re.sub(r"[^A-Za-z0-9_-]", "", payload)[:48] or "none"
                 await event(session, telegram_id, "start_source", f"start_source:{telegram_id}:{source}")
             user.deleted_at = None
-            return ServiceResult(True, step_for(user))
+            return ServiceResult(True, step_for(user), {"language": getattr(user, "language", None)})
         result = await self.repository.transition(telegram_id, apply)
         if result.code == "MENU" and isinstance(self.repository, UserRepository):
             from services.growth import StreakService
@@ -76,7 +82,9 @@ class OnboardingService:
             # matching once it reaches MENU again — start() clears this for
             # the /start path, advance() must for every other one.
             user.deleted_at = None
-            if action == "begin" and step == "WELCOME":
+            if action == "lang" and step == "LANGUAGE" and value in {"ru", "en", "uk"}:
+                user.language = value
+            elif action == "begin" and step == "WELCOME":
                 user.onboarding_step = "GENDER"
             elif action == "gender" and step == "GENDER" and value in {"male", "female"}:
                 user.gender, user.onboarding_step = value, "AGE"
@@ -98,4 +106,17 @@ class OnboardingService:
                     from services.growth import event
                     await event(session, telegram_id, "onboarding_completed", f"onboarding:{telegram_id}")
             return ServiceResult(True, step_for(user))
+        return await self.repository.transition(telegram_id, apply)
+
+    async def set_language(self, telegram_id, value):
+        """Change language from Settings, outside the onboarding flow -- does
+        not touch onboarding_step, unlike advance()'s "lang" action."""
+        if value not in {"ru", "en", "uk"}:
+            return ServiceResult(False, "INVALID")
+
+        async def apply(user, session):
+            if not user:
+                return ServiceResult(False, "NOT_FOUND")
+            user.language = value
+            return ServiceResult(True, "SAVED")
         return await self.repository.transition(telegram_id, apply)
