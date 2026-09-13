@@ -103,6 +103,16 @@ class StartDispatchTests(unittest.TestCase):
                         self.assertEqual(telegram.await_args.args[1].chat_id, user_id)
                 self.assertEqual(get_stats.await_count, 2)
                 find_user.assert_not_awaited()
+                # Regression: cmd_stats used to match only the exact Russian
+                # label, so an EN/UK user's own-language button silently did
+                # nothing -- must match every language's label.
+                telegram.reset_mock()
+                await dp.feed_update(bot, Update(update_id=12, message=Message(
+                    message_id=12, date=datetime.now(timezone.utc),
+                    chat=Chat(id=123, type="private"),
+                    from_user=User(id=123, is_bot=False, first_name="Test"), text="Stats")))
+                telegram.assert_awaited_once()
+                self.assertEqual(telegram.await_args.args[1].text, format_stats(stats))
                 for text in ("123", "#ABC123"):
                     await dp.feed_update(bot, Update(update_id=11, message=Message(
                         message_id=11, date=datetime.now(timezone.utc),
