@@ -17,7 +17,9 @@ class ProfileService:
             return ServiceResult(False, "INVALID")
         if field == "age" and (not isinstance(value, int) or not config.MIN_AGE <= value <= config.MAX_AGE):
             return ServiceResult(False, "INVALID")
-        if field not in {"gender", "age"}:
+        if field == "bio" and (not isinstance(value, str) or len(value) > 150):
+            return ServiceResult(False, "INVALID")
+        if field not in {"gender", "age", "bio"}:
             return ServiceResult(False, "INVALID")
         await MatchingService().cancel(user_id)
         async with async_session.begin() as s:

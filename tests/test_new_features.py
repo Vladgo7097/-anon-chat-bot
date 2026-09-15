@@ -58,10 +58,35 @@ class RatingCallbackTests(unittest.IsolatedAsyncioTestCase):
         callback = SimpleNamespace(
             data="v1:rate:session-1:1", from_user=SimpleNamespace(id=1), answer=AsyncMock(),
             message=SimpleNamespace(edit_text=AsyncMock(side_effect=TelegramBadRequest(
-                method=SimpleNamespace(), message="message to edit not found"))))
-        with patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)):
+                method=SimpleNamespace(), message="message to edit not found")), answer=AsyncMock()),
+            bot=SimpleNamespace(get_me=AsyncMock(return_value=SimpleNamespace(username="anonim_chatqbot"))))
+        with (patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)),
+              patch("repositories.users.UserRepository.get", AsyncMock(return_value=None))):
             await cb_rate(callback)  # must not raise
         callback.answer.assert_awaited_once_with("Спасибо за оценку!")
+
+    async def test_a_positive_rating_offers_a_referral_link(self):
+        from handlers.rating import cb_rate
+        user = SimpleNamespace(referral_code="abc123")
+        callback = SimpleNamespace(
+            data="v1:rate:session-1:1", from_user=SimpleNamespace(id=1), answer=AsyncMock(),
+            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
+            bot=SimpleNamespace(get_me=AsyncMock(return_value=SimpleNamespace(username="anonim_chatqbot"))))
+        with (patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)),
+              patch("repositories.users.UserRepository.get", AsyncMock(return_value=user))):
+            await cb_rate(callback)
+        callback.message.answer.assert_awaited_once()
+        markup = callback.message.answer.await_args.kwargs["reply_markup"]
+        self.assertIn("ref_abc123", markup.inline_keyboard[0][0].url)
+
+    async def test_a_negative_rating_does_not_offer_a_referral_link(self):
+        from handlers.rating import cb_rate
+        callback = SimpleNamespace(
+            data="v1:rate:session-1:-1", from_user=SimpleNamespace(id=1), answer=AsyncMock(),
+            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()))
+        with patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)):
+            await cb_rate(callback)
+        callback.message.answer.assert_not_awaited()
 
 
 class SettingsSaveTests(unittest.IsolatedAsyncioTestCase):

@@ -29,7 +29,7 @@ def search_kb_reply(lang="ru"):
 
 def onboarding_kb(step, page=0, lang="ru"):
     if step == "WELCOME":
-        return keyboard([[T.BEGIN]], lang)
+        return keyboard([[T.MALE, T.FEMALE]], lang)
     if step == "GENDER":
         return keyboard([[T.MALE, T.FEMALE]], lang)
     if step == "AGE":

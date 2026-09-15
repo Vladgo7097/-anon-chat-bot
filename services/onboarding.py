@@ -86,7 +86,10 @@ class OnboardingService:
                 user.language = value
             elif action == "begin" and step == "WELCOME":
                 user.onboarding_step = "GENDER"
-            elif action == "gender" and step == "GENDER" and value in {"male", "female"}:
+            elif action == "gender" and step in {"WELCOME", "GENDER"} and value in {"male", "female"}:
+                # WELCOME and GENDER are shown as a single combined screen now
+                # (see onboarding_kb) -- a gender tap right there must resolve
+                # in one step instead of requiring a separate "begin" first.
                 user.gender, user.onboarding_step = value, "AGE"
             elif action == "age" and step == "AGE":
                 if not isinstance(value, int) or not config.MIN_AGE <= value <= config.MAX_AGE:

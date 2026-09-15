@@ -11,6 +11,27 @@ from models.chat import Chat, ActiveParticipant
 from utils.time import utcnow
 from services.onboarding import banned
 
+UNBAN_TEXT = {"ru": "✅ Срок блокировки истёк. Добро пожаловать обратно!",
+              "en": "✅ Your ban has expired. Welcome back!",
+              "uk": "✅ Термін блокування минув. Ласкаво просимо назад!"}
+ONBOARDING_NUDGE_TEXT = {"ru": "Ты почти зарегистрирован — остался один шаг, и можно искать собеседника.",
+                         "en": "You're almost registered — one step left, then you can start searching.",
+                         "uk": "Ти майже зареєстрований — залишився один крок, і можна шукати співрозмовника."}
+PREMIUM_EXPIRY_TEXT = {"ru": "⏰ Твой Premium заканчивается завтра. Продлить?",
+                       "en": "⏰ Your Premium ends tomorrow. Renew?",
+                       "uk": "⏰ Твій Premium закінчується завтра. Продовжити?"}
+INACTIVE_TEXT = {"ru": "👋 Скучаем! За это время в боте было {count} новых завершённых диалогов.",
+                 "en": "👋 We miss you! {count} new chats have wrapped up since you left.",
+                 "uk": "👋 Сумуємо! За цей час у боті відбулося {count} нових завершених діалогів."}
+
+
+def _lang(user):
+    return getattr(user, "language", None) or "ru"
+
+
+def _tr(texts, user):
+    return texts.get(_lang(user), texts["ru"])
+
 
 def broadcast_segment(query, segment, now=None):
     """Single definition of an audience; counting and expanding must not drift."""
@@ -113,7 +134,7 @@ class NotificationService:
                 for user in users:
                     if user.is_banned and user.ban_expires and user.ban_expires <= now:
                         notice(user, "unban", f"unban_expired:{user.telegram_id}:{user.ban_expires.isoformat()}",
-                               "✅ Срок блокировки истёк. Добро пожаловать обратно!", "menu")
+                               _tr(UNBAN_TEXT, user), "menu")
                         user.is_banned = False
                     if user.is_premium and user.premium_expires and user.premium_expires <= now:
                         user.is_premium = False
@@ -126,16 +147,15 @@ class NotificationService:
                                 and marketing_enabled
                                 and json.loads(user.notification_settings or "{}").get("marketing", True)):
                             notice(user, "onboarding_nudge", f"onboarding_nudge:{user.telegram_id}",
-                                   "Ты почти зарегистрирован — остался один шаг, и можно искать собеседника.",
-                                   "menu", True)
+                                   _tr(ONBOARDING_NUDGE_TEXT, user), "menu", True)
                         continue
                     if user.premium_expires and now < user.premium_expires <= now+timedelta(days=1):
                         notice(user, "premium_expiry", f"expiry:{user.telegram_id}:{user.premium_expires.isoformat()}",
-                               "⏰ Твой Premium заканчивается завтра. Продлить?", "premium")
+                               _tr(PREMIUM_EXPIRY_TEXT, user), "premium")
                     if (marketing_enabled and json.loads(user.notification_settings or "{}").get("marketing", True)
                             and user.telegram_id not in recent and user.telegram_id in counts):
                         notice(user, "inactive", f"inactive:{user.telegram_id}:{now.date()}",
-                               f"👋 Скучаем! За это время в боте было {counts[user.telegram_id]} новых завершённых диалогов.",
+                               _tr(INACTIVE_TEXT, user).format(count=counts[user.telegram_id]),
                                "search:start", True)
                 await s.execute(update(Ban).where(Ban.user_id.in_(ids), Ban.is_active.is_(True),
                     Ban.expires_at <= now).values(is_active=False))

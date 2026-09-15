@@ -43,6 +43,7 @@ def profile_edit_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Пол", icon_custom_emoji_id="5366121041426922772", callback_data="profile:set_gender")],
         [InlineKeyboardButton(text="Возраст", icon_custom_emoji_id="5452055425690123301", callback_data="profile:set_age")],
+        [InlineKeyboardButton(text="О себе", icon_custom_emoji_id="5301173701323028420", callback_data="profile:set_bio")],
         [InlineKeyboardButton(text="Назад в профиль", icon_custom_emoji_id="5258236805890710909", callback_data="profile")],
     ])
 

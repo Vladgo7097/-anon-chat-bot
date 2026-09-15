@@ -16,6 +16,7 @@ from utils.db import get_user_stats
 class ProfileEdit(StatesGroup):
     GENDER = State()
     AGE = State()
+    BIO = State()
     PHOTO = State()
     DELETE_CONFIRM = State()
 
@@ -60,7 +61,8 @@ async def show_profile(message, user_id):
     if s['profile_photo']:
         extra = f" (+{s['extra_photos_count']})" if s['extra_photos_count'] else ""
         photos_line = f"\n<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> Фото: 1{extra}"
-    text = (f"<tg-emoji emoji-id=\"5976585328985643006\">🧑‍🧑‍🧒</tg-emoji> Твой профиль\n\n<tg-emoji emoji-id=\"5965485570124681987\">🆔</tg-emoji> ID: {s['anon_id']}\n<tg-emoji emoji-id=\"{gender_icon[0]}\">{gender_icon[1]}</tg-emoji> Пол: {gender}\n<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Возраст: {s['age']}\n<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> В боте с: {s['created_at']:%d.%m.%Y}{photos_line}\n\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов проведено: {s['chats_count']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Лайков: {s['likes']}   <tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Дизлайков: {s['dislikes']}\n<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}")
+    bio_line = f"\n<tg-emoji emoji-id=\"5301173701323028420\">✏️</tg-emoji> О себе: {s['bio']}" if s.get('bio') else ""
+    text = (f"<tg-emoji emoji-id=\"5976585328985643006\">🧑‍🧑‍🧒</tg-emoji> Твой профиль\n\n<tg-emoji emoji-id=\"5965485570124681987\">🆔</tg-emoji> ID: {s['anon_id']}\n<tg-emoji emoji-id=\"{gender_icon[0]}\">{gender_icon[1]}</tg-emoji> Пол: {gender}\n<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Возраст: {s['age']}\n<tg-emoji emoji-id=\"5258105663359294787\">📅</tg-emoji> В боте с: {s['created_at']:%d.%m.%Y}{photos_line}{bio_line}\n\n<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов проведено: {s['chats_count']}\n<tg-emoji emoji-id=\"5350417283783084711\">👍</tg-emoji> Лайков: {s['likes']}   <tg-emoji emoji-id=\"5348132683304156113\">👎</tg-emoji> Дизлайков: {s['dislikes']}\n<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}")
     kb = profile_kb(has_photo=bool(s['profile_photo']))
     if s['profile_photo']:
         try:
@@ -91,15 +93,19 @@ async def cb_edit(callback: CallbackQuery):
     await callback.message.answer("Что хочешь изменить?", reply_markup=profile_edit_kb())
 
 
-@profile_router.callback_query(F.data.in_({"profile:set_gender", "profile:set_age", "profile:photo"}))
+@profile_router.callback_query(F.data.in_({"profile:set_gender", "profile:set_age", "profile:set_bio", "profile:photo"}))
 async def cb_field(callback: CallbackQuery, state: FSMContext):
     field = callback.data.split(":")[-1]
-    step = {"set_gender": "GENDER", "set_age": "AGE", "photo": "PHOTO"}[field]
+    step = {"set_gender": "GENDER", "set_age": "AGE", "set_bio": "BIO", "photo": "PHOTO"}[field]
     await state.set_state(getattr(ProfileEdit, step))
     await state.update_data(age_page=0)
     await callback.answer()
-    await callback.message.answer({"GENDER": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Выбери пол:", "AGE": "🎂 Выбери возраст:", "PHOTO": "<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> Отправь фото профиля. Оно будет показано собеседнику только после взаимного раскрытия."}[step],
-        reply_markup=onboarding_kb(step) if step != "PHOTO" else main_menu_kb())
+    await callback.message.answer({
+        "GENDER": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Выбери пол:",
+        "AGE": "🎂 Выбери возраст:",
+        "BIO": "<tg-emoji emoji-id=\"5301173701323028420\">✏️</tg-emoji> Пару слов о себе, до 150 символов. Видно собеседнику в профиле. Пришли «-», чтобы очистить:",
+        "PHOTO": "<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> Отправь фото профиля. Оно будет показано собеседнику только после взаимного раскрытия."}[step],
+        reply_markup=onboarding_kb(step) if step not in {"PHOTO", "BIO"} else main_menu_kb())
 
 
 @profile_router.callback_query(F.data == "profile:photo:delete")
@@ -114,6 +120,7 @@ async def cb_delete_photo(callback: CallbackQuery):
 
 @profile_router.message(ProfileEdit.GENDER)
 @profile_router.message(ProfileEdit.AGE)
+@profile_router.message(ProfileEdit.BIO)
 @profile_router.message(ProfileEdit.PHOTO)
 async def save_field(message: Message, state: FSMContext):
     step = (await state.get_state()).split(":")[-1]
@@ -127,6 +134,15 @@ async def save_field(message: Message, state: FSMContext):
             await message.answer("Отправь фотографию.")
             return
         result = await ProfileService().add_photo(message.from_user.id, message.photo[-1].file_id)
+    elif step == "BIO":
+        if not text:
+            await message.answer("Отправь текст, или «-», чтобы очистить.")
+            return
+        value = "" if text.strip() == "-" else text
+        if len(value) > 150:
+            await message.answer("Слишком длинно — до 150 символов. Попробуй короче.")
+            return
+        result = await ProfileService().edit(message.from_user.id, "bio", value)
     elif step == "GENDER":
         value = "male" if text in T.all_labels(T.MALE) else "female" if text in T.all_labels(T.FEMALE) else None
         result = await ProfileService().edit(message.from_user.id, "gender", value)

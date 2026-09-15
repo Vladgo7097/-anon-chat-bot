@@ -39,6 +39,14 @@ class ProfileDeleteTests(DatabaseCase):
             self.assertIsNone(user.username)
             self.assertEqual(user.onboarding_step, "WELCOME")
 
+    async def test_bio_is_wiped_on_delete_like_the_rest_of_the_profile(self):
+        await UserRepository().get_or_create(9005, "u", "N")
+        await ProfileService().edit(9005, "bio", "Coffee and long walks")
+        await ProfileService().delete(9005)
+        async with self.factory() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 9005))
+            self.assertIsNone(user.bio)
+
     async def test_a_row_missing_before_the_second_transaction_is_reported_cleanly(self):
         await UserRepository().get_or_create(9002, "u", "N")
 
@@ -70,6 +78,42 @@ class ProfileDeleteTests(DatabaseCase):
     async def test_deleting_an_unknown_user_id_does_not_crash(self):
         result = await ProfileService().delete(9003)
         self.assertEqual(result, ServiceResult(False, "NOT_FOUND"))
+
+
+class ProfileBioTests(DatabaseCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        # edit() also calls MatchingService().cancel(), which touches Redis
+        # to drop the search-queue entry -- irrelevant here, stub it out.
+        redis = AsyncMock()
+        p = patch("services.chat_manager.get_redis", AsyncMock(return_value=redis))
+        p.start()
+        self.addCleanup(p.stop)
+
+    async def test_bio_can_be_set_and_read_back(self):
+        await UserRepository().get_or_create(9010, "u", "N")
+        result = await ProfileService().edit(9010, "bio", "Coffee and long walks")
+        self.assertEqual(result, ServiceResult(True, "SAVED"))
+        async with self.factory() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 9010))
+            self.assertEqual(user.bio, "Coffee and long walks")
+
+    async def test_bio_can_be_cleared_with_an_empty_string(self):
+        await UserRepository().get_or_create(9011, "u", "N")
+        await ProfileService().edit(9011, "bio", "temporary")
+        result = await ProfileService().edit(9011, "bio", "")
+        self.assertEqual(result, ServiceResult(True, "SAVED"))
+        async with self.factory() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 9011))
+            self.assertEqual(user.bio, "")
+
+    async def test_bio_over_150_characters_is_rejected(self):
+        await UserRepository().get_or_create(9012, "u", "N")
+        result = await ProfileService().edit(9012, "bio", "x" * 151)
+        self.assertEqual(result, ServiceResult(False, "INVALID"))
+        async with self.factory() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 9012))
+            self.assertIsNone(user.bio)
 
 
 if __name__ == "__main__":

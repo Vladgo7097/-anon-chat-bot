@@ -47,6 +47,16 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         repo.user.rules_accepted_at = utcnow()
         self.assertEqual(step_for(repo.user), "MENU")
 
+    async def test_gender_tap_works_straight_from_the_welcome_screen(self):
+        # WELCOME and GENDER are now shown as one combined screen (a gender
+        # tap right on the welcome message) -- no separate "begin" step
+        # should be required to reach AGE.
+        repo = MemoryUsers()
+        service = OnboardingService(repo)
+        self.assertEqual((await service.start(1)).code, "WELCOME")
+        self.assertEqual((await service.advance(1, "gender", "female")).code, "AGE")
+        self.assertEqual(repo.user.gender, "female")
+
     async def test_complete_and_resume_after_restart(self):
         repo = MemoryUsers()
         service = OnboardingService(repo)

@@ -109,7 +109,7 @@ class OperationsTests(DatabaseCase):
         from services.onboarding import OnboardingService
         for value in ("9" * 32, "²"):
             result = await OnboardingService().start(4, payload="ref_" + value)
-            self.assertEqual(result.code, "WELCOME")
+            self.assertEqual(result.code, "LANGUAGE")
         async with self.factory() as s:
             user = await s.scalar(select(User).where(User.telegram_id == 4))
             self.assertIsNone(user.referrer_id)
@@ -294,7 +294,7 @@ class OperationsTests(DatabaseCase):
                 Notification.type == "owner_new_user")), 1)
         for _ in range(3):
             result = await OnboardingService().start(4242, "newbie", "Newbie")
-            self.assertEqual(result.code, "WELCOME")
+            self.assertEqual(result.code, "LANGUAGE")
         # Same profile via the middleware path must not count as new either.
         again, is_new_again = await UserRepository().get_or_create(4242, "newbie", "Newbie")
         self.assertFalse(is_new_again)

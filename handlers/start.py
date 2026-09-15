@@ -21,9 +21,9 @@ class Onboarding(StatesGroup):
 LANGUAGE_TEXT = "🌐 Choose your language\nВыберите язык\nОберіть мову"
 
 WELCOME_TEXT = {
-    "ru": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привет!\n\nЭто анонимный чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nПоиск и переписка бесплатны. Собеседник не увидит твой username и Telegram ID, пока вы оба не согласитесь раскрыться.\n\nСервис для людей 18+. Для старта нужны только пол, возраст и принятие правил.\n\nГотов начать?",
-    "en": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Hi!\n\nThis is an anonymous chat bot <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nHere you can meet and talk to random people\nwithout revealing your name, username or Telegram ID.\n\nReady to start?",
-    "uk": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привіт!\n\nЦе анонімний чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nТут можна знайомитись і спілкуватися з випадковими людьми,\nне розкриваючи своє ім'я, username і Telegram ID.\n\nГотовий почати?",
+    "ru": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привет!\n\nЭто анонимный чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nПоиск и переписка бесплатны. Собеседник не увидит твой username и Telegram ID, пока вы оба не согласитесь раскрыться.\n\nСервис для людей 18+. Для старта нужны только пол, возраст и принятие правил.\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Укажи свой пол, чтобы начать:",
+    "en": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Hi!\n\nThis is an anonymous chat bot <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nHere you can meet and talk to random people\nwithout revealing your name, username or Telegram ID.\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Tell us your gender to start:",
+    "uk": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привіт!\n\nЦе анонімний чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nТут можна знайомитись і спілкуватися з випадковими людьми,\nне розкриваючи своє ім'я, username і Telegram ID.\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Вкажи свою стать, щоб почати:",
 }
 GENDER_TEXT = {
     "ru": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Укажи свой пол\n\nЭто поможет правильно подбирать собеседников.",
