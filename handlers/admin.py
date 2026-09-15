@@ -74,6 +74,13 @@ class AdminAdSettings(StatesGroup):
     COOLDOWN=State()
 
 
+class AdminSeason(StatesGroup):
+    CODE=State()
+    START=State()
+    END=State()
+    DISCOUNT=State()
+
+
 @admin_router.message(Command("season"))
 async def cmd_season(message: Message):
     parts=message.text.split()
@@ -82,6 +89,100 @@ async def cmd_season(message: Message):
         return
     result=await AdminService().seasonal(message.from_user.id,parts[1],parts[2],parts[3],int(parts[4]))
     await message.answer("<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Событие сохранено. Оно действует только в заданный период и при seasonal_enabled=1." if result.ok else "Проверь код, даты с часовым поясом и скидку 1–90%.")
+
+
+def season_discount_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=f"{n}%", callback_data=f"admin:season:discount:{n}") for n in (10, 20, 30, 50)]])
+
+
+@admin_router.message(Command("cancel"), StateFilter(
+    AdminSeason.CODE, AdminSeason.START, AdminSeason.END, AdminSeason.DISCOUNT))
+async def season_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Создание сезонного события отменено.", reply_markup=admin_kb())
+
+
+@admin_router.callback_query(F.data == "admin:season")
+async def cb_season(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminSeason.CODE)
+    await callback.answer()
+    await callback.message.answer(
+        "Код события: латиница, цифры, подчёркивание, до 32 символов (например black_friday):\n/cancel — отменить.")
+
+
+@admin_router.message(AdminSeason.CODE, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def season_code(message: Message, state: FSMContext):
+    if not re.fullmatch(r"[a-z0-9_]{1,32}", message.text.strip()):
+        await message.answer("Только латиница, цифры и «_», до 32 символов. Попробуй ещё раз.")
+        return
+    await state.update_data(code=message.text.strip())
+    await state.set_state(AdminSeason.START)
+    await message.answer("Дата и время начала, с часовым поясом (например 2026-10-01T00:00:00+00:00):")
+
+
+@admin_router.message(AdminSeason.START, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def season_start(message: Message, state: FSMContext):
+    from datetime import datetime
+    try:
+        start = datetime.fromisoformat(message.text.strip())
+        if start.tzinfo is None:
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужна дата с часовым поясом, например 2026-10-01T00:00:00+00:00. Попробуй ещё раз.")
+        return
+    await state.update_data(starts_at=message.text.strip())
+    await state.set_state(AdminSeason.END)
+    await message.answer("Дата и время окончания, с часовым поясом:")
+
+
+@admin_router.message(AdminSeason.END, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def season_end(message: Message, state: FSMContext):
+    from datetime import datetime
+    from utils.time import utcnow
+    data = await state.get_data()
+    try:
+        start = datetime.fromisoformat(data["starts_at"])
+        end = datetime.fromisoformat(message.text.strip())
+        if end.tzinfo is None or end <= start or end <= utcnow():
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужна дата с часовым поясом, позже даты начала и позже текущего момента. Попробуй ещё раз.")
+        return
+    await state.update_data(ends_at=message.text.strip())
+    await state.set_state(AdminSeason.DISCOUNT)
+    await message.answer("Скидка в процентах (1–90) — выбери кнопкой или пришли число:", reply_markup=season_discount_kb())
+
+
+async def _season_finish(admin_id, code, starts_at, ends_at, discount, state):
+    result = await AdminService().seasonal(admin_id, code, starts_at, ends_at, discount)
+    await state.clear()
+    return result
+
+
+@admin_router.message(AdminSeason.DISCOUNT, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def season_discount_text(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit() or not 1 <= int(message.text.strip()) <= 90:
+        await message.answer("Нужно число от 1 до 90.", reply_markup=season_discount_kb())
+        return
+    data = await state.get_data()
+    result = await _season_finish(message.from_user.id, data["code"], data["starts_at"], data["ends_at"],
+                                   int(message.text.strip()), state)
+    await message.answer(
+        "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Событие сохранено. Оно действует только в заданный период и при seasonal_enabled=1." if result.ok else "Не удалось сохранить — проверь код и даты.",
+        reply_markup=admin_kb())
+
+
+@admin_router.callback_query(AdminSeason.DISCOUNT, F.data.startswith("admin:season:discount:"))
+async def season_discount_button(callback: CallbackQuery, state: FSMContext):
+    discount = int(callback.data.split(":")[-1])
+    data = await state.get_data()
+    result = await _season_finish(callback.from_user.id, data["code"], data["starts_at"], data["ends_at"],
+                                   discount, state)
+    await callback.answer()
+    await callback.message.answer(
+        "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Событие сохранено. Оно действует только в заданный период и при seasonal_enabled=1." if result.ok else "Не удалось сохранить — проверь код и даты.",
+        reply_markup=admin_kb())
 
 
 def overview_text(s):
@@ -99,8 +200,12 @@ async def cmd_admin(message: Message,state: FSMContext):
 
 
 @admin_router.callback_query(F.data=="admin:back")
-async def cb_admin_back(callback: CallbackQuery):
+async def cb_admin_back(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    # "Назад" is reachable from mid-flow screens (message-to-user, broadcast
+    # compose) that have no dedicated cancel -- without this, a stale FSM
+    # state survives and the admin's next unrelated text gets consumed by it.
+    await state.clear()
     s=await StatsService().overview()
     await safe_send(callback.message, overview_text(s)+f"\n<tg-emoji emoji-id=\"5215522595922779944\">🟢</tg-emoji> Онлайн: {await get_online_count()}",reply_markup=admin_kb())
 

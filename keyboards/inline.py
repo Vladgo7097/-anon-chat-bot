@@ -101,6 +101,9 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Настройки бота", icon_custom_emoji_id="6129805886383723340", callback_data="admin:settings"),
             InlineKeyboardButton(text="Реклама", icon_custom_emoji_id="5215668805199473901", callback_data="admin:ads"),
         ],
+        [
+            InlineKeyboardButton(text="🎉 Сезонное событие", callback_data="admin:season"),
+        ],
     ])
 
 
