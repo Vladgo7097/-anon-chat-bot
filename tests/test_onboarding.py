@@ -104,7 +104,12 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ages, set(range(18, 100)))
         menu = main_menu_kb()
         self.assertTrue(menu.is_persistent)
-        self.assertTrue(all(b.style == "primary" for row in menu.keyboard for b in row))
+        # icon_custom_emoji_id + style silently drop the button's text on
+        # Telegram Web (confirmed live) -- reply buttons must stay plain text
+        # with no icon, unlike inline buttons where both render fine.
+        self.assertTrue(all(b.icon_custom_emoji_id is None and b.style is None
+                             for row in menu.keyboard for b in row))
+        self.assertTrue(all(b.text for row in menu.keyboard for b in row))
 
 
 if __name__ == "__main__":

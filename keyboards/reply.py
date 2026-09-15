@@ -4,11 +4,12 @@ import config
 
 
 def kb_button(key, lang):
-    return KeyboardButton(
-        text=T.label(key, lang),
-        icon_custom_emoji_id=T.EMOJI_IDS.get(key),
-        style="danger" if key in {T.STOP, T.REPORT, T.CANCEL} else "primary"
-    )
+    # icon_custom_emoji_id + style on a reply KeyboardButton render fine on
+    # inline buttons but drop the text entirely on Telegram Web, leaving a
+    # bare unlabeled icon on every reply-keyboard button in the bot (main
+    # menu, search cancel, chat actions, onboarding) -- text-only is the one
+    # rendering guaranteed to work identically on every client.
+    return KeyboardButton(text=T.label(key, lang))
 
 
 def keyboard(rows, lang):
