@@ -62,6 +62,19 @@ class StartSourceTests(DatabaseCase):
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0].dedupe_key.startswith("start_source:9006:ref_"))
 
+    async def test_source_logged_when_row_precreated_by_middleware(self):
+        # AccessMiddleware runs get_or_create for every update before the
+        # /start handler, so by the time start() runs the row already exists.
+        # The source must still be logged exactly once.
+        from repositories.users import UserRepository
+        await UserRepository().get_or_create(9007, "u", "N")
+        await OnboardingService().start(9007, "u", "N", payload="catalog123")
+        rows = await self.sources(9007)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].dedupe_key, "start_source:9007:catalog123")
+        await OnboardingService().start(9007, "u", "N", payload="other_link")
+        self.assertEqual(len(await self.sources(9007)), 1)
+
     async def _referrer(self):
         from repositories.users import UserRepository
         return await UserRepository().get_or_create(9100, "referrer", "R")

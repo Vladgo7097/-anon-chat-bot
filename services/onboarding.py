@@ -32,7 +32,7 @@ class OnboardingService:
         self.repository = repository or UserRepository()
 
     async def start(self, telegram_id, username=None, first_name=None, payload="", notify_owner=False):
-        _, is_new = await self.repository.get_or_create(telegram_id, username, first_name)
+        await self.repository.get_or_create(telegram_id, username, first_name)
 
         async def apply(user, session):
             if banned(user):
@@ -51,15 +51,28 @@ class OnboardingService:
                         if not referral:
                             session.add(Referral(referrer_id=referrer.telegram_id, referred_id=telegram_id))
                             referrer.referrals_count += 1
-            if is_new and isinstance(self.repository, UserRepository):
+            if isinstance(self.repository, UserRepository):
                 # Every non-"ref_" /start payload used to be read and thrown away,
                 # which made it impossible to tell a low-intent bot-catalog
                 # visitor from a genuinely broken first screen. Telegram itself
                 # restricts start parameters to this character set already; the
                 # regex is a defensive cap, not a real sanitization need.
+                #
+                # NOTE: do NOT gate this on is_new from get_or_create above.
+                # AccessMiddleware pre-creates the row for every update before
+                # the /start handler runs, so is_new is always False here in
+                # production and the source was never logged. Gate on the
+                # absence of a previous start_source event instead: the source
+                # that actually brought the user in is what matters, a later
+                # /start with a different link must not look like a signup.
+                from models.operations import AnalyticsEvent
                 from services.growth import event
-                source = re.sub(r"[^A-Za-z0-9_-]", "", payload)[:48] or "none"
-                await event(session, telegram_id, "start_source", f"start_source:{telegram_id}:{source}")
+                logged = await session.scalar(select(AnalyticsEvent.id).where(
+                    AnalyticsEvent.event == "start_source",
+                    AnalyticsEvent.user_id == telegram_id))
+                if logged is None:
+                    source = re.sub(r"[^A-Za-z0-9_-]", "", payload)[:48] or "none"
+                    await event(session, telegram_id, "start_source", f"start_source:{telegram_id}:{source}")
             user.deleted_at = None
             return ServiceResult(True, step_for(user), {"language": getattr(user, "language", None)})
         result = await self.repository.transition(telegram_id, apply)
