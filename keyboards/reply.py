@@ -9,6 +9,9 @@ def kb_button(key, lang):
     # icon look is the intended style and other clients may render both.
     return KeyboardButton(
         text=T.label(key, lang),
+        # url= gives a link button: Telegram sends the bot no event on tap,
+        # so the community chat needs no handler of its own.
+        url=config.COMMUNITY_CHAT_URL if key == T.CHAT else None,
         icon_custom_emoji_id=T.EMOJI_IDS.get(key),
         style="danger" if key in {T.STOP, T.REPORT, T.CANCEL} else "primary"
     )
@@ -19,7 +22,8 @@ def keyboard(rows, lang):
 
 
 def main_menu_kb(lang="ru"):
-    return keyboard([[T.SEARCH, T.PROFILE], [T.SETTINGS, T.PREMIUM], [T.STATS, T.HELP]], lang)
+    return keyboard([[T.SEARCH, T.PROFILE], [T.SETTINGS, T.PREMIUM],
+                     [T.STATS, T.HELP], [T.CHAT]], lang)
 
 
 def chat_kb_reply(lang="ru"):

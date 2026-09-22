@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from services.onboarding import OnboardingService, step_for
+from keyboards import texts as T
 from keyboards.reply import onboarding_kb, main_menu_kb
+import config
 
 
 class MemoryUsers:
@@ -106,6 +108,15 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(menu.is_persistent)
         self.assertTrue(all(b.style == "primary" for row in menu.keyboard for b in row))
         self.assertTrue(all(b.text for row in menu.keyboard for b in row))
+        # The community-chat row is a plain url button: tapping it opens the
+        # chat and gives the bot no event, so it must carry the link itself.
+        chat_buttons = [b for row in menu.keyboard for b in row
+                        if b.text in T.all_labels(T.CHAT)]
+        self.assertEqual(len(chat_buttons), 1)
+        self.assertEqual(chat_buttons[0].url, config.COMMUNITY_CHAT_URL)
+        # Its labels join SYSTEM_TEXTS so a typed press is never relayed into
+        # an active chat as a message to the partner.
+        self.assertTrue(T.all_labels(T.CHAT) <= T.SYSTEM_TEXTS)
 
 
 if __name__ == "__main__":

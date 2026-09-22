@@ -31,6 +31,18 @@ def emitted_callbacks():
     return sorted(values)
 
 
+async def _handler_matches(handler, query):
+    # A handler registered with a State (e.g. AdminSeason.DISCOUNT) only
+    # answers when the FSM currently sits in that state; without raw_state in
+    # the check kwargs its data filter never runs and a live button looks
+    # dead. Feed it the state it asked for -- the data filter is the point.
+    for f in handler.filters:
+        m = re.search(r"State '([^']+)'", repr(getattr(f, "callback", "")))
+        if m:
+            return (await handler.check(query, raw_state=m.group(1)))[0]
+    return (await handler.check(query))[0]
+
+
 class CallbackRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_button_has_a_handler(self):
         from handlers import load_routers
@@ -41,8 +53,8 @@ class CallbackRoutingTests(unittest.IsolatedAsyncioTestCase):
         unrouted = []
         for data in values:
             query = CallbackQuery(id="1", from_user=USER, chat_instance="1", message=MESSAGE, data=data)
-            if not any([handler for router in routers for handler in router.callback_query.handlers
-                        if (await handler.check(query))[0]]):
+            if not any([await _handler_matches(handler, query)
+                        for router in routers for handler in router.callback_query.handlers]):
                 unrouted.append(data)
         self.assertEqual(unrouted, [], f"callback_data without a handler: {unrouted}")
 

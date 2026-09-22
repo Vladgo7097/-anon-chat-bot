@@ -11,6 +11,9 @@ for uid in os.getenv("ADMIN_IDS", "").split(","):
     if uid.isdigit():
         ADMIN_IDS.add(int(uid))
 
+# Ссылка на наш чат в меню бота -- url-кнопка, тап не создаёт события.
+COMMUNITY_CHAT_URL = os.getenv("COMMUNITY_CHAT_URL", "https://t.me/davinchik_chat1")
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://localhost/anon_chat")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 

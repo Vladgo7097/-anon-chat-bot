@@ -13,6 +13,7 @@ SETTINGS = "Настройки поиска"
 PREMIUM = "Premium"
 STATS = "Статистика"
 HELP = "Помощь"
+CHAT = "Наш чат"
 MENU = "Меню"
 NEXT = "Следующий"
 STOP = "Стоп"
@@ -23,8 +24,8 @@ PAGE_NEXT = "Дальше"
 PAGE_PREV = "Назад"
 
 _ACTIONS = (BEGIN, MALE, FEMALE, ACCEPT, RULES, SEARCH, PROFILE, SETTINGS,
-            PREMIUM, STATS, HELP, MENU, NEXT, STOP, REPORT, REVEAL, CANCEL,
-            PAGE_NEXT, PAGE_PREV)
+            PREMIUM, STATS, HELP, CHAT, MENU, NEXT, STOP, REPORT, REVEAL,
+            CANCEL, PAGE_NEXT, PAGE_PREV)
 
 LABELS = {
     BEGIN: {"ru": "Начнём общение", "en": "Let's start", "uk": "Почнімо спілкування"},
@@ -38,6 +39,7 @@ LABELS = {
     PREMIUM: {"ru": "Premium", "en": "Premium", "uk": "Premium"},
     STATS: {"ru": "Статистика", "en": "Stats", "uk": "Статистика"},
     HELP: {"ru": "Помощь", "en": "Help", "uk": "Допомога"},
+    CHAT: {"ru": "Наш чат", "en": "Our chat", "uk": "Наш чат"},
     MENU: {"ru": "Меню", "en": "Menu", "uk": "Меню"},
     NEXT: {"ru": "Следующий", "en": "Next", "uk": "Наступний"},
     STOP: {"ru": "Стоп", "en": "Stop", "uk": "Стоп"},
