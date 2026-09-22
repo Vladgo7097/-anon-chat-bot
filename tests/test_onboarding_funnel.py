@@ -65,6 +65,7 @@ class FunnelTests(DatabaseCase):
     async def test_an_underage_answer_is_counted_once_per_day(self):
         await UserRepository().get_or_create(8040, "u", "N")
         service = OnboardingService()
+        await service.advance(8040, "lang", "ru")
         await service.advance(8040, "begin")
         await service.advance(8040, "gender", "male")
         for _ in range(3):
@@ -78,6 +79,7 @@ class FunnelTests(DatabaseCase):
     async def test_a_valid_age_leaves_no_rejection(self):
         await UserRepository().get_or_create(8041, "u", "N")
         service = OnboardingService()
+        await service.advance(8041, "lang", "ru")
         await service.advance(8041, "begin")
         await service.advance(8041, "gender", "female")
         await service.advance(8041, "age", 25)
