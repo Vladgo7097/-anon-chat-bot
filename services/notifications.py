@@ -58,6 +58,33 @@ INACTIVE_TEXTS_COLD = [
      "en": "⏳ Anonymity is waiting: no names, no profiles, no consequences. Just you and a match. Drop in 👇",
      "uk": "⏳ Анонімність чекає: ні імен, ні анкет, ні наслідків. Лише ти і співрозмовник. Заглянь 👇"},
 ]
+# Evening prime-time nudge: only the 16-19 UTC window (19-22 Kyiv) may send
+# it, and only when the live heartbeat count clears PRIME_MIN_ONLINE -- the
+# whole copy sells FOMO on {online}, so a nearly-empty room must not send it.
+PRIME_WINDOW = (16, 19)
+PRIME_MIN_ONLINE = 3
+PRIME_TIME_TEXTS = [
+    {"ru": "🔥 Сейчас онлайн {online} — вечерний пик. Очередь короткая, собеседник находится за секунды. Залетай 👇",
+     "en": "🔥 {online} online right now — evening peak. The queue is short, a match takes seconds. Drop in 👇",
+     "uk": "🔥 Зараз онлайн {online} — вечірній пік. Черга коротка, співрозмовник за секунди. Залетай 👇"},
+    {"ru": "🕵️ Сейчас онлайн {online} — говорят без имён и без фильтров. Пока не поздно, займёшь своё место 👀",
+     "en": "🕵️ {online} people are talking here right now — no names, no filters. Not too late to take your seat 👀",
+     "uk": "🕵️ Зараз онлайн {online} — говорять без імен і без фільтрів. Поки не поздно, займеш своє місце 👀"},
+    {"ru": "⏳ Онлайн {online}. Вечер — самое горячее время, днём такого не сыщешь. Загляни 👇",
+     "en": "⏳ {online} live right now. Evenings are when this place runs hottest. Look in 👇",
+     "uk": "⏳ Онлайн {online}. Вечір — найгарячіший час, вдень такого не знайдеш. Заглянь 👇"},
+]
+
+
+async def _online_or_zero():
+    """Live presence count; any Redis miss reads as an empty room so the
+    prime-time nudge quietly skips instead of quoting a number it lost."""
+    try:
+        from services.chat_manager import get_online_count
+        value = await get_online_count()
+        return int(value) if isinstance(value, (int, float)) else 0
+    except Exception:
+        return 0
 
 
 def _rotate(pool, *seeds):
@@ -150,6 +177,9 @@ class NotificationService:
         marketing_enabled = await bot_value("marketing_enabled", 1)
         nudge_after = timedelta(hours=await bot_value("onboarding_nudge_hours", 3))
         now = utcnow()
+        online = await _online_or_zero() if PRIME_WINDOW[0] <= now.hour < PRIME_WINDOW[1] else 0
+        prime_on = online >= PRIME_MIN_ONLINE
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         cursor = 0
         while True:
             async with async_session.begin() as s:
@@ -203,6 +233,16 @@ class NotificationService:
                         pool = INACTIVE_TEXTS_HOT if fresh else INACTIVE_TEXTS_COLD
                         notice(user, "inactive", f"inactive:{user.telegram_id}:{now.date()}",
                                _tr(_rotate(pool, user.telegram_id, now.date().toordinal()), user).format(count=fresh),
+                               "search:start", True)
+                    # Warm segment: here in the last 3 days, not today. Disjoint
+                    # from the inactive pool above, which needs last_online
+                    # older than 3 days -- one keeps the habit, one breaks the gap.
+                    if (prime_on and marketing_enabled
+                            and json.loads(user.notification_settings or "{}").get("marketing", True)
+                            and user.telegram_id not in recent
+                            and user.last_online and now-timedelta(days=3) < user.last_online < today_start):
+                        notice(user, "prime_time", f"prime_time:{user.telegram_id}:{today_start.date()}",
+                               _tr(_rotate(PRIME_TIME_TEXTS, user.telegram_id, today_start.date().toordinal()), user).format(online=online),
                                "search:start", True)
                 await s.execute(update(Ban).where(Ban.user_id.in_(ids), Ban.is_active.is_(True),
                     Ban.expires_at <= now).values(is_active=False))

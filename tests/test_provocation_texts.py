@@ -16,11 +16,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select
+from unittest.mock import AsyncMock, patch
 from test_chat_duration import DatabaseCase
 from models.user import User
 from models.operations import Notification
 from services.notifications import (INACTIVE_TEXTS_HOT, INACTIVE_TEXTS_COLD,
-                                    ONBOARDING_NUDGE_TEXTS, NotificationService,
+                                    ONBOARDING_NUDGE_TEXTS, PRIME_TIME_TEXTS,
+                                    NotificationService,
                                     _rotate)
 from utils.time import utcnow
 
@@ -39,15 +41,21 @@ class PoolShapeTests(unittest.TestCase):
         self._check(INACTIVE_TEXTS_HOT, "hot")
         self._check(INACTIVE_TEXTS_COLD, "cold")
         self._check(ONBOARDING_NUDGE_TEXTS, "nudge")
+        self._check(PRIME_TIME_TEXTS, "prime")
 
     def test_only_hot_copy_may_quote_a_count(self):
         for variant in INACTIVE_TEXTS_HOT:
             for lang in LANGS:
                 self.assertIn("{count}", variant[lang])
-        for pool in (INACTIVE_TEXTS_COLD, ONBOARDING_NUDGE_TEXTS):
+        for pool in (INACTIVE_TEXTS_COLD, ONBOARDING_NUDGE_TEXTS, PRIME_TIME_TEXTS):
             for variant in pool:
                 for lang in LANGS:
                     self.assertNotIn("{count}", variant[lang])
+
+    def test_prime_time_copy_quotes_a_live_count(self):
+        for variant in PRIME_TIME_TEXTS:
+            for lang in LANGS:
+                self.assertIn("{online}", variant[lang])
 
     def test_rotate_is_deterministic_and_covers_the_pool(self):
         first = _rotate(INACTIVE_TEXTS_HOT, 42, 100)
@@ -103,6 +111,50 @@ class ProvocationScheduleTests(DatabaseCase):
             self.assertEqual(len(nudges), 1)
             allowed = {variant["ru"] for variant in ONBOARDING_NUDGE_TEXTS}
             self.assertIn(nudges[0].text, allowed)
+
+
+def _prime_patterns():
+    return [re.compile(re.escape(variant[lang]).replace(re.escape("{online}"), r"\d+"))
+            for variant in PRIME_TIME_TEXTS for lang in LANGS]
+
+
+class PrimeTimeScheduleTests(DatabaseCase):
+    """The evening nudge fires only inside the peak window, only for the
+    warm segment, and only while the room is demonstrably full."""
+
+    async def _schedule_at(self, hour, online):
+        frozen = utcnow().replace(hour=hour, minute=0, second=0, microsecond=0)
+        # 1: yesterday (prime target) -- 2: earlier today (excluded) --
+        # 3: four days ago (inactive segment, not prime).
+        async with self.factory.begin() as s:
+            for uid, age in ((1, timedelta(days=1)),
+                             (2, timedelta(hours=2)),
+                             (3, timedelta(days=4))):
+                user = await s.scalar(select(User).where(User.telegram_id == uid))
+                user.last_online = frozen-age
+                user.created_at = frozen-timedelta(days=30)
+        with patch("services.notifications.utcnow", return_value=frozen), \
+                patch("services.notifications._online_or_zero", AsyncMock(return_value=online)):
+            await NotificationService().schedule()
+        async with self.factory() as s:
+            return (await s.scalars(select(Notification).where(
+                Notification.type == "prime_time"))).all()
+
+    async def test_peak_evening_targets_yesterday_and_quotes_the_count(self):
+        notices = await self._schedule_at(hour=16, online=5)
+        self.assertEqual([n.user_id for n in notices], [1])
+        notice = notices[0]
+        self.assertIn("5", notice.text)
+        self.assertTrue(any(pattern.fullmatch(notice.text) for pattern in _prime_patterns()),
+                        f"text outside the prime-time pool: {notice.text!r}")
+        self.assertEqual(notice.callback_data, "search:start")
+        self.assertTrue(notice.marketing)
+
+    async def test_outside_the_peak_window_nothing_is_queued(self):
+        self.assertEqual(await self._schedule_at(hour=10, online=5), [])
+
+    async def test_a_dead_room_does_not_brag_about_itself(self):
+        self.assertEqual(await self._schedule_at(hour=16, online=2), [])
 
 
 if __name__ == "__main__":
