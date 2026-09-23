@@ -12,9 +12,9 @@ THANKS_DONE = {"ru": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> 
                "en": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Thanks for the rating!",
                "uk": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Дякуємо за оцінку!"}
 INVITE_PROMPT = {
-    "ru": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Понравилось общение? Пригласи друга — после его первого диалога вы оба получите скидку.",
-    "en": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Enjoyed the chat? Invite a friend — after their first chat you'll both get a discount.",
-    "uk": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Сподобалось спілкування? Запроси друга — після його першого діалогу ви обидва отримаєте знижку.",
+    "ru": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Понравилось общение? Пригласи друга — после его первого диалога ты получишь 7 дней Premium, а он — скидку.",
+    "en": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Enjoyed the chat? Invite a friend — after their first chat you'll get 7 days of Premium and they'll get a discount.",
+    "uk": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Сподобалось спілкування? Запроси друга — після його першого діалогу ти отримаєш 7 днів Premium, а він — знижку.",
 }
 INVITE_BUTTON = {"ru": "Поделиться ссылкой", "en": "Share the link", "uk": "Поділитись посиланням"}
 OLD_RATING = {"ru": "Эта кнопка устарела. Оценка доступна у новых диалогов.",

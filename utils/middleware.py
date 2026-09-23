@@ -71,7 +71,7 @@ class AccessMiddleware(BaseMiddleware):
             data["raw_state"] = None
         navigation = (T.all_labels(T.MENU) | T.all_labels(T.PROFILE) | T.all_labels(T.SETTINGS)
                       | T.all_labels(T.PREMIUM) | T.all_labels(T.STATS)
-                      | T.all_labels(T.CHAT)
+                      | T.all_labels(T.CHAT) | T.all_labels(T.INVITE)
                       | {"menu", "profile", "settings", "premium", "stats", "/profile"})
         if action in navigation or command == "/start":
             if await get_partner(actor.id):

@@ -22,6 +22,16 @@ CHAT_PROMPT = {
     "uk": "💬 Наш чат — великий чат для спілкування, заходь поговорити.\n\nТисни «Відкрити чат» 👇",
 }
 CHAT_OPEN = {"ru": "Открыть чат", "en": "Open the chat", "uk": "Відкрити чат"}
+INVITE_CARD = {
+    "ru": "👥 <b>Пригласи друга</b>\n\nПосле его первого диалога ты получишь <b>7 дней Premium</b>, а друг — скидку 20% на первую покупку.\n\nТвоя ссылка:\n{link}\n\nПриглашено: {count} · Активировали: {activated}",
+    "en": "👥 <b>Invite a friend</b>\n\nAfter their first chat you get <b>7 days of Premium</b>, and they get 20% off their first purchase.\n\nYour link:\n{link}\n\nInvited: {count} · Activated: {activated}",
+    "uk": "👥 <b>Запроси друга</b>\n\nПісля його першого діалогу ти отримаєш <b>7 днів Premium</b>, а друг — знижку 20% на першу покупку.\n\nТвоє посилання:\n{link}\n\nЗапрошено: {count} · Активували: {activated}",
+}
+SHARE_BUTTON = {"ru": "Поделиться ссылкой", "en": "Share the link", "uk": "Поділитись посиланням"}
+REWARDS_BUTTON = {"ru": "Мои награды", "en": "My rewards", "uk": "Мої нагороди"}
+NOT_ONBOARDED_YET = {"ru": "Сначала заверши регистрацию: /start",
+                     "en": "Finish signup first: /start",
+                     "uk": "Спочатку заверши реєстрацію: /start"}
 
 
 @menu_router.message(F.text.in_(T.all_labels(T.CHAT)))
@@ -35,6 +45,33 @@ async def open_community_chat(message: Message, state: FSMContext, lang: str = "
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=T.tr(CHAT_OPEN, lang),
                                  url=config.COMMUNITY_CHAT_URL, style="primary")]]))
+
+
+@menu_router.message(F.text.in_(T.all_labels(T.INVITE)))
+async def invite_friend(message: Message, state: FSMContext, lang: str = "ru"):
+    # The referral program existed but lived only inside the rewards card --
+    # nobody taps a menu item they cannot see, hence zero activations. This
+    # puts the link, the counter and the actual reward one button away.
+    from urllib.parse import quote
+    from sqlalchemy import select
+    from models.base import async_session
+    from models.user import User
+    await state.clear()
+    async with async_session() as s:
+        user = await s.scalar(select(User).where(User.telegram_id == message.from_user.id))
+    if not user or not user.referral_code:
+        await message.answer(T.tr(NOT_ONBOARDED_YET, lang))
+        return
+    bot = await message.bot.get_me()
+    link = f"https://t.me/{bot.username}?start=ref_{user.referral_code}"
+    await message.answer(
+        T.tr(INVITE_CARD, lang).format(link=link, count=user.referrals_count,
+                                       activated=user.referrals_activated),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=T.tr(SHARE_BUTTON, lang),
+                                 url="https://t.me/share/url?url=" + quote(link, safe="")),
+            InlineKeyboardButton(text=T.tr(REWARDS_BUTTON, lang),
+                                 callback_data="profile:rewards", style="primary")]]))
 
 
 @menu_router.message(F.text.in_(T.all_labels(T.MENU)))

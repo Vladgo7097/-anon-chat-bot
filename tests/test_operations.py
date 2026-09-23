@@ -275,14 +275,27 @@ class OperationsTests(DatabaseCase):
         self.assertFalse((await service.add_photo(1,"photo-four")).ok)
 
     async def test_referral_reward_once_after_real_completed_chat(self):
+        from datetime import timedelta
+        from utils.time import utcnow
+        from models.payment import PremiumSubscription
         async with self.factory.begin() as s:
             s.add(Referral(referrer_id=3,referred_id=1))
         chat=await self.repo.match(1,2,self.redis)
         await self.repo.end(1,chat.session_id)
         await self.repo.end(2,chat.session_id)
         async with self.factory() as s:
-            self.assertEqual((await s.scalar(select(User).where(User.telegram_id==3))).referrals_activated,1)
-            self.assertEqual(await s.scalar(select(func.count(Offer.id))),2)
+            referrer=await s.scalar(select(User).where(User.telegram_id==3))
+            self.assertEqual(referrer.referrals_activated,1)
+            # The inviter gets 7 days of Premium, not the old 20% coupon;
+            # only the invited side keeps a discount offer.
+            self.assertTrue(referrer.is_premium)
+            self.assertGreater(referrer.premium_expires, utcnow()+timedelta(days=6))
+            self.assertEqual(await s.scalar(select(func.count(Offer.id))),1)
+            grant=await s.scalar(select(PremiumSubscription).where(PremiumSubscription.plan=="referral"))
+            self.assertIsNotNone(grant)
+            notice=await s.scalar(select(Notification.id).where(
+                Notification.user_id==3, Notification.type=="reward"))
+            self.assertIsNotNone(notice)
 
     async def test_owner_notified_once_per_new_user(self):
         """A fresh /start queues one owner notice; retries and repeats never do."""

@@ -23,7 +23,7 @@ def keyboard(rows, lang):
 
 def main_menu_kb(lang="ru"):
     return keyboard([[T.SEARCH, T.PROFILE], [T.SETTINGS, T.PREMIUM],
-                     [T.STATS, T.HELP], [T.CHAT]], lang)
+                     [T.STATS, T.HELP], [T.CHAT, T.INVITE]], lang)
 
 
 def chat_kb_reply(lang="ru"):

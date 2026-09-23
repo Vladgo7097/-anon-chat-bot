@@ -60,7 +60,18 @@ async def completed_chat(s, user):
         referrer = await s.scalar(select(User).where(User.telegram_id == referral.referrer_id).with_for_update())
         if referrer:
             referrer.referrals_activated += 1
-            await offer(s, referrer.telegram_id, f"ref:{referral.id}:inviter", 20, "any")
+            # The inviter's reward is 7 days of Premium, stacking on any
+            # active subscription -- the old 20% coupon invited nobody: a
+            # discount on a product you have never bought is not a carrot.
+            from models.payment import PremiumSubscription
+            from services.notifications import enqueue
+            referrer.premium_expires = max(utcnow(), referrer.premium_expires or utcnow()) + timedelta(days=7)
+            referrer.is_premium = True
+            s.add(PremiumSubscription(user_id=referrer.telegram_id, plan="referral",
+                                      stars_paid=0, expires_at=referrer.premium_expires))
+            await enqueue(s, referrer.telegram_id, "reward", f"reward:ref_premium:{referral.id}",
+                          "<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Друг завершил первый диалог — тебе +7 дней Premium! Подробности в профиле.",
+                          "profile:rewards")
         await offer(s, user.telegram_id, f"ref:{referral.id}:invited", 20)
 
 

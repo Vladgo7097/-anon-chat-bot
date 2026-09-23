@@ -115,9 +115,15 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
                         if b.text in T.all_labels(T.CHAT)]
         self.assertEqual(len(chat_buttons), 1)
         self.assertNotEqual(getattr(chat_buttons[0], "url", None), config.COMMUNITY_CHAT_URL)
-        # Its labels join SYSTEM_TEXTS so a typed press is never relayed into
-        # an active chat as a message to the partner.
+        # The referral button must be on the main menu too -- the program
+        # had zero activations precisely because it was invisible.
+        invite_buttons = [b for row in menu.keyboard for b in row
+                          if b.text in T.all_labels(T.INVITE)]
+        self.assertEqual(len(invite_buttons), 1)
+        # Both labels join SYSTEM_TEXTS so a typed press is never relayed
+        # into an active chat as a message to the partner.
         self.assertTrue(T.all_labels(T.CHAT) <= T.SYSTEM_TEXTS)
+        self.assertTrue(T.all_labels(T.INVITE) <= T.SYSTEM_TEXTS)
 
 
 if __name__ == "__main__":
