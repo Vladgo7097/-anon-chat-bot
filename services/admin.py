@@ -7,7 +7,7 @@ from models.chat import Chat
 from models.report import Report
 from models.ban import Ban
 from models.payment import Payment, Product, PremiumSubscription
-from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Offer
+from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Offer, Notification
 from services.result import ServiceResult
 from services.chats import ChatService
 from services.matching import MatchingService
@@ -75,6 +75,54 @@ class StatsService:
         return dict(stages=rows, age_rejected=rejected,
                     avg_minutes=round(minutes/60, 1) if minutes is not None else None,
                     daily=[(str(day), total, done) for day, total, done in daily])
+
+    async def growth(self, days=1):
+        """Acquisition funnel: broadcasts to returns to chats, plus the
+        re-engagement nudges and the /start source tags.
+
+        Rolling window instead of calendar days like the other stats -- this
+        reads a campaign that shipped an hour ago, not a daily card. Return
+        and chat rates are measured from each broadcast's own send time, so a
+        seven-day view does not credit old sends with new returns."""
+        since = utcnow()-timedelta(days=days)
+        async with async_session() as s:
+            jobs = []
+            for bc in (await s.scalars(select(Broadcast).where(
+                    Broadcast.created_at >= since).order_by(Broadcast.id))).all():
+                delivered = (Notification.broadcast_id == bc.id, Notification.status == "sent")
+                returned = await s.scalar(select(func.count(func.distinct(Notification.user_id)))
+                    .join(User, User.telegram_id == Notification.user_id)
+                    .where(*delivered, User.last_online > bc.created_at))
+                chatted = await s.scalar(select(func.count(func.distinct(Notification.user_id)))
+                    .join(Chat, or_(Chat.user1_id == Notification.user_id,
+                                    Chat.user2_id == Notification.user_id))
+                    .where(*delivered, Chat.started_at > bc.created_at))
+                queued = await s.scalar(select(func.count(Notification.id)).where(
+                    Notification.broadcast_id == bc.id,
+                    Notification.status.in_(["queued", "sending"])))
+                jobs.append(dict(id=bc.id, created_at=bc.created_at, sent=bc.sent,
+                                 failed=bc.failed, queued=queued or 0,
+                                 returned=returned or 0, chatted=chatted or 0))
+            nudges = dict((await s.execute(select(Notification.type, func.count(Notification.id)).where(
+                Notification.status == "sent", Notification.sent_at >= since,
+                Notification.type.in_(["inactive", "prime_time", "onboarding_nudge"]))
+                .group_by(Notification.type))).all())
+            # The source tag is the third colon-separated part of the key;
+            # parsed here instead of split_part() so the query also runs on
+            # the SQLite test harness.
+            sources = {}
+            for key in (await s.scalars(select(AnalyticsEvent.dedupe_key).where(
+                    AnalyticsEvent.event == "start_source",
+                    AnalyticsEvent.created_at >= since))).all():
+                parts = key.split(":")
+                tag = parts[2] if len(parts) > 2 else "none"
+                sources[tag] = sources.get(tag, 0)+1
+            new = await s.scalar(select(func.count(User.id)).where(User.created_at >= since))
+            completed = await s.scalar(select(func.count(User.id)).where(
+                User.created_at >= since, User.onboarding_completed.is_(True)))
+            chats = await s.scalar(select(func.count(Chat.id)).where(Chat.started_at >= since))
+        return dict(days=days, jobs=jobs, nudges=nudges, sources=sources,
+                    new=new, completed=completed, chats=chats)
 
     async def overview(self, days=1):
         cutoff=utcnow().replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=days-1)

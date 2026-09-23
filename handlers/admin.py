@@ -264,6 +264,40 @@ async def cb_funnel(callback: CallbackQuery):
                                   reply_markup=funnel_kb(days))
 
 
+def growth_text(g, days):
+    window = "24 ч" if days == 1 else f"{days} дн."
+    lines = [f"📈 Рост и возвраты за {window}"]
+    if g["jobs"]:
+        lines.append("📨 Рассылки:")
+        for j in g["jobs"]:
+            when = j["created_at"].strftime("%d.%m %H:%M")
+            pct = round(100*j["returned"]/j["sent"]) if j["sent"] else 0
+            lines.append(f"#{j['id']} от {when} — {j['sent']} доставлено, {j['failed']} ошибок, {j['queued']} в очереди")
+            lines.append(f"   ↳ вернулись {j['returned']} ({pct}%), из них в диалоге {j['chatted']}")
+    else:
+        lines.append("📨 Рассылок за период не было.")
+    labels = {"inactive": "спящим", "prime_time": "вечерний пик",
+              "onboarding_nudge": "брошенная регистрация"}
+    if g["nudges"]:
+        lines.append("🔔 Напоминания: " + ", ".join(
+            f"{labels.get(k, k)} {v}" for k, v in sorted(g["nudges"].items())))
+    if g["sources"]:
+        lines.append("🏷 Метки: " + ", ".join(f"{k} {v}" for k, v in sorted(g["sources"].items())))
+    lines.append(f"🆕 Новых {g['new']} (дошли до конца {g['completed']}) · Диалогов начато {g['chats']}")
+    return "\n".join(lines)
+
+
+@admin_router.message(Command("growth"))
+async def cmd_growth(message: Message):
+    parts = message.text.split()
+    days = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+    if days not in {1, 7, 30}:
+        await message.answer("/growth [1|7|30] — рассылки, возвраты, напоминания и метки за период")
+        return
+    g = await StatsService().growth(days)
+    await safe_send(message, growth_text(g, days) + f"\n🟢 Онлайн: {await get_online_count()}")
+
+
 @admin_router.callback_query(F.data.in_({"admin:stats","admin:money"}))
 @admin_router.callback_query(F.data.startswith("admin:events:"))
 @admin_router.callback_query(F.data.startswith("admin:period:"))
