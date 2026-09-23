@@ -14,15 +14,58 @@ from services.onboarding import banned
 UNBAN_TEXT = {"ru": "✅ Срок блокировки истёк. Добро пожаловать обратно!",
               "en": "✅ Your ban has expired. Welcome back!",
               "uk": "✅ Термін блокування минув. Ласкаво просимо назад!"}
-ONBOARDING_NUDGE_TEXT = {"ru": "Ты почти зарегистрирован — остался один шаг, и можно искать собеседника.",
-                         "en": "You're almost registered — one step left, then you can start searching.",
-                         "uk": "Ти майже зареєстрований — залишився один крок, і можна шукати співрозмовника."}
+ONBOARDING_NUDGE_TEXTS = [
+    {"ru": "⏳ Ты начал — но не закончил. Одна кнопка, и случайный собеседник твой. Чего ждёшь?",
+     "en": "⏳ You started but didn't finish. One button and a random match is yours. What's stopping you?",
+     "uk": "⏳ Ти почав — але не закінчив. Одна кнопка, і випадковий співрозмовник твій. Чого чекаєш?"},
+    {"ru": "🕵️ Между тобой и первым анонимным диалогом — один шаг. Мы оставили его за тобой.",
+     "en": "🕵️ One step separates you from your first anonymous chat. We left it to you.",
+     "uk": "🕵️ Між тобою і першим анонімним діалогом — один крок. Ми залишили його за тобою."},
+    {"ru": "👀 Другие уже общаются здесь без имён и анкет. Ты застрял на старте — поставь точку в регистрации.",
+     "en": "Others are already talking here with no names and no profiles. You stalled at the start — finish the signup.",
+     "uk": "👀 Інші вже спілкуються тут без імен і анкет. Ти застряг на старті — заверши реєстрацію."},
+]
 PREMIUM_EXPIRY_TEXT = {"ru": "⏰ Твой Premium заканчивается завтра. Продлить?",
                        "en": "⏰ Your Premium ends tomorrow. Renew?",
                        "uk": "⏰ Твій Premium закінчується завтра. Продовжити?"}
-INACTIVE_TEXT = {"ru": "👋 Скучаем! За это время в боте было {count} новых завершённых диалогов.",
-                 "en": "👋 We miss you! {count} new chats have wrapped up since you left.",
-                 "uk": "👋 Сумуємо! За цей час у боті відбулося {count} нових завершених діалогів."}
+# Two pools for the return nudge: "hot" quotes how many chats happened while
+# the user was away -- truthful only when that number is above zero. A dead
+# "{count} новых диалогов" when the answer is 0 advertises an empty room and
+# kills the return instead of provoking it, so count==0 gets its own copy
+# that never claims traffic.
+INACTIVE_TEXTS_HOT = [
+    {"ru": "🔥 {count} новых диалогов — и ни один не твой. Очередь открыта, собеседники на месте. Не дай им заскучать 👇",
+     "en": "🔥 {count} new chats happened — and none of them was yours. The queue is open, matches are waiting. Don't leave them hanging 👇",
+     "uk": "🔥 {count} нових діалогів — і жоден не твій. Черга відкрита, співрозмовники на місці. Не дай їм заскучати 👇"},
+    {"ru": "🕵️ Среди {count} диалогов за это время, может, был тот, с кем тебе было бы по нраву. Или нет. Проверь сам 👀",
+     "en": "🕵️ Of the {count} chats since you left, maybe one had your kind of person in it. Or maybe not. See for yourself 👀",
+     "uk": "🕵️ Можливо, серед {count} діалогів за цей час був той, з ким тобі було б до вподоби. А може, й ні. Перевір сам 👀"},
+    {"ru": "👀 {count} разговоров случилось без тебя. Ничего личного — но каждый из них мог быть твоим.",
+     "en": "👀 {count} conversations happened without you. Nothing personal — each one could have been yours.",
+     "uk": "👀 {count} розмов відбулося без тебе. Нічого особистого — кожна з них могла бути твоєю."},
+    {"ru": "💬 О {count} диалогах здесь говорят так, как не говорят при своих. Ты ещё не внутри?",
+     "en": "💬 {count} chats here went the way talks go only among strangers. Not inside yet?",
+     "uk": "💬 Про {count} діалогів тут говорять так, як не говорять при своїх. Ти ще не всередині?"},
+]
+INACTIVE_TEXTS_COLD = [
+    {"ru": "👀 Ты же ещё не сказал последнего слова. Случайный собеседник уже готов — просто ждёт.",
+     "en": "👀 You haven't said your last word yet. A random match is ready and waiting.",
+     "uk": "👀 Ти ж ще не сказав останнього слова. Випадковий співрозмовник уже чекає."},
+    {"ru": "🕵️ Твой собеседник где-то есть. Он пока не знает, что ты ещё не пришёл. Исправь.",
+     "en": "🕵️ Your match is out there somewhere. He doesn't know yet that you haven't arrived. Fix that.",
+     "uk": "🕵️ Твій співрозмовник десь є. Він ще не знає, що ти не прийшов. Виправ це."},
+    {"ru": "⏳ Анонимность ждёт: ни имени, ни анкет, ни последствий. Только ты и собеседник. Загляни 👇",
+     "en": "⏳ Anonymity is waiting: no names, no profiles, no consequences. Just you and a match. Drop in 👇",
+     "uk": "⏳ Анонімність чекає: ні імен, ні анкет, ні наслідків. Лише ти і співрозмовник. Заглянь 👇"},
+]
+
+
+def _rotate(pool, *seeds):
+    """Deterministic variant per user (and day, if passed): a restart must
+    not reshuffle what was already sent, while a changing salt keeps
+    tomorrow's copy different from today's."""
+    import zlib
+    return pool[zlib.crc32("|".join(str(s) for s in seeds).encode()) % len(pool)]
 
 
 def _lang(user):
@@ -147,15 +190,19 @@ class NotificationService:
                                 and marketing_enabled
                                 and json.loads(user.notification_settings or "{}").get("marketing", True)):
                             notice(user, "onboarding_nudge", f"onboarding_nudge:{user.telegram_id}",
-                                   _tr(ONBOARDING_NUDGE_TEXT, user), "menu", True)
+                                   _tr(_rotate(ONBOARDING_NUDGE_TEXTS, user.telegram_id), user), "menu", True)
                         continue
                     if user.premium_expires and now < user.premium_expires <= now+timedelta(days=1):
                         notice(user, "premium_expiry", f"expiry:{user.telegram_id}:{user.premium_expires.isoformat()}",
                                _tr(PREMIUM_EXPIRY_TEXT, user), "premium")
                     if (marketing_enabled and json.loads(user.notification_settings or "{}").get("marketing", True)
                             and user.telegram_id not in recent and user.telegram_id in counts):
+                        fresh = counts[user.telegram_id]
+                        # Zero fresh chats gets copy that never claims traffic:
+                        # advertising an empty room sends the opposite signal.
+                        pool = INACTIVE_TEXTS_HOT if fresh else INACTIVE_TEXTS_COLD
                         notice(user, "inactive", f"inactive:{user.telegram_id}:{now.date()}",
-                               _tr(INACTIVE_TEXT, user).format(count=counts[user.telegram_id]),
+                               _tr(_rotate(pool, user.telegram_id, now.date().toordinal()), user).format(count=fresh),
                                "search:start", True)
                 await s.execute(update(Ban).where(Ban.user_id.in_(ids), Ban.is_active.is_(True),
                     Ban.expires_at <= now).values(is_active=False))
