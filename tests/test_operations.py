@@ -286,10 +286,10 @@ class OperationsTests(DatabaseCase):
         async with self.factory() as s:
             referrer=await s.scalar(select(User).where(User.telegram_id==3))
             self.assertEqual(referrer.referrals_activated,1)
-            # The inviter gets 7 days of Premium, not the old 20% coupon;
-            # only the invited side keeps a discount offer.
+            # The inviter gets an hour of Premium (dj's call), not the old
+            # 20% coupon; only the invited side keeps a discount offer.
             self.assertTrue(referrer.is_premium)
-            self.assertGreater(referrer.premium_expires, utcnow()+timedelta(days=6))
+            self.assertGreater(referrer.premium_expires, utcnow()+timedelta(minutes=59))
             self.assertEqual(await s.scalar(select(func.count(Offer.id))),1)
             grant=await s.scalar(select(PremiumSubscription).where(PremiumSubscription.plan=="referral"))
             self.assertIsNotNone(grant)

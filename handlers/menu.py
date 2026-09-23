@@ -23,9 +23,9 @@ CHAT_PROMPT = {
 }
 CHAT_OPEN = {"ru": "Открыть чат", "en": "Open the chat", "uk": "Відкрити чат"}
 INVITE_CARD = {
-    "ru": "👥 <b>Пригласи друга</b>\n\nПосле его первого диалога ты получишь <b>7 дней Premium</b>, а друг — скидку 20% на первую покупку.\n\nТвоя ссылка:\n{link}\n\nПриглашено: {count} · Активировали: {activated}",
-    "en": "👥 <b>Invite a friend</b>\n\nAfter their first chat you get <b>7 days of Premium</b>, and they get 20% off their first purchase.\n\nYour link:\n{link}\n\nInvited: {count} · Activated: {activated}",
-    "uk": "👥 <b>Запроси друга</b>\n\nПісля його першого діалогу ти отримаєш <b>7 днів Premium</b>, а друг — знижку 20% на першу покупку.\n\nТвоє посилання:\n{link}\n\nЗапрошено: {count} · Активували: {activated}",
+    "ru": "👥 <b>Пригласи друга</b>\n\nПосле его первого диалога ты получишь <b>1 час Premium</b>, а друг — скидку 20% на первую покупку.\n\nТвоя ссылка:\n{link}\n\nПриглашено: {count} · Активировали: {activated}",
+    "en": "👥 <b>Invite a friend</b>\n\nAfter their first chat you get <b>1 hour of Premium</b>, and they get 20% off their first purchase.\n\nYour link:\n{link}\n\nInvited: {count} · Activated: {activated}",
+    "uk": "👥 <b>Запроси друга</b>\n\nПісля його першого діалогу ти отримаєш <b>1 годину Premium</b>, а друг — знижку 20% на першу покупку.\n\nТвоє посилання:\n{link}\n\nЗапрошено: {count} · Активували: {activated}",
 }
 SHARE_BUTTON = {"ru": "Поделиться ссылкой", "en": "Share the link", "uk": "Поділитись посиланням"}
 REWARDS_BUTTON = {"ru": "Мои награды", "en": "My rewards", "uk": "Мої нагороди"}
