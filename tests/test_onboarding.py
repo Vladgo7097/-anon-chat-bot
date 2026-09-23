@@ -108,12 +108,13 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(menu.is_persistent)
         self.assertTrue(all(b.style == "primary" for row in menu.keyboard for b in row))
         self.assertTrue(all(b.text for row in menu.keyboard for b in row))
-        # The community-chat row is a plain url button: tapping it opens the
-        # chat and gives the bot no event, so it must carry the link itself.
+        # The community-chat button must exist exactly once. Bot API
+        # KeyboardButton has no url field -- the link lives in the handler's
+        # inline answer (tests/test_chat_link.py proves that path end to end).
         chat_buttons = [b for row in menu.keyboard for b in row
                         if b.text in T.all_labels(T.CHAT)]
         self.assertEqual(len(chat_buttons), 1)
-        self.assertEqual(chat_buttons[0].url, config.COMMUNITY_CHAT_URL)
+        self.assertNotEqual(getattr(chat_buttons[0], "url", None), config.COMMUNITY_CHAT_URL)
         # Its labels join SYSTEM_TEXTS so a typed press is never relayed into
         # an active chat as a message to the partner.
         self.assertTrue(T.all_labels(T.CHAT) <= T.SYSTEM_TEXTS)

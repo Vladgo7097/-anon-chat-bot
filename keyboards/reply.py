@@ -9,9 +9,9 @@ def kb_button(key, lang):
     # icon look is the intended style and other clients may render both.
     return KeyboardButton(
         text=T.label(key, lang),
-        # url= gives a link button: Telegram sends the bot no event on tap,
-        # so the community chat needs no handler of its own.
-        url=config.COMMUNITY_CHAT_URL if key == T.CHAT else None,
+        # NOTE: KeyboardButton has no url field in the Bot API -- Telegram
+        # would drop it silently and the tap would just send the label as a
+        # message. The community chat is a plain button handled in menu.py.
         icon_custom_emoji_id=T.EMOJI_IDS.get(key),
         style="danger" if key in {T.STOP, T.REPORT, T.CANCEL} else "primary"
     )
