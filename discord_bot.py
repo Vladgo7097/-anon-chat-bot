@@ -21,13 +21,17 @@ from discord.ext import commands
 TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 GUILD_ID = int(os.environ.get("DISCORD_GUILD_ID", "0"))
 
-ROLES_CHANNEL = "❋роли"
-LOGS_CHANNEL = "☾логи"
-TICKETS_CHANNEL = "✧тикеты"
-RULES_CHANNEL = "❋правила"
+ROLES_CHANNEL = "🎭・выбор-ролей"
+LOGS_CHANNEL = "📑・логи"
+TICKETS_CHANNEL = "🎫・поддержка"
+RULES_CHANNEL = "📜・правила"
+ROLES_POST_TITLE = "✦・Самовыдача ролей"
 
 MOD_ROLE_NAMES = {"✦·МОДЕРАТОР", "✦·АДМИН", "✦·РАЗРАБОТЧИК"}
-REACTION_ROLES = {"🟢": "Активный"}          # эмодзи -> имя роли
+# эмодзи -> имя роли; ключи хранятся без U+FE0F, чтобы ⚔ и ⚔️ совпадали
+REACTION_ROLES = {"🟢": "✦·АКТИВНЫЙ", "📢": "Анонсы", "⚔": "Клановые Битвы"}
+BRAND = discord.Color.from_rgb(0x6C, 0x5C, 0xE7)      # Nebula Violet
+DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 SPAM_WINDOW = timedelta(seconds=5)
 SPAM_LIMIT = 6                                # сообщений в окно
 TIMEOUT_ON_REPEAT = timedelta(minutes=5)
@@ -57,12 +61,21 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def emoji_key(emoji) -> str:
+    """⚔ и ⚔️ приходят по-разному — сравниваем без U+FE0F."""
+    return str(emoji).replace("\ufe0f", "")
+
+
+def role_for_emoji(emoji) -> str | None:
+    return REACTION_ROLES.get(emoji_key(emoji))
+
+
 async def channel_named(guild: discord.Guild, name: str) -> discord.abc.Messageable | None:
     return discord.utils.get(guild.text_channels, name=name)
 
 
 async def send_log(guild: discord.Guild, title: str, description: str, color: discord.Color) -> None:
-    """Пишет событие в #☾логи; тихо пропускает, если канала ещё нет."""
+    """Пишет событие в #📑・логи; тихо пропускает, если канала ещё нет."""
     channel = await channel_named(guild, LOGS_CHANNEL)
     if channel is None:
         return
@@ -80,7 +93,7 @@ def is_mod(member: discord.Member) -> bool:
 
 
 async def ensure_reaction_roles(guild: discord.Guild) -> int | None:
-    """Находит или создаёт пост самовыдачи в #❋роли и ставит эмодзи."""
+    """Находит или создаёт пост самовыдачи в #🎭・выбор-ролей и ставит эмодзи."""
     channel = await channel_named(guild, ROLES_CHANNEL)
     if channel is None:
         log.warning("канал %s не найден", ROLES_CHANNEL)
@@ -88,26 +101,29 @@ async def ensure_reaction_roles(guild: discord.Guild) -> int | None:
 
     target: discord.Message | None = None
     async for message in channel.history(limit=50):
-        if message.embeds and message.embeds[0].title == "Самовыдача ролей":
+        if message.embeds and message.embeds[0].title == ROLES_POST_TITLE:
             target = message
             break
 
     if target is None:
-        lines = "\n".join(f"{emoji} — {role}" for emoji, role in REACTION_ROLES.items())
+        lines = "\n".join(f"**{emoji}** `{role}`" for emoji, role in REACTION_ROLES.items())
         embed = discord.Embed(
-            title="Самовыдача ролей",
+            title=ROLES_POST_TITLE,
             description=(
-                "Поставь реакцию под этим сообщением, чтобы получить роль.\n"
-                "Снимешь реакцию — роль снимется.\n\n"
+                "Выбери нужные роли с помощью реакций ниже, чтобы настроить доступ "
+                "и уведомления.\n\n"
+                f"{DIVIDER}\n\n"
                 f"{lines}\n\n"
-                "Остальные роли выдаёт модератор командой `/role`."
+                f"{DIVIDER}\n"
+                "Чтобы снять роль, нажми на реакцию повторно. Остальные роли выдаёт "
+                "модератор командой `/role`."
             ),
-            color=discord.Color.from_rgb(0xA2, 0x9B, 0xFE),
+            color=BRAND,
         )
         target = await channel.send(embed=embed)
 
     for emoji in REACTION_ROLES:
-        if not any(r.emoji == emoji and r.me for r in target.reactions):
+        if not any(emoji_key(r.emoji) == emoji_key(emoji) and r.me for r in target.reactions):
             await target.add_reaction(emoji)
     return target.id
 
@@ -175,9 +191,10 @@ async def cmd_ticket(interaction: discord.Interaction, topic: str) -> None:
         description=(
             f"**Автор:** {interaction.user.mention}\n"
             f"**Вопрос:** {topic[:500]}\n\n"
+            f"{DIVIDER}\n"
             "Модераторы подключатся сами. Закрыть: `/close`."
         ),
-        color=discord.Color.from_rgb(0x2E, 0xD5, 0x73),
+        color=BRAND,
     )
     await thread.send(embed=embed)
     await send_log(
@@ -304,7 +321,7 @@ async def cmd_clear(interaction: discord.Interaction, amount: app_commands.Range
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
     if payload.message_id != reaction_message_id or payload.guild_id is None:
         return
-    role_name = REACTION_ROLES.get(str(payload.emoji))
+    role_name = role_for_emoji(payload.emoji)
     if role_name is None:
         return
     guild = bot.get_guild(payload.guild_id)
@@ -323,14 +340,18 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent) -> None:
     if payload.message_id != reaction_message_id or payload.guild_id is None:
         return
-    role_name = REACTION_ROLES.get(str(payload.emoji))
+    role_name = role_for_emoji(payload.emoji)
     if role_name is None:
         return
     guild = bot.get_guild(payload.guild_id)
     if guild is None:
         return
-    member = guild.get_member(payload.user_id)
-    if member is None:
+    # без Server Members Intent ростер в кэше пуст — иначе снятие роли молчит
+    try:
+        member = guild.get_member(payload.user_id) or await guild.fetch_member(payload.user_id)
+    except discord.HTTPException:
+        return
+    if member is None or member.bot:
         return
     role = discord.utils.get(guild.roles, name=role_name)
     if role is None or role not in member.roles:
@@ -478,8 +499,9 @@ async def on_ready() -> None:
         "БОТ ЗАПУЩЕН",
         f"Версия discord.py {discord.__version__}\n"
         f"Команды: /help /ticket /close /rules /role /mute /ban /clear\n"
+        f"{DIVIDER}\n"
         + (f"⚠ Нет intent: {', '.join(missing)}" if missing else "Все intent на месте."),
-        discord.Color.green(),
+        BRAND,
     )
     log.info("готов: %s · сервер: %s · intent-проблемы: %s", bot.user, guild.name, missing or "нет")
 
