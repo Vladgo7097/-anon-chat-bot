@@ -51,18 +51,25 @@ class AccessMiddleware(BaseMiddleware):
             return
         await set_online(actor.id)
         step = step_for(user)
-        from utils.time import utcnow
-        if step == "MENU" and getattr(user, "last_active_date", None) != utcnow().date():
-            from services.growth import StreakService
-            await StreakService().checkin(actor.id)
-        if step != "MENU" and command != "/start":
+        # The registration's own taps must always reach their handlers: this
+        # block used to swallow the `lang:*` callback (a CallbackQuery carries
+        # no text, so command stayed "") and re-sent the language screen on
+        # every tap -- the flow dead-ended on its very first step.
+        onboarding_tap = callback and (action.startswith("lang:")
+                                       or action in {"rules", "rules:ok", "back:start", "menu"})
+        if step != "MENU" and command != "/start" and not onboarding_tap:
             if callback:
                 await event.answer("Сначала заверши регистрацию.")
-                await show_step(event.message, data["state"], ServiceResult(False, step), lang=lang)
+                from handlers.start import callback_target
+                await show_step(callback_target(event), data["state"], ServiceResult(False, step), lang=lang)
             else:
                 await data["state"].set_state(f"Onboarding:{step}")
                 await onboarding_input(event, data["state"], lang=lang)
             return
+        from utils.time import utcnow
+        if step == "MENU" and getattr(user, "last_active_date", None) != utcnow().date():
+            from services.growth import StreakService
+            await StreakService().checkin(actor.id)
         if step == "MENU" and (await data["state"].get_state() or "").startswith("Onboarding:"):
             await data["state"].clear()
             # Same reason as below: the FSM middleware already cached this state

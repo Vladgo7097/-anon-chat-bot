@@ -5,9 +5,10 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from handlers import start_router
 from keyboards import texts as T
-from keyboards.reply import onboarding_kb
+from keyboards.reply import onboarding_kb, main_menu_kb
 from keyboards.inline import language_kb
 from services.onboarding import OnboardingService, step_for
+from services.result import ServiceResult
 
 
 class Onboarding(StatesGroup):
@@ -44,6 +45,26 @@ BANNED_UNTIL = {"ru": "⛔ Ты заблокирован до {until} UTC.", "en
 BANNED_FOREVER = {"ru": "⛔ Ты заблокирован бессрочно.", "en": "⛔ You are banned permanently.", "uk": "⛔ Тебе заблоковано безстроково."}
 
 TEXTS = {"WELCOME": WELCOME_TEXT, "GENDER": GENDER_TEXT, "AGE": AGE_TEXT, "RULES": RULES_TEXT}
+
+
+class _DirectTarget:
+    """Answers in the user's own chat when the tapped message is too old for
+    Telegram to hand back: past ~48 hours CallbackQuery.message comes back
+    inaccessible, and answering it raised -- which on the language step looked
+    exactly like "registration is broken"."""
+
+    def __init__(self, bot, chat_id):
+        self._bot, self._chat_id = bot, chat_id
+
+    async def answer(self, text, reply_markup=None, **kwargs):
+        await self._bot.send_message(self._chat_id, text, reply_markup=reply_markup, **kwargs)
+
+
+def callback_target(callback):
+    message = callback.message
+    if message is not None and getattr(message, "answer", None) is not None:
+        return message
+    return _DirectTarget(callback.bot, callback.from_user.id)
 
 
 async def show_step(message, state, result, page=0, lang="ru"):
@@ -85,17 +106,29 @@ async def cmd_rules(message: Message, lang: str = "ru"):
 async def cb_language(callback: CallbackQuery, state: FSMContext):
     code = callback.data.removeprefix("lang:")
     actor = callback.from_user
+    target = callback_target(callback)
     from repositories.users import UserRepository
+    if code not in T.LANGUAGE_NAMES:
+        await callback.answer()
+        return
     row = await UserRepository().get(actor.id)
     if row and step_for(row) == "LANGUAGE":
         result = await OnboardingService().advance(actor.id, "lang", code)
-        await show_step(callback.message, state, result, lang=code)
+        await show_step(target, state, result, lang=code)
     else:
         await OnboardingService().set_language(actor.id, code)
-        await callback.message.answer(
-            {"ru": "Язык изменён на Русский.", "en": "Language changed to English.", "uk": "Мову змінено на українську."}[code])
-        from keyboards.reply import main_menu_kb
-        await callback.message.answer(T.menu_text(code), reply_markup=main_menu_kb(code))
+        row = await UserRepository().get(actor.id)
+        step = step_for(row) if row else "LANGUAGE"
+        if step == "MENU":
+            await state.clear()
+            await target.answer(
+                {"ru": "Язык изменён на Русский.", "en": "Language changed to English.", "uk": "Мову змінено на українську."}[code])
+            await target.answer(T.menu_text(code), reply_markup=main_menu_kb(code))
+        else:
+            # A stale language button tapped mid-registration must not paint a
+            # main menu the user has not earned yet -- the flow continues from
+            # the step that is actually unfinished, in the new language.
+            await show_step(target, state, ServiceResult(True, step), lang=code)
     await callback.answer()
 
 
@@ -130,10 +163,11 @@ async def onboarding_input(message: Message, state: FSMContext, lang: str = "ru"
 
 @start_router.callback_query(F.data.in_({"rules", "rules:ok", "back:start", "menu"}))
 async def cb_start_navigation(callback: CallbackQuery, state: FSMContext, lang: str = "ru"):
+    target = callback_target(callback)
     if callback.data == "rules":
-        await callback.message.answer(T.tr(RULES_TEXT, lang))
+        await target.answer(T.tr(RULES_TEXT, lang))
     else:
         actor = callback.from_user
         result = await OnboardingService().start(actor.id, actor.username, actor.first_name)
-        await show_step(callback.message, state, result, lang=lang)
+        await show_step(target, state, result, lang=lang)
     await callback.answer()
