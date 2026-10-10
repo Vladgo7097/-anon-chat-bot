@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from handlers import load_routers
 from models.base import Base
 from models.user import User as UserModel
+from services.result import ServiceResult
 import models.chat  # noqa: F401 -- registers metadata used by the routers
 import models.operations  # noqa: F401
 import models.payment  # noqa: F401
@@ -48,8 +49,14 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         self.engine = create_async_engine(
             "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "reg.db"))
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
+        # Patch every module that holds its own reference to async_session:
+        # a consumer imported while another test's patch is active would keep
+        # that test's factory (and its deleted temp file) forever.
         for module in ("models.base", "repositories.chats", "repositories.users",
-                       "services.notifications", "services.growth", "services.payments"):
+                       "services.notifications", "services.growth", "services.payments",
+                       "services.profile", "services.matching",
+                       "services.settings", "services.reveal", "services.reports",
+                       "services.admin", "services.ads"):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)
@@ -118,6 +125,149 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._send_text("25")
         await self._send_text("Принимаю правила")
         return self.sent[-1]
+
+    async def _seed_user(self, **fields):
+        async with self.factory.begin() as s:
+            s.add(UserModel(telegram_id=self.uid, anon_id=f"#seed{self.uid}", **fields))
+
+    async def test_age_gate_boundaries_and_stray_whitespace(self):
+        await self._send_text("/start")
+        await self._tap("lang:ru")
+        await self._send_text("Парень")
+        for age in ("17", "100", "0"):
+            await self._send_text(age)
+            self.assertIn("Сервис доступен только с 18 лет", self.sent[-1].text,
+                          f"возраст {age!r} должен быть отклонён сервером")
+            self.assertIsNone((await self._user()).age)
+        # Nonsense on the only step the user can type into must say so, not
+        # silently re-show the keyboard.
+        await self._send_text("abc")
+        self.assertIn("Введи возраст кнопкой", self.sent[-1].text)
+        # Telegram Web appends a NBSP to typed digits -- the tap must still count.
+        await self._send_text(" 25 ")
+        self.assertEqual((await self._user()).age, 25)
+        self.assertIn("Правила", self.sent[-1].text)
+
+    async def test_interrupted_registration_resumes_where_it_stopped(self):
+        await self._seed_user(language="uk", gender="female", onboarding_step="AGE")
+        await self._send_text("/start")
+        self.assertIn("Скільки тобі років", self.sent[-1].text)
+        self.assertNotIn("Choose your language", self.sent[-1].text)
+        await self._send_text("21")
+        self.assertIn("Правила спілкування", self.sent[-1].text)
+        await self._send_text("Приймаю правила")
+        self.assertTrue((await self._user()).onboarding_completed)
+        self.assertIn("Головне меню", self.sent[-1].text)
+
+    async def test_double_language_tap_does_not_jump_to_the_menu(self):
+        await self._send_text("/start")
+        await self._tap("lang:ru")
+        await self._tap("lang:uk")
+        user = await self._user()
+        self.assertEqual(user.language, "uk")
+        self.assertFalse(user.onboarding_completed)
+        self.assertIn("Вкажи свою стать", self.sent[-1].text)
+        self.assertNotIn("Головне меню", self.sent[-1].text)
+
+    async def test_menu_tap_mid_registration_does_not_fake_the_menu(self):
+        await self._send_text("/start")
+        await self._tap("lang:ru")
+        await self._tap("menu")
+        user = await self._user()
+        self.assertFalse(user.onboarding_completed)
+        self.assertIn("Укажи свой пол", self.sent[-1].text)
+
+    async def test_age_pages_and_rules_view(self):
+        await self._send_text("/start")
+        await self._tap("lang:ru")
+        await self._send_text("Парень")
+        self.assertIn("18", self.sent[-1].reply_markup.keyboard[0][0].text)
+        await self._send_text("Дальше")
+        self.assertIn("30", self.sent[-1].reply_markup.keyboard[0][0].text)
+        await self._send_text("Назад")
+        self.assertIn("18", self.sent[-1].reply_markup.keyboard[0][0].text)
+        await self._send_text("25")
+        self.assertIn("Правила общения", self.sent[-1].text)
+        await self._send_text("Читать правила полностью")
+        # The rules arrive as an extra message; the step in progress stays put.
+        self.assertTrue(any("Правила общения" in m.text for m in self.sent[-2:]))
+        self.assertIn("Принимаю", self.sent[-1].reply_markup.keyboard[0][0].text)
+        user = await self._user()
+        self.assertIsNone(user.rules_accepted_at, "просмотр правил не должен их принимать")
+        await self._send_text("Принимаю правила")
+        self.assertTrue((await self._user()).onboarding_completed)
+
+    async def test_unregistered_user_cannot_reach_menu_features(self):
+        from handlers.profile import show_profile
+        from handlers.search import begin_search
+        with (
+            patch("handlers.profile.show_profile", AsyncMock()) as profile,
+            patch("handlers.search.begin_search", AsyncMock()) as search,
+        ):
+            await self._send_text("/start")
+            await self._tap("lang:ru")
+            # Every menu affordance must bounce back to the unfinished step.
+            for action in ("Найти собеседника", "Мой профиль", "Настройки поиска", "Premium"):
+                await self._send_text(action)
+                self.assertIn("Укажи свой пол", self.sent[-1].text,
+                              f"{action!r} должен вернуть на шаг регистрации")
+            for callback in ("search:start", "profile", "settings", "premium"):
+                await self._tap(callback)
+                self.assertIn("Укажи свой пол", self.sent[-1].text,
+                              f"{callback!r} должен вернуть на шаг регистрации")
+            profile.assert_not_awaited()
+            search.assert_not_awaited()
+        self.assertFalse((await self._user()).onboarding_completed)
+
+    async def test_re_registration_after_account_deletion(self):
+        from services.profile import ProfileService
+        await self._to_menu()
+        with (
+            patch("services.matching.MatchingService.cancel", AsyncMock(return_value=ServiceResult(True, "OK"))),
+            patch("services.chats.ChatService.end_chat", AsyncMock(return_value=ServiceResult(True, "OK"))),
+        ):
+            self.assertTrue((await ProfileService().delete(self.uid)).ok)
+        await self._send_text("/start")
+        # The language survives the deletion, so the flow restarts at gender,
+        # not at the language screen the user already answered once.
+        self.assertIn("Укажи свой пол", self.sent[-1].text)
+        await self._send_text("Девушка")
+        await self._send_text("31")
+        await self._send_text("Принимаю правила")
+        user = await self._user()
+        self.assertTrue(user.onboarding_completed)
+        self.assertIsNone(user.deleted_at)
+        self.assertIn("Главное меню", self.sent[-1].text)
+
+    async def test_banned_user_cannot_walk_through_registration(self):
+        await self._seed_user(language="ru", is_banned=True, onboarding_step="WELCOME")
+        await self._send_text("/start")
+        self.assertIn("Ты заблокирован", self.sent[-1].text)
+        user = await self._user()
+        self.assertFalse(user.onboarding_completed)
+
+    async def test_referral_payload_is_stored(self):
+        from models.operations import Referral
+        from utils.time import utcnow
+        referrer_id = self.uid + 500
+        async with self.factory.begin() as s:
+            s.add(UserModel(telegram_id=referrer_id, anon_id=f"#ref{referrer_id}",
+                            referral_code="refcode123", gender="male", age=30,
+                            onboarding_completed=True, onboarding_step="MENU",
+                            rules_version=1, rules_accepted_at=utcnow()))
+        await self._send_text("/start ref_refcode123")
+        user = await self._user()
+        self.assertEqual(user.referrer_id, referrer_id, "реферальная ссылка не записана")
+        async with self.factory() as s:
+            referral = await s.scalar(select(Referral).where(Referral.referred_id == self.uid))
+        self.assertIsNotNone(referral, "строка реферала не создана")
+        self.assertIn("Выберите язык", self.sent[-1].text)
+
+    async def test_start_during_an_active_chat_is_redirected(self):
+        await self._to_menu()
+        with patch("services.chat_manager.get_partner", AsyncMock(return_value=456)):
+            await self._send_text("/start")
+        self.assertIn("Ты сейчас в диалоге", self.sent[-1].text)
 
     async def test_full_registration_reaches_the_main_menu(self):
         await self._send_text("/start")

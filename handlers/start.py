@@ -36,6 +36,11 @@ AGE_TEXT = {
     "en": "<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> How old are you?\n\nChoose your age:",
     "uk": "<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Скільки тобі років?\n\nОбери свій вік:",
 }
+AGE_INPUT_HINT = {
+    "ru": "Введи возраст кнопкой или цифрами — от 18 до 99.",
+    "en": "Pick your age with a button or type digits — 18 to 99.",
+    "uk": "Обери вік кнопкою або введи цифри — від 18 до 99.",
+}
 RULES_TEXT = {
     "ru": "<tg-emoji emoji-id=\"5976292450870761243\">📜</tg-emoji> Правила общения\n\n1️⃣ Запрещена реклама и спам\n2️⃣ Запрещены оскорбления и травля\n3️⃣ Запрещён запрещённый и нежелательный контент\n4️⃣ Не разглашай личные данные — свои и чужие\n5️⃣ Жалуйся на нарушителей кнопкой <tg-emoji emoji-id=\"5460755126761312667\">🚩</tg-emoji>\n\nДля рассмотрения жалобы последние текстовые сообщения временно хранятся до 30 минут. В базу контекст попадает только после явной отправки жалобы.\n\nНарушение правил может привести к блокировке.\n\nНажимая кнопку ниже, ты подтверждаешь, что ознакомился с правилами. Сервис доступен только с 18 лет.",
     "en": "<tg-emoji emoji-id=\"5976292450870761243\">📜</tg-emoji> Chat rules\n\n1️⃣ No ads or spam\n2️⃣ No insults or harassment\n3️⃣ No prohibited or unwanted content\n4️⃣ Don't share personal data — yours or someone else's\n5️⃣ Report violators with the <tg-emoji emoji-id=\"5460755126761312667\">🚩</tg-emoji> button\n\nTo review reports, recent text messages are kept for up to 30 minutes. Nothing is stored unless a report is actually filed.\n\nBreaking the rules can lead to a ban.\n\nBy tapping the button below, you confirm you've read the rules. The service is available from 18 years old only.",
@@ -149,14 +154,24 @@ async def onboarding_input(message: Message, state: FSMContext, lang: str = "ru"
         action, value = "gender", "male" if text in T.all_labels(T.MALE) else "female"
     elif text in T.all_labels(T.ACCEPT):
         action = "accept"
-    elif text.isascii() and text.isdigit():
-        action, value = "age", int(text)
+    else:
+        # Telegram Web and several Android keyboards send a stray space or
+        # NBSP with the digit; isdigit() then fails and the tap looks dead.
+        digits = text.replace("\u00a0", " ").strip()
+        if digits.isascii() and digits.isdigit():
+            action, value = "age", int(digits)
     result = await OnboardingService().advance(message.from_user.id, action, value)
     page = (await state.get_data()).get("age_page", 0)
-    if text in T.all_labels(T.PAGE_NEXT) | T.all_labels(T.PAGE_PREV) and result.code == "AGE":
+    paging = text in T.all_labels(T.PAGE_NEXT) | T.all_labels(T.PAGE_PREV)
+    rules_press = text in T.all_labels(T.RULES)
+    if paging and result.code == "AGE":
         import config
         page = min(max(0, page + (1 if text in T.all_labels(T.PAGE_NEXT) else -1)), (config.MAX_AGE-config.MIN_AGE)//config.AGE_PAGE_SIZE)
-    if text in T.all_labels(T.RULES):
+    elif result.code == "AGE" and action == "invalid" and not rules_press:
+        # The age step is the only one the user can type into: silently
+        # re-showing the keyboard made the tap look dead.
+        result = ServiceResult(False, "AGE", {"error": T.tr(AGE_INPUT_HINT, lang)})
+    if rules_press:
         await message.answer(T.tr(RULES_TEXT, lang))
     await show_step(message, state, result, page, lang)
 
