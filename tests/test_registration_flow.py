@@ -98,11 +98,12 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             self.sent.append(payload)
         return True
 
-    async def _send_text(self, text, update_id=1):
+    async def _send_text(self, text, update_id=1, lang_code=None):
         await self.dp.feed_update(_BOT, Update(update_id=update_id, message=Message(
             message_id=update_id, date=datetime.now(timezone.utc),
             chat=Chat(id=self.uid, type="private"),
-            from_user=User(id=self.uid, is_bot=False, first_name="Tester"), text=text)))
+            from_user=User(id=self.uid, is_bot=False, first_name="Tester",
+                            language_code=lang_code), text=text)))
 
     async def _tap(self, data, update_id=1):
         await self.dp.feed_update(_BOT, Update(update_id=update_id, callback_query=CallbackQuery(
@@ -306,6 +307,41 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
                          "тап по языку не дошёл до обработчика")
         self.assertNotIn("Выберите язык", self.sent[-1].text,
                          "вместо продолжения регистрации показан экран языка заново")
+        self.assertEqual((await self._user()).language, "en")
+
+    async def test_client_language_skips_the_picker(self):
+        """A Ukrainian client is a Ukrainian user: no picker tap, nothing to
+        stall on -- the language bug lived on that very tap."""
+        await self._send_text("/start", lang_code="uk")
+        self.assertNotIn("Choose your language", self.sent[-1].text)
+        self.assertIn("Привіт", self.sent[-1].text)
+        user = await self._user()
+        self.assertEqual(user.language, "uk")
+        self.assertFalse(user.onboarding_completed)
+        # The rest of the flow runs in that language without any lang: tap.
+        await self._send_text("Дівчина")
+        self.assertIn("Скільки тобі років", self.sent[-1].text)
+        await self._send_text("21")
+        await self._send_text("Приймаю правила")
+        self.assertTrue((await self._user()).onboarding_completed)
+        self.assertIn("Головне меню", self.sent[-1].text)
+
+    async def test_client_region_variant_is_normalized(self):
+        # Telegram reports "ru-RU" / "uk-UA" for regional builds; the bot only
+        # speaks the base codes.
+        await self._send_text("/start", lang_code="ru-RU")
+        self.assertNotIn("Choose your language", self.sent[-1].text)
+        self.assertIn("Привет", self.sent[-1].text)
+        self.assertEqual((await self._user()).language, "ru")
+
+    async def test_unsupported_client_language_still_gets_the_picker(self):
+        # German client, bot speaks ru/en/uk: the choice has to be offered,
+        # and it has to work -- detection is a shortcut, not a wall.
+        await self._send_text("/start", lang_code="de")
+        self.assertIn("Выберите язык", self.sent[-1].text)
+        self.assertIsNone((await self._user()).language)
+        await self._tap("lang:en")
+        self.assertIn("Hi!", self.sent[-1].text)
         self.assertEqual((await self._user()).language, "en")
 
     async def test_settings_language_change_still_works(self):

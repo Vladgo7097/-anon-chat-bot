@@ -99,7 +99,18 @@ async def cmd_start(message: Message, state: FSMContext):
     user = message.from_user
     payload = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
     result = await OnboardingService().start(user.id, user.username, user.first_name, payload, notify_owner=True)
-    await show_step(message, state, result, lang=(result.data or {}).get("language") or "ru")
+    lang = (result.data or {}).get("language") or "ru"
+    if result.code == "LANGUAGE":
+        # Telegram already knows what language its client runs on: a ru/uk/en
+        # client lands straight on the welcome screen, anything else still gets
+        # the buttons. The picker stays a fallback, not a gate -- every tap it
+        # used to demand was one more place to stall, and it stalled 2600 people
+        # for a week. Settings can change the language afterwards regardless.
+        detected = (getattr(user, "language_code", None) or "").split("-", 1)[0].lower()
+        if detected in T.LANGUAGE_NAMES:
+            result = await OnboardingService().advance(user.id, "lang", detected)
+            lang = detected
+    await show_step(message, state, result, lang=lang)
 
 
 @start_router.message(Command("rules"))
