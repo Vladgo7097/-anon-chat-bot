@@ -13,12 +13,15 @@ no_traffic -- nobody arrives at all: polling dead, token revoked, bot banned
 """
 from datetime import timedelta
 
+import logging
 import config
 from models.base import async_session
 from models.operations import AnalyticsEvent
 from services.notifications import enqueue
 from utils.time import utcnow
 from sqlalchemy import select, func
+
+logger = logging.getLogger(__name__)
 
 # A 24h window: below MIN_STARTS a dead stretch is a quiet day, not a bug.
 # STRONG_STARTS pairs with the under-10% completion rate to catch a partial
@@ -47,18 +50,25 @@ async def check(now=None):
     async with async_session.begin() as s:
         started = await _count(s, "start_source", since)
         finished = await _count(s, "onboarding_completed", since)
+        signature = None
         if started >= MIN_STARTS and (finished == 0
                                        or (started >= STRONG_STARTS and finished * 10 < started)):
+            signature = "dead_flow"
             await enqueue(s, config.OWNER_ID, "funnel_alert",
                           f"funnel_alert:dead_flow:{now.date().isoformat()}",
                           f"⛔ Воронка регистрации встала. За 24 часа {started} заходов "
                           f"и {finished} завершений. Шаги открываются, но до меню не "
                           f"доходят. Найди, какой, -- как в тот раз с выбором языка.")
-            return "dead_flow", started, finished
-        if started == 0 and not QUIET_FROM <= now.hour < QUIET_TO:
+        elif started == 0 and not QUIET_FROM <= now.hour < QUIET_TO:
+            signature = "no_traffic"
             await enqueue(s, config.OWNER_ID, "funnel_alert",
                           f"funnel_alert:no_traffic:{now.date().isoformat()}",
                           "⛔ За 24 часа в бот не пришёл ни один человек. "
                           "Проверь polling, токен и не забанен ли бот в поиске.")
-            return "no_traffic", started, finished
+    # The heartbeat is the only way to tell a quiet watcher from a dead one:
+    # absence of a page must never mean absence of a check.
+    logger.info("event=funnel_watch started=%s finished=%s signature=%s",
+                started, finished, signature or "ok")
+    if signature:
+        return signature, started, finished
     return None

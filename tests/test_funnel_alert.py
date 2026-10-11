@@ -67,10 +67,14 @@ class FunnelAlertTests(DatabaseCase):
         await self.seed(now, starts=120, finished=5)
         self.assertEqual((await funnel_alert.check(now))[0], "dead_flow")
 
-    async def test_healthy_funnel_stays_silent(self):
+    async def test_healthy_funnel_stays_silent_but_still_reports_itself(self):
         now = datetime(2026, 10, 11, 14, 0, tzinfo=timezone.utc)
         await self.seed(now, starts=250, finished=180)
-        self.assertIsNone(await funnel_alert.check(now))
+        # No page, but the heartbeat must still land: a watcher nobody can see
+        # running is indistinguishable from one that never runs.
+        with self.assertLogs("services.funnel_alert", level="INFO") as logs:
+            self.assertIsNone(await funnel_alert.check(now))
+        self.assertIn("started=250 finished=180 signature=ok", logs.output[0])
         self.assertEqual(await self.pages(), [])
 
     async def test_quiet_day_is_not_a_bug(self):
