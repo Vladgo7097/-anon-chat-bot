@@ -8,6 +8,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, Teleg
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from services.notifications import NotificationService
 from services.chats import ChatService
+from services import funnel_alert
 from keyboards.reply import main_menu_kb, chat_kb_reply
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ async def refresh_broadcast_progress(bot, service):
 async def run(bot):
     service=NotificationService()
     last=0
+    last_funnel=time.monotonic()
     while True:
         try:
             Path('/tmp/anon-worker-heartbeat').write_text(str(time.time()))
@@ -63,6 +65,11 @@ async def run(bot):
                 await ChatService().reconcile()
                 await service.schedule()
                 last=time.monotonic()
+            # The funnel watcher pages the owner on arrivals-without-completions;
+            # ten minutes is fast enough to catch a step breaking the same day.
+            if time.monotonic()-last_funnel>600:
+                await funnel_alert.check()
+                last_funnel=time.monotonic()
             await service.expand_broadcast()
             await refresh_broadcast_progress(bot, service)
             notification=await service.next()

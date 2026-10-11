@@ -15,6 +15,11 @@ from utils.time import utcnow
 import config
 
 
+# Single source of truth: the panel, the service layer and audience_size all
+# derive from this, so a new segment cannot be added in one place only.
+BROADCAST_SEGMENTS = ("all", "premium", "inactive", "nopay", "no_language")
+
+
 def authorize(admin_id):
     if admin_id not in config.ADMIN_IDS:
         raise PermissionError("Admin access required")
@@ -346,7 +351,7 @@ class AdminService:
 
     async def broadcast(self,admin,segment,content,kind="text",poll_options=None):
         authorize(admin)
-        if segment not in {"all","premium","inactive","nopay"} or kind not in {"text","poll"}:
+        if segment not in BROADCAST_SEGMENTS or kind not in {"text","poll"}:
             return ServiceResult(False,"INVALID")
         if kind=="text":
             if not 1<=len(content)<=4000:
@@ -368,7 +373,7 @@ class AdminService:
 
     async def audience_size(self,admin,segment):
         authorize(admin)
-        if segment not in {"all","premium","inactive","nopay"}:
+        if segment not in BROADCAST_SEGMENTS:
             return 0
         from services.notifications import broadcast_segment
         async with async_session() as s:

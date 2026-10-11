@@ -11,7 +11,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import admin_router
 from keyboards import texts as T
 from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb
-from services.admin import AdminService, StatsService, authorize
+from services.admin import AdminService, StatsService, authorize, BROADCAST_SEGMENTS
 from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
@@ -619,7 +619,7 @@ def broadcast_card_kb(job_id):
 async def cb_broadcast(callback: CallbackQuery):
     service = AdminService()
     sizes = {segment: await service.audience_size(callback.from_user.id, segment)
-             for segment in ("all", "premium", "inactive", "nopay")}
+             for segment in BROADCAST_SEGMENTS}
     await callback.answer()
     await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Выбери аудиторию:",
                                   reply_markup=admin_broadcast_audience_kb(sizes))
@@ -628,7 +628,7 @@ async def cb_broadcast(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("bc:"))
 async def cb_audience(callback: CallbackQuery,state: FSMContext):
     audience=callback.data.split(":")[-1]
-    if audience not in {"all","premium","inactive","nopay"}:
+    if audience not in BROADCAST_SEGMENTS:
         await callback.answer("Неизвестная аудитория")
         return
     await state.set_state(AdminBroadcast.CONTENT)
@@ -664,7 +664,7 @@ async def poll_vote_update(poll):
 async def cb_poll(callback: CallbackQuery):
     service = AdminService()
     sizes = {segment: await service.audience_size(callback.from_user.id, segment)
-             for segment in ("all", "premium", "inactive", "nopay")}
+             for segment in BROADCAST_SEGMENTS}
     await callback.answer()
     await callback.message.answer("📊 Выбери аудиторию для опроса:",
                                   reply_markup=admin_broadcast_audience_kb(sizes, poll=True))
@@ -673,7 +673,7 @@ async def cb_poll(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("bcp:"))
 async def cb_audience_poll(callback: CallbackQuery,state: FSMContext):
     audience=callback.data.split(":")[-1]
-    if audience not in {"all","premium","inactive","nopay"}:
+    if audience not in BROADCAST_SEGMENTS:
         await callback.answer("Неизвестная аудитория")
         return
     await state.set_state(AdminBroadcast.POLL_QUESTION)

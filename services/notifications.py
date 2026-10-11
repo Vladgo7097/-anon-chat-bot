@@ -113,6 +113,11 @@ def broadcast_segment(query, segment, now=None):
         return query.where(User.last_online < now-timedelta(days=7))
     if segment == "nopay":
         return query.where(User.total_stars_spent == 0)
+    if segment == "no_language":
+        # The registration funnel's stuck tail: everyone who tapped /start and
+        # never reached the menu, whether they died on the language screen or
+        # on a later step. Named for the bug that stranded most of them.
+        return query.where(User.onboarding_completed.is_(False))
     return query
 
 
@@ -328,7 +333,7 @@ class NotificationService:
                     from models.operations import BotSetting
                     flag=await s.get(BotSetting,"marketing_enabled")
                     marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
-                owner_types = {"owner_new_user", "startup", "backup_failed", "owner_report", "owner_first_payment"}
+                owner_types = {"owner_new_user", "startup", "backup_failed", "owner_report", "owner_first_payment", "funnel_alert"}
                 owner_notice = n.type in owner_types and n.user_id == config.OWNER_ID
                 if (n.type in owner_types and not owner_notice) or (not owner_notice and (
                         not user or (banned(user) and n.type != "ban") or user.deleted_at

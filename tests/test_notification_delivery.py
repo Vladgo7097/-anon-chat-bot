@@ -22,6 +22,7 @@ class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(maintenance.Path, "write_text"),
             patch("workers.maintenance.ChatService.reconcile", AsyncMock()),
             patch("workers.maintenance.asyncio.sleep", AsyncMock()),
+            patch.object(maintenance.funnel_alert, "check", AsyncMock(return_value=None)),
         ):
             with self.assertRaises(asyncio.CancelledError):
                 await maintenance.run(bot)
@@ -60,6 +61,7 @@ class NotificationDeliveryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(maintenance.Path, "write_text"),
             patch("workers.maintenance.ChatService.reconcile", AsyncMock()),
             patch("workers.maintenance.asyncio.sleep", AsyncMock()),
+            patch.object(maintenance.funnel_alert, "check", AsyncMock(return_value=None)),
         ):
             with self.assertRaises(asyncio.CancelledError):
                 await maintenance.run(bot)

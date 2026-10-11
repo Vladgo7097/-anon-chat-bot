@@ -3,7 +3,8 @@ from keyboards import texts as T
 from locales import LANGS
 
 SEGMENT_TITLES = {"all": "все пользователи", "premium": "Premium",
-                  "inactive": "неактивные 7+ дней", "nopay": "без покупок"}
+                  "inactive": "неактивные 7+ дней", "nopay": "без покупок",
+                  "no_language": "не дошли регистрации"}
 
 
 def language_kb(back_callback=None):
@@ -138,6 +139,7 @@ def admin_broadcast_audience_kb(sizes=None, poll=False) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data="bcp:premium")],
             [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bcp:inactive")],
             [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bcp:nopay")],
+            [InlineKeyboardButton(text=label("Не дошли регистрации", "no_language"), icon_custom_emoji_id="5271783639548441015", callback_data="bcp:no_language")],
         ]
     else:
         rows = [
@@ -145,6 +147,7 @@ def admin_broadcast_audience_kb(sizes=None, poll=False) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=label("Premium", "premium"), icon_custom_emoji_id="5258165702707125574", callback_data="bc:premium")],
             [InlineKeyboardButton(text=label("Неактивные 7+ дней", "inactive"), icon_custom_emoji_id="5949785428843302949", callback_data="bc:inactive")],
             [InlineKeyboardButton(text=label("Без покупок", "nopay"), icon_custom_emoji_id="5271783639548441015", callback_data="bc:nopay")],
+            [InlineKeyboardButton(text=label("Не дошли регистрации", "no_language"), icon_custom_emoji_id="5271783639548441015", callback_data="bc:no_language")],
         ]
     rows.append([InlineKeyboardButton(text="Отмена", icon_custom_emoji_id="5210952531676504517", callback_data="admin:back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

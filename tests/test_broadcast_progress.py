@@ -48,6 +48,24 @@ class BroadcastProgressTests(DatabaseCase):
                                     .where(Notification.broadcast_id == job.id))
         self.assertEqual(queued, await admin.audience_size(99, "all"))
 
+    async def test_no_language_segment_targets_only_the_unfinished(self):
+        async with self.factory.begin() as s:
+            # The tail the language bug stranded: tapped /start, never the menu.
+            # A picked language with the registration still open counts too;
+            # a finished one never does.
+            s.add(User(telegram_id=7, anon_id="#stuck", gender="male", age=23))
+            s.add(User(telegram_id=8, anon_id="#halfway", gender="female", age=24, language="uk"))
+            s.add(User(telegram_id=9, anon_id="#done", gender="male", age=25,
+                       language="ru", onboarding_completed=True, onboarding_step="MENU"))
+        admin = AdminService()
+        self.assertEqual(await admin.audience_size(99, "no_language"), 2)
+        _, job = await self.launch("no_language")
+        await NotificationService().expand_broadcast()
+        async with self.factory() as s:
+            queued = set((await s.scalars(
+                select(Notification.user_id).where(Notification.broadcast_id == job.id))).all())
+        self.assertEqual(queued, {7, 8})
+
     async def test_confirm_stores_the_audience_snapshot(self):
         _, job = await self.launch()
         self.assertEqual(job.total, 3)
