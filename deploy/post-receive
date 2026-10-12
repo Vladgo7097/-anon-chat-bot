@@ -46,3 +46,18 @@ docker compose up -d bot web 2>&1
 docker builder prune -f --filter until=24h >/dev/null 2>&1
 
 echo "[post-receive] Deploy complete!"
+
+# GitHub mirrors this repository; it is not a second deploy path. The pull
+# loop that used to run the other way (scripts/autodeploy.sh) conflicted with
+# `git push deploy` and was disabled on 2026-09-10, which is how the mirror was
+# left 168 commits behind. Pushing here keeps it caught up without a manual
+# step. Non-fatal by design: an unreachable GitHub must never block a deploy,
+# and a diverged remote just means someone pushed from elsewhere -- reported,
+# not forced over.
+if git --git-dir=/opt/anon-chat-bot.git remote get-url origin >/dev/null 2>&1; then
+    if git --git-dir=/opt/anon-chat-bot.git push origin master:master >/dev/null 2>&1; then
+        echo "[post-receive] GitHub synced."
+    else
+        echo "[post-receive] GitHub sync skipped -- push failed, mirror will lag until it works."
+    fi
+fi
