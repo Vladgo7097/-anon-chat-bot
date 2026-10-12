@@ -70,7 +70,7 @@ async def cb_stats(callback: CallbackQuery, lang: str = "ru"):
     if not stats:
         await callback.answer(T.tr(NOT_FOUND, lang), show_alert=True)
         return
-    await callback.message.edit_text(format_stats(stats, lang), reply_markup=stats_kb())
+    await callback.message.edit_text(format_stats(stats, lang), reply_markup=stats_kb(lang))
     await callback.answer()
 
 
@@ -80,4 +80,4 @@ async def cmd_stats(message: Message, lang: str = "ru"):
     if not stats:
         await message.answer(T.tr(NOT_FOUND, lang))
         return
-    await message.answer(format_stats(stats, lang), reply_markup=stats_kb())
+    await message.answer(format_stats(stats, lang), reply_markup=stats_kb(lang))

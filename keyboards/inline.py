@@ -7,12 +7,12 @@ SEGMENT_TITLES = {"all": "все пользователи", "premium": "Premium"
                   "no_language": "не дошли регистрации"}
 
 
-def language_kb(back_callback=None):
+def language_kb(back_callback=None, lang="ru"):
     rows = [[InlineKeyboardButton(
         text=f"{T.LANGUAGE_FLAGS[code]} {T.LANGUAGE_NAMES[code]}",
         callback_data=f"lang:{code}")] for code in LANGS]
     if back_callback:
-        rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data=back_callback)])
+        rows.append([InlineKeyboardButton(text=T.label(T.PAGE_PREV, lang), icon_custom_emoji_id="5258236805890710909", callback_data=back_callback)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -32,55 +32,58 @@ def back_kb(target="admin:back") -> InlineKeyboardMarkup:
     return admin_back_kb(target)
 
 
-def profile_kb(has_photo: bool = False) -> InlineKeyboardMarkup:
+def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarkup:
+    labels = T.tr(T.PROFILE_BUTTONS, lang)
     rows = [
-        [InlineKeyboardButton(text="Заполнить о себе", icon_custom_emoji_id="5301173701323028420", callback_data="profile:edit")],
-        [InlineKeyboardButton(text="Добавить фото", icon_custom_emoji_id="5258254475386167466", callback_data="profile:photo")],
+        [InlineKeyboardButton(text=labels["fill"], icon_custom_emoji_id="5301173701323028420", callback_data="profile:edit")],
+        [InlineKeyboardButton(text=labels["photo"], icon_custom_emoji_id="5258254475386167466", callback_data="profile:photo")],
     ]
     if has_photo:
-        rows.append([InlineKeyboardButton(text="Удалить фото", icon_custom_emoji_id="5312229088876847138", callback_data="profile:photo:delete")])
+        rows.append([InlineKeyboardButton(text=labels["photo_delete"], icon_custom_emoji_id="5312229088876847138", callback_data="profile:photo:delete")])
     rows += [
-        [InlineKeyboardButton(text="Приватность", icon_custom_emoji_id="5350491749926058609", callback_data="profile:privacy")],
-        [InlineKeyboardButton(text="Приглашения, стрик и награды", icon_custom_emoji_id="5345843457145453967", callback_data="profile:rewards",style="primary")],
+        [InlineKeyboardButton(text=labels["privacy"], icon_custom_emoji_id="5350491749926058609", callback_data="profile:privacy")],
+        [InlineKeyboardButton(text=labels["rewards"], icon_custom_emoji_id="5345843457145453967", callback_data="profile:rewards",style="primary")],
         [InlineKeyboardButton(text="🌐 Язык / Language", callback_data="language:menu:profile")],
-        [InlineKeyboardButton(text="Удалить аккаунт", icon_custom_emoji_id="5337131193294938034", callback_data="profile:delete")],
+        [InlineKeyboardButton(text=labels["delete"], icon_custom_emoji_id="5337131193294938034", callback_data="profile:delete")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def profile_edit_kb() -> InlineKeyboardMarkup:
+def profile_edit_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    labels = T.tr(T.PROFILE_EDIT_BUTTONS, lang)
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пол", icon_custom_emoji_id="5366121041426922772", callback_data="profile:set_gender")],
-        [InlineKeyboardButton(text="Возраст", icon_custom_emoji_id="5452055425690123301", callback_data="profile:set_age")],
-        [InlineKeyboardButton(text="О себе", icon_custom_emoji_id="5301173701323028420", callback_data="profile:set_bio")],
-        [InlineKeyboardButton(text="Назад в профиль", icon_custom_emoji_id="5258236805890710909", callback_data="profile")],
+        [InlineKeyboardButton(text=labels["gender"], icon_custom_emoji_id="5366121041426922772", callback_data="profile:set_gender")],
+        [InlineKeyboardButton(text=labels["age"], icon_custom_emoji_id="5452055425690123301", callback_data="profile:set_age")],
+        [InlineKeyboardButton(text=labels["bio"], icon_custom_emoji_id="5301173701323028420", callback_data="profile:set_bio")],
+        [InlineKeyboardButton(text=labels["back"], icon_custom_emoji_id="5258236805890710909", callback_data="profile")],
     ])
 
 
-def settings_kb() -> InlineKeyboardMarkup:
+def settings_kb(lang: str = "ru") -> InlineKeyboardMarkup:
+    labels = T.tr(T.SETTINGS_BUTTONS, lang)
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Мужчин", icon_custom_emoji_id="5366121041426922772", callback_data="settings:gender:m")],
-        [InlineKeyboardButton(text="Женщин", icon_custom_emoji_id="5366209534933089956", callback_data="settings:gender:f")],
-        [InlineKeyboardButton(text="Всех", icon_custom_emoji_id="5253959125838090076", callback_data="settings:gender:a")],
+        [InlineKeyboardButton(text=labels["m"], icon_custom_emoji_id="5366121041426922772", callback_data="settings:gender:m")],
+        [InlineKeyboardButton(text=labels["f"], icon_custom_emoji_id="5366209534933089956", callback_data="settings:gender:f")],
+        [InlineKeyboardButton(text=labels["a"], icon_custom_emoji_id="5253959125838090076", callback_data="settings:gender:a")],
         [
             InlineKeyboardButton(text="18-25", icon_custom_emoji_id="5386637391530317781", callback_data="settings:age:18-25"),
             InlineKeyboardButton(text="26-35", icon_custom_emoji_id="5386637391530317781", callback_data="settings:age:26-35"),
             InlineKeyboardButton(text="36+", icon_custom_emoji_id="5386637391530317781", callback_data="settings:age:36+"),
-            InlineKeyboardButton(text="Любой", icon_custom_emoji_id="5271934788037517525", callback_data="settings:age:any"),
+            InlineKeyboardButton(text=labels["any"], icon_custom_emoji_id="5271934788037517525", callback_data="settings:age:any"),
         ],
         [InlineKeyboardButton(text="🌐 Язык / Language", callback_data="language:menu")],
     ])
 
 
-def stats_kb() -> InlineKeyboardMarkup:
+def stats_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="menu")],
+        [InlineKeyboardButton(text=T.label(T.PAGE_PREV, lang), icon_custom_emoji_id="5258236805890710909", callback_data="menu")],
     ])
 
 
-def help_kb() -> InlineKeyboardMarkup:
+def help_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="menu")],
+        [InlineKeyboardButton(text=T.label(T.PAGE_PREV, lang), icon_custom_emoji_id="5258236805890710909", callback_data="menu")],
     ])
 
 

@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from handlers import help_router
 from keyboards import texts as T
+from keyboards.inline import help_kb
 import config
 
 HELP_TEXT = {
@@ -34,10 +35,10 @@ def help_text(lang):
 @help_router.message(Command("help"))
 @help_router.message(F.text.in_(T.all_labels(T.HELP)))
 async def cmd_help(message: Message, lang: str = "ru"):
-    await message.answer(help_text(lang))
+    await message.answer(help_text(lang), reply_markup=help_kb(lang))
 
 
 @help_router.callback_query(F.data == "help")
 async def cb_help(callback: CallbackQuery, lang: str = "ru"):
     await callback.answer()
-    await callback.message.answer(help_text(lang))
+    await callback.message.answer(help_text(lang), reply_markup=help_kb(lang))

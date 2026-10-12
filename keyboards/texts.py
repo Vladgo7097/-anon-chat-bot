@@ -98,6 +98,62 @@ EMOJI_IDS = {
     CANCEL: "5325971446625758812",
     PAGE_NEXT: "5260450573768990626",
     PAGE_PREV: "5258236805890710909",
+    # The two rows the menu was missing an icon on, so six of eight buttons carried
+    # one. Both ids are already Telegram document ids this bot renders elsewhere --
+    # the first also sits on a reply button, the second on an inline one -- rather
+    # than guessed values, which are what make a keyboard come back DOCUMENT_INVALID.
+    CHAT: "5224455462178549802",
+    INVITE: "5967432491684860012",
+}
+
+# Labels for the inline keyboards that sit behind the main-menu buttons. The menu
+# row localizes through LABELS, but these followed it in Russian only, so a client
+# running in en/uk tapped a translated menu button and landed on a Russian card.
+# Keyed by language first, the way the other screen texts are, so tr() picks a row.
+SETTINGS_BUTTONS = {
+    "ru": {"m": "Мужчин", "f": "Женщин", "a": "Всех", "any": "Любой"},
+    "en": {"m": "Men", "f": "Women", "a": "Everyone", "any": "Any"},
+    "uk": {"m": "Чоловіків", "f": "Жінок", "a": "Усіх", "any": "Будь-який"},
+}
+PROFILE_BUTTONS = {
+    "ru": {"fill": "Заполнить о себе", "photo": "Добавить фото", "photo_delete": "Удалить фото",
+           "privacy": "Приватность", "rewards": "Приглашения, стрик и награды",
+           "delete": "Удалить аккаунт"},
+    "en": {"fill": "About you", "photo": "Add photo", "photo_delete": "Delete photo",
+           "privacy": "Privacy", "rewards": "Invites, streak and rewards",
+           "delete": "Delete account"},
+    "uk": {"fill": "Заповнити про себе", "photo": "Додати фото", "photo_delete": "Видалити фото",
+           "privacy": "Приватність", "rewards": "Запрошення, стрік і нагороди",
+           "delete": "Видалити акаунт"},
+}
+PROFILE_EDIT_BUTTONS = {
+    "ru": {"gender": "Пол", "age": "Возраст", "bio": "О себе", "back": "Назад в профиль"},
+    "en": {"gender": "Gender", "age": "Age", "bio": "About", "back": "Back to profile"},
+    "uk": {"gender": "Стать", "age": "Вік", "bio": "Про себе", "back": "Назад у профіль"},
+}
+
+# What the dispatcher says when a menu tap lands in the wrong moment: mid-dialog,
+# mid-registration, blocked, or too fast. These are the first words a user hears
+# from the menu itself, so they follow the language like every screen does.
+GUARDS = {
+    "ru": {"private_only": "Анонимный чат доступен только в личной переписке с ботом.",
+           "banned": "⛔ Ты заблокирован.",
+           "register_first": "Сначала заверши регистрацию.",
+           "finish_chat": "Сначала заверши текущий диалог.",
+           "in_chat": "Ты сейчас в диалоге. Нажми «Стоп», чтобы открыть меню.",
+           "slow_down": "Подожди немного перед следующим действием."},
+    "en": {"private_only": "The anonymous chat works only in a private chat with the bot.",
+           "banned": "⛔ You are blocked.",
+           "register_first": "Finish the registration first.",
+           "finish_chat": "Finish the current chat first.",
+           "in_chat": "You are in a chat right now. Tap «Stop» to open the menu.",
+           "slow_down": "Wait a moment before the next action."},
+    "uk": {"private_only": "Анонімний чат доступний лише в особистому листуванні з ботом.",
+           "banned": "⛔ Тебе заблоковано.",
+           "register_first": "Спочатку заверши реєстрацію.",
+           "finish_chat": "Спочатку заверши поточний діалог.",
+           "in_chat": "Ти зараз у діалозі. Натисни «Стоп», щоб відкрити меню.",
+           "slow_down": "Зачекай трохи перед наступною дією."},
 }
 
 LANGUAGE_NAMES = {"ru": "Русский", "en": "English", "uk": "Українська"}

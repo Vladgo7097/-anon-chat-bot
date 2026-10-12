@@ -8,11 +8,6 @@ from repositories.users import UserRepository
 from repositories.chats import premium_active
 from services.settings import SettingsService
 
-GENDER_LABELS = {
-    "ru": {"m": "Мужчин", "f": "Женщин", "a": "Всех"},
-    "en": {"m": "Men", "f": "Women", "a": "Everyone"},
-    "uk": {"m": "Чоловіків", "f": "Жінок", "a": "Усіх"},
-}
 SETTINGS_TEXT = {
     "ru": "<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Кого искать\n\nФильтр: {gender}\nВозраст: {min}–{max}\n\nФильтр по полу требует Premium или отдельной покупки; возрастной диапазон — Premium. После истечения доступа настройки сохраняются, но не применяются.",
     "en": "<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Who to search for\n\nFilter: {gender}\nAge: {min}–{max}\n\nThe gender filter needs Premium or a separate purchase; the age range needs Premium. Settings stay saved after access expires, but stop applying.",
@@ -35,9 +30,11 @@ LANGUAGE_MENU_TEXT = {"ru": "🌐 Выбери язык интерфейса:", 
 
 async def show_settings(message, user_id, lang="ru"):
     user = await UserRepository().get(user_id)
-    gender = T.tr(GENDER_LABELS, lang).get(user.settings_gender_filter, T.tr(GENDER_LABELS, lang)["a"])
+    # One table for the filter's own words and the buttons that pick it: the same
+    # three codes, so the prose and the row under it can never drift apart.
+    gender = T.tr(T.SETTINGS_BUTTONS, lang).get(user.settings_gender_filter, T.tr(T.SETTINGS_BUTTONS, lang)["a"])
     text = T.tr(SETTINGS_TEXT, lang).format(gender=gender, min=user.settings_age_min, max=user.settings_age_max)
-    await message.answer(text, reply_markup=settings_kb())
+    await message.answer(text, reply_markup=settings_kb(lang))
 
 
 @settings_router.message(F.text.in_(T.all_labels(T.SETTINGS)))
@@ -53,14 +50,14 @@ async def cb_settings(callback: CallbackQuery, lang: str = "ru"):
 
 @settings_router.message(Command("language"))
 async def cmd_language(message: Message, lang: str = "ru"):
-    await message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb())
+    await message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb(lang=lang))
 
 
 @settings_router.callback_query(F.data.startswith("language:menu"))
 async def cb_language_menu(callback: CallbackQuery, lang: str = "ru"):
     await callback.answer()
     back_callback = "profile" if callback.data == "language:menu:profile" else "settings"
-    await callback.message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb(back_callback=back_callback))
+    await callback.message.answer(T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb(back_callback=back_callback, lang=lang))
 
 
 @settings_router.callback_query(F.data.startswith("settings:gender:"))
