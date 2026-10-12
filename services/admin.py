@@ -19,6 +19,64 @@ import config
 # derive from this, so a new segment cannot be added in one place only.
 BROADCAST_SEGMENTS = ("all", "premium", "inactive", "nopay", "no_language")
 
+# Tunable bot parameters. One catalog drives the /setting validation, the
+# panel's editor screens and the quick-preset buttons, so a parameter cannot
+# be settable in one place and invisible in another.
+SETTING_LIMITS = {
+    "search_slow_offer_seconds": (0, 3600), "upsell_chat_count": (1, 100),
+    "chat_delay_next": (0, 60), "search_timeout": (30, 3600),
+    "premium_search_timeout": (0, 3600), "inactive_chat_ttl": (60, 86400),
+    "marketing_enabled": (0, 1), "seasonal_enabled": (0, 1),
+    "ad_cooldown_seconds": (0, 86400), "owner_notice_limit": (0, 1000),
+    "onboarding_nudge_hours": (1, 168), "stars_usd_cents_per_100": (0, 1000000),
+    "funnel_min_step_pct": (0, 100),
+}
+
+SETTING_TITLES = {
+    "chat_delay_next": "Задержка «Дальше», сек",
+    "search_timeout": "Таймаут поиска, сек",
+    "premium_search_timeout": "Таймаут поиска Premium, сек (0 — как у всех)",
+    "inactive_chat_ttl": "Обрыв неактивного диалога, сек",
+    "search_slow_offer_seconds": "Оффер «медленный поиск» после, сек",
+    "upsell_chat_count": "Апселл после N диалогов",
+    "marketing_enabled": "Маркетинговые уведомления (0/1)",
+    "seasonal_enabled": "Сезонное событие (0/1)",
+    "ad_cooldown_seconds": "Частота показа рекламы, сек",
+    "owner_notice_limit": "Лимит уведомлений владельцу в день",
+    "onboarding_nudge_hours": "Напоминание о брошенной регистрации, ч",
+    "stars_usd_cents_per_100": "Курс $ за 100 звёзд, центы (0 — не показывать)",
+    "funnel_min_step_pct": "Порог просадки шага воронки, % (0 — off)",
+}
+
+# Values the code falls back to when the key has never been written.
+SETTING_DEFAULTS = {
+    "chat_delay_next": 7, "search_timeout": 180, "premium_search_timeout": 180,
+    "inactive_chat_ttl": 300, "search_slow_offer_seconds": 20,
+    "upsell_chat_count": 3, "marketing_enabled": 1, "seasonal_enabled": 0,
+    "ad_cooldown_seconds": 1800, "owner_notice_limit": 20,
+    "onboarding_nudge_hours": 3, "stars_usd_cents_per_100": 0,
+    "funnel_min_step_pct": 0,
+}
+
+SETTING_PRESETS = {
+    "chat_delay_next": (0, 3, 7, 15, 30),
+    "search_timeout": (60, 120, 180, 300, 600),
+    "premium_search_timeout": (0, 60, 120, 180),
+    "inactive_chat_ttl": (120, 300, 600, 1800),
+    "search_slow_offer_seconds": (10, 20, 30, 60),
+    "upsell_chat_count": (1, 3, 5, 10),
+    "marketing_enabled": (0, 1),
+    "seasonal_enabled": (0, 1),
+    "ad_cooldown_seconds": (600, 1800, 3600),
+    "owner_notice_limit": (0, 5, 20, 100),
+    "onboarding_nudge_hours": (1, 3, 6, 12, 24),
+    "stars_usd_cents_per_100": (0, 110, 130, 150),
+    "funnel_min_step_pct": (0, 30, 50, 70),
+}
+
+SETTING_KEYS = tuple(SETTING_LIMITS)
+SETTING_PAGE_SIZE = 5
+
 
 def authorize(admin_id):
     if admin_id not in config.ADMIN_IDS:
@@ -336,7 +394,7 @@ class AdminService:
 
     async def setting(self,admin,key,value):
         authorize(admin)
-        limits={"search_slow_offer_seconds":(0,3600),"upsell_chat_count":(1,100),"chat_delay_next":(0,60),"search_timeout":(30,3600),"premium_search_timeout":(0,3600),"inactive_chat_ttl":(60,86400),"marketing_enabled":(0,1),"seasonal_enabled":(0,1),"ad_cooldown_seconds":(0,86400),"owner_notice_limit":(0,1000),"onboarding_nudge_hours":(1,168),"stars_usd_cents_per_100":(0,1000000),"funnel_min_step_pct":(0,100)}
+        limits=SETTING_LIMITS
         if type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:
@@ -436,3 +494,92 @@ class AdminService:
                 return job
             jobs=list((await s.scalars(select(Broadcast).where(Broadcast.admin_id==admin).order_by(Broadcast.id.desc()).limit(10))).all())
             return jobs
+
+    async def cancel_broadcast(self,admin,job_id):
+        """Stop a broadcast that has not finished yet.
+
+        Only queued rows are dropped; a message already handed to Telegram
+        cannot be recalled, so the card keeps the sent/failed counters honest
+        instead of pretending the wave never went out.
+        """
+        authorize(admin)
+        async with async_session.begin() as s:
+            job=await s.get(Broadcast,job_id,with_for_update=True)
+            if not job or job.admin_id!=admin:
+                return ServiceResult(False,"NOT_FOUND")
+            if job.status in {"completed","cancelled"}:
+                return ServiceResult(False,"ALREADY_FINISHED")
+            job.status,job.finished_at="cancelled",utcnow()
+            dropped=await s.execute(update(Notification).where(
+                Notification.broadcast_id==job.id,
+                Notification.status.in_(["queued","sending"])).values(status="skipped",last_error="cancelled"))
+            audit(s,admin,"broadcast_cancel","broadcast",job.id,after={"status":"cancelled"})
+        return ServiceResult(True,"CANCELLED",{"job":job,"dropped":dropped.rowcount or 0})
+
+    async def settings_all(self,admin):
+        """Current value of every catalog key, falling back to the default."""
+        authorize(admin)
+        async with async_session() as s:
+            rows={row.key: row.value_json.get("value") for row in
+                  (await s.scalars(select(BotSetting).where(BotSetting.key.in_(SETTING_KEYS)))).all()}
+        return {key: rows.get(key, SETTING_DEFAULTS.get(key)) for key in SETTING_KEYS}
+
+    async def audit_log(self,admin,offset=0,limit=10):
+        authorize(admin)
+        async with async_session() as s:
+            return list((await s.scalars(select(AdminAudit).order_by(AdminAudit.id.desc())
+                                         .offset(offset).limit(limit))).all())
+
+    async def top_spenders(self,admin,limit=10):
+        """Leaderboard by real Stars: paid live rows only, ties by recency."""
+        authorize(admin)
+        async with async_session() as s:
+            return list((await s.scalars(select(User).where(User.total_stars_spent>0,
+                                                            User.deleted_at.is_(None))
+                .order_by(User.total_stars_spent.desc(),User.telegram_id.desc()).limit(limit))).all())
+
+    async def recent_users(self,admin,limit=10):
+        authorize(admin)
+        async with async_session() as s:
+            return list((await s.scalars(select(User).where(User.deleted_at.is_(None))
+                .order_by(User.created_at.desc()).limit(limit))).all())
+
+    async def system_status(self,admin):
+        """Live health for the panel: worker heartbeat, DB, Redis, outbox.
+
+        Mirrors utils/healthcheck.check() but never raises and never closes
+        shared connections -- the panel is a read, not a probe.
+        """
+        authorize(admin)
+        import time as _time
+        from pathlib import Path
+        state={"heartbeat_age":None,"db":False,"redis":False,"queued":0,"sending":0,
+               "broadcasts_active":0,"reports_pending":0,"users":0,"online":"—"}
+        beat=Path("/tmp/anon-worker-heartbeat")
+        try:
+            if beat.exists():
+                stamp=float(beat.read_text().strip() or 0)
+                state["heartbeat_age"]=round(_time.time()-stamp,1)
+        except (OSError,ValueError):
+            state["heartbeat_age"]=None
+        try:
+            async with async_session() as s:
+                state["db"]=True
+                state["users"]=await s.scalar(select(func.count(User.id))) or 0
+                state["queued"]=await s.scalar(select(func.count(Notification.id)).where(
+                    Notification.status.in_(["queued","sending"]))) or 0
+                state["broadcasts_active"]=await s.scalar(select(func.count(Broadcast.id)).where(
+                    Broadcast.status.in_(["queued","sending"]))) or 0
+                state["reports_pending"]=await s.scalar(select(func.count(Report.id)).where(
+                    Report.status=="pending")) or 0
+        except Exception:
+            state["db"]=False
+        try:
+            from services.chat_manager import get_redis
+            await (await get_redis()).ping()
+            state["redis"]=True
+        except Exception:
+            state["redis"]=False
+        from services.chat_manager import get_online_count
+        state["online"]=await get_online_count()
+        return state

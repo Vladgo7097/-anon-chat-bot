@@ -36,7 +36,7 @@ async def refresh_broadcast_progress(bot, service):
         try:
             await bot.edit_message_text(broadcast_card(job, update["counts"], update.get("poll_totals")),
                                         chat_id=update["chat_id"], message_id=update["message_id"],
-                                        reply_markup=broadcast_card_kb(job.id))
+                                        reply_markup=broadcast_card_kb(job.id, job.status))
         except TelegramRetryAfter as error:
             await service.defer_progress(job.id, error.retry_after)
             continue

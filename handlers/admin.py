@@ -10,8 +10,8 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import admin_router
 from keyboards import texts as T
-from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb
-from services.admin import AdminService, StatsService, authorize, BROADCAST_SEGMENTS
+from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb, admin_back_kb, admin_analytics_kb, admin_users_section_kb, admin_moderation_kb, admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb, admin_growth_kb, admin_settings_kb, admin_setting_kb, admin_prices_kb, admin_audit_kb, admin_user_list_kb
+from services.admin import AdminService, StatsService, authorize, BROADCAST_SEGMENTS, SETTING_LIMITS, SETTING_TITLES, SETTING_DEFAULTS, SETTING_PRESETS, SETTING_KEYS, SETTING_PAGE_SIZE
 from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
@@ -79,6 +79,14 @@ class AdminSeason(StatesGroup):
     START=State()
     END=State()
     DISCOUNT=State()
+
+
+class AdminSettingValue(StatesGroup):
+    VALUE=State()
+
+
+class AdminPriceValue(StatesGroup):
+    VALUE=State()
 
 
 @admin_router.message(Command("season"))
@@ -246,7 +254,7 @@ def funnel_kb(days):
         InlineKeyboardButton(text="7 дней", callback_data="admin:funnel:7"),
         InlineKeyboardButton(text="30 дней", callback_data="admin:funnel:30")], [
         InlineKeyboardButton(text="События", callback_data=f"admin:events:{days}"),
-        InlineKeyboardButton(text="Назад", callback_data="admin:back")]])
+        InlineKeyboardButton(text="Назад", callback_data="admin:sec:analytics")]])
 
 
 @admin_router.callback_query(F.data=="admin:funnel")
@@ -320,7 +328,7 @@ async def cb_stats(callback: CallbackQuery):
         InlineKeyboardButton(text="За неделю",callback_data="admin:period:7"),
         InlineKeyboardButton(text="За месяц",callback_data="admin:period:30"),
         InlineKeyboardButton(text="CSV",callback_data=f"admin:export:{days}")],[
-        InlineKeyboardButton(text="Назад",callback_data="admin:back")]]))
+        InlineKeyboardButton(text="Назад",callback_data="admin:sec:analytics")]]))
 
 
 @admin_router.callback_query(F.data.startswith("admin:export:"))
@@ -347,7 +355,7 @@ async def cb_reports(callback: CallbackQuery):
     reports=await AdminService().reports(callback.from_user.id,offset)
     await callback.answer()
     if not reports:
-        await callback.message.answer("<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб нет.",reply_markup=admin_kb())
+        await callback.message.answer("<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб нет.",reply_markup=admin_back_kb("admin:sec:moderation"))
         return
     r=reports[0]
     names,previous,bans=await AdminService().report_details(callback.from_user.id,r)
@@ -375,13 +383,13 @@ async def cb_bans(callback: CallbackQuery):
     users=await AdminService().bans(callback.from_user.id)
     await callback.answer()
     text="\n".join(f"{u.anon_id} — "+(f"до {u.ban_expires:%d.%m.%Y}" if u.ban_expires else "навсегда") for u in users)
-    await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID",reply_markup=back_kb())
+    await callback.message.answer("<tg-emoji emoji-id=\"5312229088876847138\">🚫</tg-emoji> Активные баны (до 50):\n"+text+"\n\n/ban_user ID часы причина\n/unban ID",reply_markup=back_kb("admin:sec:moderation"))
 
 
 @admin_router.callback_query(F.data=="admin:users")
 async def cb_users(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Введи anon_id или telegram_id пользователя:",reply_markup=back_kb())
+    await callback.message.answer("<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Введи anon_id или telegram_id пользователя:",reply_markup=back_kb("admin:sec:users"))
 
 
 async def user_card_text(admin_id, user):
@@ -529,14 +537,33 @@ async def admin_text_search(message: Message):
                 reply_markup=admin_user_card_kb(user.telegram_id))
 
 
+def _setting_page(key: str) -> int:
+    return SETTING_KEYS.index(key) // SETTING_PAGE_SIZE + 1
+
+
+async def settings_page(admin_id, page: int):
+    """(text, markup) for one page of the parameter catalog."""
+    values = await AdminService().settings_all(admin_id)
+    pages = max(1, (len(SETTING_KEYS) + SETTING_PAGE_SIZE - 1) // SETTING_PAGE_SIZE)
+    page = min(max(page, 1), pages)
+    start = (page - 1) * SETTING_PAGE_SIZE
+    entries = [(key, SETTING_TITLES[key], values.get(key, SETTING_DEFAULTS[key]))
+               for key in SETTING_KEYS[start:start + SETTING_PAGE_SIZE]]
+    text = (f"<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Параметры бота · {page}/{pages}\n"
+            "Нажми параметр, чтобы поставить значение пресетом или ввести своё.")
+    return text, admin_settings_kb(entries, page, pages)
+
+
 @admin_router.callback_query(F.data=="admin:settings")
-async def cb_settings(callback: CallbackQuery):
-    products=await PaymentService().products()
+@admin_router.callback_query(F.data.startswith("admin:setlist:"))
+async def cb_settings(callback: CallbackQuery, state: FSMContext):
+    """Paged list of every tunable parameter; the catalog lives in services.admin."""
+    await state.clear()
+    tail = callback.data.split(":")[-1]
+    page = int(tail) if tail.isdigit() else 1
     await callback.answer()
-    await callback.message.answer("<tg-emoji emoji-id=\"6129805886383723340\">⚙️</tg-emoji> Цены:\n"+"\n".join(f"{p.code}: {p.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>" for p in products)+
-        "\n\n/price код цена\n/setting chat_delay_next 7\n/setting search_timeout 60\n/setting inactive_chat_ttl 300\n/setting marketing_enabled 0"
-        "\n/setting stars_usd_cents_per_100 130 (курс: центов США за 100 звёзд; 0 — не показывать $)"
-        "\n/setting funnel_min_step_pct 50 (предупреждать в воронке о просадке ниже этого % между шагами; 0 — выключено)",reply_markup=back_kb())
+    text, markup = await settings_page(callback.from_user.id, page)
+    await callback.message.answer(text, reply_markup=markup)
 
 
 @admin_router.message(Command("price","setting"))
@@ -551,7 +578,8 @@ async def cmd_setting(message: Message):
 
 
 STATUS_TITLES = {"draft": "черновик", "queued": "готовим список",
-                 "sending": "отправка", "completed": "готово"}
+                 "sending": "отправка", "completed": "готово",
+                 "cancelled": "остановлена вручную"}
 FILLED, EMPTY, THIN_SPACE = "█", "░", " "
 
 
@@ -608,11 +636,15 @@ def broadcast_card(job, counts, poll_totals=None):
     return "\n".join(lines)
 
 
-def broadcast_card_kb(job_id):
-    return InlineKeyboardMarkup(inline_keyboard=[[
+def broadcast_card_kb(job_id, status=None):
+    rows = [[
         InlineKeyboardButton(text="Обновить", icon_custom_emoji_id="5260450573768990626",
                              callback_data=f"admin:broadcasts:{job_id}"),
-        InlineKeyboardButton(text="К списку", callback_data="admin:broadcasts")]])
+        InlineKeyboardButton(text="К списку", callback_data="admin:broadcasts")]]
+    if status in {"queued", "sending"}:
+        rows.append([InlineKeyboardButton(text="⛔ Остановить",
+                                          callback_data=f"admin:bcancel:{job_id}", style="danger")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @admin_router.callback_query(F.data=="admin:broadcast")
@@ -722,7 +754,7 @@ async def cb_send(callback: CallbackQuery):
         return
     job=result.data["job"]
     # The worker keeps editing this message until the broadcast finishes.
-    progress=await callback.message.answer(broadcast_card(job,{}),reply_markup=broadcast_card_kb(job.id))
+    progress=await callback.message.answer(broadcast_card(job,{}),reply_markup=broadcast_card_kb(job.id,job.status))
     await service.attach_progress(callback.from_user.id,job.id,progress.chat.id,progress.message_id)
 
 
@@ -741,7 +773,7 @@ async def cb_broadcast_status(callback: CallbackQuery):
         if job.kind=="poll":
             from services.notifications import NotificationService
             poll_totals=await NotificationService().poll_totals(job.id)
-        text,markup=broadcast_card(job,counts,poll_totals),broadcast_card_kb(job.id)
+        text,markup=broadcast_card(job,counts,poll_totals),broadcast_card_kb(job.id,job.status)
         try:
             await callback.message.edit_text(text,reply_markup=markup)
             await callback.answer("Обновлено")
@@ -756,7 +788,7 @@ async def cb_broadcast_status(callback: CallbackQuery):
         jobs=await AdminService().broadcast_status(callback.from_user.id)
         await callback.answer()
         if not jobs:
-            await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылок пока нет.",reply_markup=admin_kb())
+            await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Рассылок пока нет.",reply_markup=admin_back_kb("admin:sec:broadcast"))
             return
         await callback.message.answer("<tg-emoji emoji-id=\"5215668805199473901\">📢</tg-emoji> Последние рассылки:",reply_markup=admin_broadcast_status_kb(jobs))
 
@@ -779,6 +811,7 @@ def ad_campaign_card_text(campaign):
 
 
 @admin_router.callback_query(F.data == "admin:ads")
+@admin_router.callback_query(F.data == "admin:sec:ads")
 async def cb_ads(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     campaigns = await AdCampaignService().list(callback.from_user.id)
@@ -1007,3 +1040,283 @@ async def cb_ad_view(callback: CallbackQuery):
         return
     await callback.answer()
     await callback.message.answer(ad_campaign_card_text(campaign), reply_markup=admin_ad_card_kb(campaign))
+
+
+# ── Sectioned panel ──────────────────────────────────────────────
+# Root opens sections, sections open screens, every screen's «Назад»
+# returns to its own section and every section to the root: the whole
+# panel is two taps from anywhere.
+
+ADMIN_SECTIONS = {
+    "admin:sec:analytics": ("📊 Аналитика", admin_analytics_kb,
+        "Статистика и монетизация, воронка регистрации, рост и возвраты, события, выгрузка CSV."),
+    "admin:sec:users": ("👥 Пользователи", admin_users_section_kb,
+        "Поиск по ID, рейтинг покупок и свежие регистрации -- каждая строка открывает карточку."),
+    "admin:sec:moderation": ("🛡 Модерация", admin_moderation_kb,
+        "Жалобы в очереди, активные баны и сезонное событие."),
+    "admin:sec:broadcast": ("📨 Рассылки", admin_broadcast_section_kb,
+        "Новая волна или опрос по сегменту, статусы запущенных и их остановка."),
+    "admin:sec:settings": ("⚙️ Настройки", admin_settings_section_kb,
+        "Цены на продукты, параметры бота и частота показа рекламы."),
+    "admin:sec:system": ("🧰 Система", admin_system_kb,
+        "Сердцебиение воркера, база, Redis, очередь и журнал действий администраторов."),
+}
+
+
+@admin_router.callback_query(F.data.in_(tuple(ADMIN_SECTIONS)))
+async def cb_section(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer()
+    title, keyboard, summary = ADMIN_SECTIONS[callback.data]
+    await callback.message.answer(f"{title}\n\n{summary}", reply_markup=keyboard())
+
+
+@admin_router.callback_query(F.data.startswith("admin:growth:"))
+async def cb_growth(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    tail = callback.data.split(":")[-1]
+    days = int(tail) if tail.isdigit() else 1
+    if days not in {1, 7, 30}:
+        await callback.answer("Недопустимый период.")
+        return
+    await callback.answer()
+    g = await StatsService().growth(days)
+    await safe_send(callback.message,
+                    growth_text(g, days) + f"\n🟢 Онлайн: {await get_online_count()}",
+                    reply_markup=admin_growth_kb(days))
+
+
+@admin_router.callback_query(F.data=="admin:top")
+async def cb_top(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    users = await AdminService().top_spenders(callback.from_user.id, 15)
+    await callback.answer()
+    if not users:
+        await callback.message.answer("Покупок пока не было.",
+                                      reply_markup=admin_back_kb("admin:sec:users"))
+        return
+    lines = [f"{i}. {escape(u.anon_id or '?')} -- {u.total_stars_spent} ⭐"
+             for i, u in enumerate(users, 1)]
+    await callback.message.answer("🏆 Топ по тратам\n\n" + "\n".join(lines),
+        reply_markup=admin_user_list_kb(
+            [(u.telegram_id, f"{escape(u.anon_id or '?')} -- {u.total_stars_spent} ⭐") for u in users],
+            "admin:sec:users"))
+
+
+@admin_router.callback_query(F.data=="admin:recent")
+async def cb_recent(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    users = await AdminService().recent_users(callback.from_user.id, 15)
+    await callback.answer()
+    if not users:
+        await callback.message.answer("Новых пользователей нет.",
+                                      reply_markup=admin_back_kb("admin:sec:users"))
+        return
+    lines = [f"{escape(u.anon_id or '?')} · {u.created_at:%d.%m %H:%M} UTC" for u in users]
+    await callback.message.answer("🆕 Новые пользователи\n\n" + "\n".join(lines),
+        reply_markup=admin_user_list_kb(
+            [(u.telegram_id, f"{escape(u.anon_id or '?')} · {u.created_at:%d.%m %H:%M}") for u in users],
+            "admin:sec:users"))
+
+
+AUDIT_PAGE = 10
+
+
+@admin_router.callback_query(F.data.startswith("admin:audit:"))
+async def cb_audit(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    tail = callback.data.split(":")[-1]
+    offset = int(tail) if tail.isdigit() else 0
+    rows = await AdminService().audit_log(callback.from_user.id, offset, AUDIT_PAGE)
+    await callback.answer()
+    if not rows:
+        await callback.message.answer("Журнал действий пуст.",
+                                      reply_markup=admin_audit_kb(offset, AUDIT_PAGE, False))
+        return
+    lines = []
+    for row in rows:
+        stamp = row.created_at.strftime("%d.%m %H:%M")
+        target = escape(f"{row.target_type}:{row.target_id}")
+        detail = ""
+        if row.after_json:
+            detail = " · " + ", ".join(f"{escape(str(k))}={escape(str(v))}"
+                                       for k, v in list(row.after_json.items())[:4])
+        lines.append(f"#{row.id} {stamp} · admin {row.admin_id} · {escape(row.action)} · {target}{detail}")
+    await callback.message.answer("📜 Журнал действий\n\n" + "\n".join(lines),
+                                  reply_markup=admin_audit_kb(offset, AUDIT_PAGE, len(rows) == AUDIT_PAGE))
+
+
+@admin_router.callback_query(F.data=="admin:syshealth")
+async def cb_syshealth(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    live = await AdminService().system_status(callback.from_user.id)
+    await callback.answer()
+    beat = live["heartbeat_age"]
+    if beat is None:
+        heartbeat = "нет отметки -- воркер не поднимался"
+    elif beat > 120:
+        heartbeat = f"⚠️ {beat:.0f} с назад -- молчит"
+    else:
+        heartbeat = f"ок, {beat:.1f} с назад"
+    text = "\n".join([
+        "🧰 Система",
+        "",
+        f"Сердцебиение воркера: {heartbeat}",
+        f"PostgreSQL: {'ок' if live['db'] else 'недоступна'}",
+        f"Redis: {'ок' if live['redis'] else 'недоступен'}",
+        f"В очереди: {amount(live['queued'])} · активных рассылок: {live['broadcasts_active']}",
+        f"Жалоб в очереди: {live['reports_pending']}",
+        f"Пользователей: {amount(live['users'])} · онлайн: {live['online']}",
+    ])
+    await callback.message.answer(text, reply_markup=admin_back_kb("admin:sec:system"))
+
+
+@admin_router.callback_query(F.data=="admin:prices")
+async def cb_prices(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer()
+    await callback.message.answer("💰 Цены на продукты\n\nНажми продукт, чтобы ввести новую цену в Stars.",
+                                  reply_markup=admin_prices_kb(await PaymentService().products()))
+
+
+@admin_router.callback_query(F.data.startswith("admin:price:"))
+async def cb_price_edit(callback: CallbackQuery, state: FSMContext):
+    code = callback.data.split(":", 2)[-1]
+    product = next((p for p in await PaymentService().products() if p.code == code), None)
+    if product is None:
+        await callback.answer("Продукт не найден", show_alert=True)
+        return
+    await state.set_state(AdminPriceValue.VALUE)
+    await state.update_data(code=code)
+    await callback.answer()
+    await callback.message.answer(f"{product.title}\nСейчас: {product.price_stars} ⭐\n\n"
+                                  "Пришли новую цену целым числом Stars или /cancel.")
+
+
+@admin_router.message(AdminPriceValue.VALUE, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def price_value_input(message: Message, state: FSMContext):
+    raw = message.text.strip()
+    if not raw.isdigit():
+        await message.answer("Нужно целое число Stars.")
+        return
+    code = (await state.get_data()).get("code", "")
+    result = await AdminService().price(message.from_user.id, code, int(raw))
+    await state.clear()
+    if not result.ok:
+        await message.answer("Недопустимая цена.")
+        return
+    await message.answer("✅ Цена обновлена.",
+                         reply_markup=admin_prices_kb(await PaymentService().products()))
+
+
+async def render_setting(target, admin_id, key):
+    """The editor screen for one parameter; target is a callback or a message."""
+    values = await AdminService().settings_all(admin_id)
+    current = values.get(key, SETTING_DEFAULTS[key])
+    low, high = SETTING_LIMITS[key]
+    await target.answer(
+        f"{SETTING_TITLES[key]}\n\nСейчас: {current}\nДопустимо: {low}–{high}\n\n"
+        "Выбери значение кнопкой или введи своё.",
+        reply_markup=admin_setting_kb(key, _setting_page(key), SETTING_PRESETS[key], current))
+
+
+@admin_router.callback_query(F.data.startswith("admin:setv:"))
+async def cb_setting_edit(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    key = callback.data.split(":", 2)[-1]
+    if key not in SETTING_LIMITS:
+        await callback.answer("Неизвестный параметр", show_alert=True)
+        return
+    await callback.answer()
+    await render_setting(callback, callback.from_user.id, key)
+
+
+@admin_router.callback_query(F.data.startswith("admin:set:"))
+async def cb_setting_apply(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    key = parts[2] if len(parts) > 2 else ""
+    raw = parts[3] if len(parts) > 3 else ""
+    if key not in SETTING_LIMITS or not raw.lstrip("-").isdigit():
+        await callback.answer("Недопустимое значение", show_alert=True)
+        return
+    result = await AdminService().setting(callback.from_user.id, key, int(raw))
+    if not result.ok:
+        await callback.answer("Значение вне диапазона", show_alert=True)
+        return
+    await callback.answer("Сохранено")
+    await render_setting(callback, callback.from_user.id, key)
+
+
+@admin_router.callback_query(F.data.startswith("admin:setc:"))
+async def cb_setting_custom(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    key = callback.data.split(":", 2)[-1]
+    if key not in SETTING_LIMITS:
+        await callback.answer("Неизвестный параметр", show_alert=True)
+        return
+    low, high = SETTING_LIMITS[key]
+    await state.set_state(AdminSettingValue.VALUE)
+    await state.update_data(key=key)
+    await callback.answer()
+    await callback.message.answer(f"Пришли значение для «{SETTING_TITLES[key]}» "
+                                  f"(от {low} до {high}) или /cancel.")
+
+
+@admin_router.message(AdminSettingValue.VALUE, F.text, ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def setting_value_input(message: Message, state: FSMContext):
+    key = (await state.get_data()).get("key", "")
+    if key not in SETTING_LIMITS:
+        await state.clear()
+        await message.answer("Параметр не найден.")
+        return
+    raw = message.text.strip()
+    if not raw.lstrip("-").isdigit():
+        await message.answer("Нужно целое число.")
+        return
+    result = await AdminService().setting(message.from_user.id, key, int(raw))
+    await state.clear()
+    if not result.ok:
+        low, high = SETTING_LIMITS[key]
+        await message.answer(f"Значение вне диапазона {low}–{high}.")
+        return
+    await message.answer("✅ Сохранено.")
+    text, markup = await settings_page(message.from_user.id, _setting_page(key))
+    await message.answer(text, reply_markup=markup)
+
+
+@admin_router.message(Command("cancel"), StateFilter(AdminSettingValue.VALUE, AdminPriceValue.VALUE))
+async def cancel_value_input(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.", reply_markup=admin_back_kb("admin:sec:settings"))
+
+
+@admin_router.callback_query(F.data.startswith("admin:bcancel:"))
+async def cb_broadcast_cancel(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    job_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
+    if job_id is None:
+        await callback.answer("Недопустимая рассылка", show_alert=True)
+        return
+    if len(parts) > 3 and parts[3] == "ok":
+        result = await AdminService().cancel_broadcast(callback.from_user.id, job_id)
+        if not result.ok:
+            await callback.answer("Остановить нельзя", show_alert=True)
+            return
+        await callback.answer("Остановлена")
+        found = await AdminService().broadcast_progress(callback.from_user.id, job_id)
+        if found:
+            job, counts = found
+            await callback.message.answer(broadcast_card(job, counts),
+                                          reply_markup=broadcast_card_kb(job.id, job.status))
+        return
+    # First tap: confirm, because queued messages cannot be recalled afterwards.
+    await callback.answer()
+    await callback.message.answer(
+        f"Остановить рассылку #{job_id}? Оставшиеся сообщения не отправятся, "
+        "уже отправленные отозвать нельзя.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Да, остановить",
+                                 callback_data=f"admin:bcancel:{job_id}:ok", style="danger"),
+            InlineKeyboardButton(text="Назад",
+                                 callback_data=f"admin:broadcasts:{job_id}"),
+        ]]))

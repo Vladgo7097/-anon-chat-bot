@@ -450,7 +450,7 @@ class NotificationService:
                         poll_totals = parsed if poll_totals is None else [a+b for a, b in zip(poll_totals, parsed)]
                 updates.append({"chat_id": job.progress_chat_id, "message_id": job.progress_message_id,
                                 "job": job, "counts": counts, "poll_totals": poll_totals,
-                                "final": job.status == "completed"})
+                                "final": job.status in ("completed", "cancelled")})
                 job.progress_at = now
         return updates
 

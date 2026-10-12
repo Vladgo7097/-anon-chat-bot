@@ -16,12 +16,20 @@ def language_kb(back_callback=None):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def back_kb() -> InlineKeyboardMarkup:
+def admin_back_kb(target="admin:back", label="Назад") -> InlineKeyboardMarkup:
+    """One back row. target is the section callback the screen belongs to;
+    admin:back is the root, which every legacy screen already used."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=label, icon_custom_emoji_id="5258236805890710909",
+                             callback_data=target)]])
+
+
+def back_kb(target="admin:back") -> InlineKeyboardMarkup:
     """Plain 'Назад' row for admin screens that dead-ended without one
     (bans list, bot settings, user card) -- same admin:back target every
-    other admin screen's back button already uses."""
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")]])
+    other admin screen's back button already uses, unless a section
+    callback is passed to keep the navigation one level deep."""
+    return admin_back_kb(target)
 
 
 def profile_kb(has_photo: bool = False) -> InlineKeyboardMarkup:
@@ -79,34 +87,178 @@ def help_kb() -> InlineKeyboardMarkup:
 # ── Admin keyboards ──────────────────────────────────────────────
 
 def admin_kb() -> InlineKeyboardMarkup:
+    """Panel root: seven sections, two per row.
+
+    One screen per section, every screen back to its section, every section
+    back to this root -- the whole panel is two taps from anywhere."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📊 Аналитика", callback_data="admin:sec:analytics"),
+            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin:sec:users"),
+        ],
+        [
+            InlineKeyboardButton(text="🛡 Модерация", callback_data="admin:sec:moderation"),
+            InlineKeyboardButton(text="📨 Рассылки", callback_data="admin:sec:broadcast"),
+        ],
+        [
+            InlineKeyboardButton(text="📢 Реклама", callback_data="admin:sec:ads"),
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin:sec:settings"),
+        ],
+        [
+            InlineKeyboardButton(text="🧰 Система", callback_data="admin:sec:system"),
+        ],
+    ])
+
+
+def admin_analytics_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Статистика", icon_custom_emoji_id="5931472654660800739", callback_data="admin:stats"),
             InlineKeyboardButton(text="Монетизация", icon_custom_emoji_id="5348076097110050117", callback_data="admin:money"),
         ],
         [
+            InlineKeyboardButton(text="Воронка", icon_custom_emoji_id="5399909394525737759", callback_data="admin:funnel"),
+            InlineKeyboardButton(text="Рост", callback_data="admin:growth:1"),
+        ],
+        [
+            InlineKeyboardButton(text="События", callback_data="admin:events:7"),
+            InlineKeyboardButton(text="Выгрузка CSV", callback_data="admin:export:1"),
+        ],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
+    ])
+
+
+def admin_users_section_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin:users")],
+        [
+            InlineKeyboardButton(text="🏆 Топ по тратам", callback_data="admin:top"),
+            InlineKeyboardButton(text="🆕 Новые", callback_data="admin:recent"),
+        ],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
+    ])
+
+
+def admin_moderation_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
             InlineKeyboardButton(text="Жалобы", icon_custom_emoji_id="5280880410346152584", callback_data="admin:reports"),
             InlineKeyboardButton(text="Баны", icon_custom_emoji_id="5258318620722733379", callback_data="admin:bans"),
         ],
+        [InlineKeyboardButton(text="🎉 Сезонное событие", callback_data="admin:season")],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
+    ])
+
+
+def admin_broadcast_section_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="Пользователи", icon_custom_emoji_id="5942877472163892475", callback_data="admin:users"),
-            InlineKeyboardButton(text="Рассылка", icon_custom_emoji_id="5463212105752664600", callback_data="admin:broadcast"),
-        ],
-        [
+            InlineKeyboardButton(text="Новая рассылка", icon_custom_emoji_id="5463212105752664600", callback_data="admin:broadcast"),
             InlineKeyboardButton(text="📊 Опрос", callback_data="admin:poll"),
         ],
-        [
-            InlineKeyboardButton(text="Рассылки (статус)", icon_custom_emoji_id="5467526417581357662", callback_data="admin:broadcasts"),
-            InlineKeyboardButton(text="Воронка", icon_custom_emoji_id="5399909394525737759", callback_data="admin:funnel"),
-        ],
-        [
-            InlineKeyboardButton(text="Настройки бота", icon_custom_emoji_id="6129805886383723340", callback_data="admin:settings"),
-            InlineKeyboardButton(text="Реклама", icon_custom_emoji_id="5215668805199473901", callback_data="admin:ads"),
-        ],
-        [
-            InlineKeyboardButton(text="🎉 Сезонное событие", callback_data="admin:season"),
-        ],
+        [InlineKeyboardButton(text="Статусы рассылок", icon_custom_emoji_id="5467526417581357662", callback_data="admin:broadcasts")],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
     ])
+
+
+def admin_settings_section_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Цены на продукты", callback_data="admin:prices"),
+            InlineKeyboardButton(text="Параметры бота", icon_custom_emoji_id="6129805886383723340", callback_data="admin:setlist:1"),
+        ],
+        [InlineKeyboardButton(text="Настройки рекламы", icon_custom_emoji_id="6129805886383723340", callback_data="admin:ads:settings")],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
+    ])
+
+
+def admin_system_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Состояние системы", callback_data="admin:syshealth")],
+        [InlineKeyboardButton(text="Журнал действий", callback_data="admin:audit:0")],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
+    ])
+
+
+def admin_growth_kb(days: int = 1) -> InlineKeyboardMarkup:
+    def mark(d):
+        return " ✓" if days == d else ""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=f"24 ч{mark(1)}", callback_data="admin:growth:1"),
+            InlineKeyboardButton(text=f"7 дней{mark(7)}", callback_data="admin:growth:7"),
+            InlineKeyboardButton(text=f"30 дней{mark(30)}", callback_data="admin:growth:30"),
+        ],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:sec:analytics")],
+    ])
+
+
+def admin_settings_kb(entries, page: int, pages: int) -> InlineKeyboardMarkup:
+    """entries: (key, title, value) for the keys on this page."""
+    rows = [[InlineKeyboardButton(text=f"{title}: {value}",
+                                  callback_data=f"admin:setv:{key}")]
+            for key, title, value in entries]
+    if pages > 1:
+        nav = []
+        if page > 1:
+            nav.append(InlineKeyboardButton(text="‹ Назад", callback_data=f"admin:setlist:{page - 1}"))
+        if page < pages:
+            nav.append(InlineKeyboardButton(text="Далее ›", callback_data=f"admin:setlist:{page + 1}"))
+        if nav:
+            rows.append(nav)
+    rows.append([InlineKeyboardButton(text="К разделу настроек",
+                                      callback_data="admin:sec:settings")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_setting_kb(key: str, page: int, presets, current) -> InlineKeyboardMarkup:
+    """Presets for one setting, marked with the live value."""
+    rows, row = [], []
+    for value in presets:
+        mark = "✓ " if str(value) == str(current) else ""
+        row.append(InlineKeyboardButton(text=f"{mark}{value}",
+                                        callback_data=f"admin:set:{key}:{value}"))
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="Своё значение", callback_data=f"admin:setc:{key}")])
+    rows.append([InlineKeyboardButton(text="К списку параметров",
+                                      callback_data=f"admin:setlist:{page}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_prices_kb(products) -> InlineKeyboardMarkup:
+    """products: rows with code, title, price_stars."""
+    rows = [[InlineKeyboardButton(text=f"{p.title} — {p.price_stars} ⭐",
+                                  callback_data=f"admin:price:{p.code}")]
+            for p in products]
+    rows.append([InlineKeyboardButton(text="К разделу настроек",
+                                      callback_data="admin:sec:settings")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_audit_kb(offset: int, step: int, has_more: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if offset > 0:
+        rows.append([InlineKeyboardButton(text="‹ Назад",
+                                          callback_data=f"admin:audit:{max(0, offset - step)}")])
+    if has_more:
+        rows.append([InlineKeyboardButton(text="Далее ›",
+                                          callback_data=f"admin:audit:{offset + step}")])
+    rows.append([InlineKeyboardButton(text="К разделу «Система»",
+                                      callback_data="admin:sec:system")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_user_list_kb(entries, target: str) -> InlineKeyboardMarkup:
+    """entries: (telegram_id, label). target is the section callback to return to."""
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"admin:ucard:{telegram_id}")]
+            for telegram_id, label in entries]
+    rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909",
+                                      callback_data=target)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
@@ -118,6 +270,9 @@ def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="Отклонить", icon_custom_emoji_id="5210952531676504517", callback_data=f"admin:dismiss:{report_id}"),
             InlineKeyboardButton(text="Следующая", callback_data=f"admin:reports:{offset}"),
+        ],
+        [
+            InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:sec:moderation"),
         ],
     ])
 
@@ -183,7 +338,7 @@ def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Написать от бота", icon_custom_emoji_id="5224455462178549802", callback_data=f"admin:message:{telegram_id}", style="primary"),
         ],
         [
-            InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back"),
+            InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:sec:users"),
         ],
     ])
 
@@ -191,7 +346,7 @@ def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
 def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
     rows = []
     for job in jobs:
-        status_info = {"draft": ("5460865451586250451", "Черновик"), "queued": ("5296482716567495148", "Ожидает"), "sending": ("5967432491684860012", "Отправка"), "completed": ("5280880410346152584", "Готово")}.get(job.status, ("5280880410346152584", "?"))
+        status_info = {"draft": ("5460865451586250451", "Черновик"), "queued": ("5296482716567495148", "Ожидает"), "sending": ("5967432491684860012", "Отправка"), "completed": ("5280880410346152584", "Готово"), "cancelled": ("5312229088876847138", "Остановлена")}.get(job.status, ("5280880410346152584", "?"))
         emoji_id, status_label = status_info
         done = job.sent+job.failed
         # Drafts have no audience snapshot yet (total stays 0 until
@@ -202,7 +357,7 @@ def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
             text=f"#{job.id} · {SEGMENT_TITLES.get(job.segment, job.segment)} · {status_label} · {progress}",
             icon_custom_emoji_id=emoji_id,
             callback_data=f"admin:broadcasts:{job.id}")])
-    rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")])
+    rows.append([InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:sec:broadcast")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

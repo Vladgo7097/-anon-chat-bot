@@ -190,7 +190,7 @@ class ProgressTransportTests(unittest.IsolatedAsyncioTestCase):
         from workers.maintenance import refresh_broadcast_progress
         from aiogram.exceptions import TelegramRetryAfter
         from aiogram.methods import EditMessageText
-        job = SimpleNamespace(id=1)
+        job = SimpleNamespace(id=1, status="sending")
         service = SimpleNamespace(progress_updates=AsyncMock(return_value=[
             {"job": job, "chat_id": 99, "message_id": 1, "counts": {}, "final": True}]),
             drop_progress=AsyncMock(), defer_progress=AsyncMock())
@@ -209,7 +209,7 @@ class ProgressTransportTests(unittest.IsolatedAsyncioTestCase):
         from workers.maintenance import refresh_broadcast_progress
         from aiogram.exceptions import TelegramRetryAfter
         from aiogram.methods import EditMessageText
-        job1, job2 = SimpleNamespace(id=1), SimpleNamespace(id=2)
+        job1, job2 = SimpleNamespace(id=1, status="sending"), SimpleNamespace(id=2, status="completed")
         service = SimpleNamespace(progress_updates=AsyncMock(return_value=[
             {"job": job1, "chat_id": 99, "message_id": 1, "counts": {}, "final": False},
             {"job": job2, "chat_id": 99, "message_id": 2, "counts": {}, "final": True}]),
