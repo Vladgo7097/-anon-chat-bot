@@ -13,6 +13,7 @@ from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
 from services.matching import MatchingService
 from services.chat_manager import get_redis, get_online_count
 from services.chats import ChatService
+from utils import bots
 import config
 
 logger = logging.getLogger(__name__)
@@ -153,8 +154,11 @@ async def notify_waiting_users(bot, newcomer_id):
         await r.srem("search:waiting_alerts", raw_id)
         row = await UserRepository().get(user_id)
         lang = (getattr(row, "language", None) or "ru")
+        # The queue spans both bots, so each waiter is woken through the bot
+        # they actually talk to -- the other token would just get a 403.
+        target = bots.resolve(getattr(row, "bot_id", None)) or bot
         try:
-            await bot.send_message(user_id, T.tr(WAITING_AVAILABLE, lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            await target.send_message(user_id, T.tr(WAITING_AVAILABLE, lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text=T.label(T.SEARCH, lang), callback_data="search:repeat", style="primary")
             ]]))
         except (TelegramForbiddenError, TelegramBadRequest):
@@ -190,7 +194,13 @@ async def _begin_search(message, user_id, lang="ru"):
 
 
 async def search_loop(status, user_id, bot=None, lang="ru"):
-    bot = bot or status.bot
+    if bot is None:
+        bot = status.bot if status is not None else None
+    if bot is None:
+        # A search restored after a restart carries no live event to read a bot
+        # from, and either side of a match may have joined through the other
+        # bot, so the sender is resolved from the row rather than inherited.
+        bot = await bots.bot_for(user_id)
     try:
         r = await get_redis()
         queued_at = await r.get(f"search:user:{user_id}")
@@ -340,7 +350,7 @@ async def cb_invite_friend(callback: CallbackQuery, lang: str = "ru"):
     await callback.message.answer(T.tr(INVITE_MESSAGE, lang).format(link=link))
 
 
-async def restore_searches(bot):
+async def restore_searches():
     r = await get_redis()
     async for value, _ in r.zscan_iter("search_queue"):
         user_id = int(value)
@@ -351,10 +361,10 @@ async def restore_searches(bot):
             if not await r.exists(f"search:user:{user_id}"):
                 await MatchingService().cancel(user_id)
                 continue
-            # Bot-restart recovery only: no live event to read a language from,
-            # and this is rare/short-lived enough that defaulting to Russian
-            # here (rather than a real DB round-trip) is an acceptable trade.
-            _tasks[user_id] = asyncio.create_task(search_loop(None, user_id, bot))
+            # No live event to read a bot or a language from. search_loop
+            # resolves the sender per user from the row, which is the only way
+            # to reach a search that was started on the other bot.
+            _tasks[user_id] = asyncio.create_task(search_loop(None, user_id))
 
 
 async def shutdown_searches():

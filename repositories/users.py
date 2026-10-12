@@ -41,7 +41,7 @@ class UserRepository:
                       f"Юзернейм: {username_label}\nВсего пользователей: {total_users}",
                       f"admin:user_card:{telegram_id}")
 
-    async def get_or_create(self, telegram_id: int, username=None, first_name=None):
+    async def get_or_create(self, telegram_id: int, username=None, first_name=None, bot_id=None):
         for _ in range(10):
             try:
                 is_new = False
@@ -51,6 +51,9 @@ class UserRepository:
                     now = utcnow()
                     if (user is not None and user.username == username
                             and (first_name is None or user.first_name == first_name)
+                            # A user switching between the two bots must fall through
+                            # to the write path below, or their bot_id would stay stale.
+                            and (bot_id is None or user.bot_id == bot_id)
                             and user.bot_blocked_at is None and user.last_online
                             and user.last_online >= now-timedelta(seconds=60)):
                         return user, False
@@ -63,6 +66,8 @@ class UserRepository:
                     user.username = username
                     if first_name is not None:
                         user.first_name = first_name
+                    if bot_id is not None:
+                        user.bot_id = bot_id
                     user.last_online = now
                     user.bot_blocked_at = None
                     await session.flush()

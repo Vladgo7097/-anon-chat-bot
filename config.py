@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Second bot: same code, same database, same handlers and same user pool as
+# BOT_TOKEN -- only the fallback language differs. Empty disables it.
+BOT2_TOKEN = os.getenv("BOT2_TOKEN", "")
+BOT2_DEFAULT_LANG = os.getenv("BOT2_DEFAULT_LANG", "uk")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 ADMIN_IDS: set[int] = set()
 for uid in os.getenv("ADMIN_IDS", "").split(","):

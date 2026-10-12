@@ -12,22 +12,24 @@ class AccessMiddleware(BaseMiddleware):
         from aiogram.types import CallbackQuery
         from keyboards import texts as T
         from keyboards.reply import chat_kb_reply
-        from locales import normalize
         from repositories.users import UserRepository
         from services.onboarding import step_for, banned
         from services.result import ServiceResult
         from handlers.start import show_step, onboarding_input
         from services.chat_manager import get_partner, set_online
         from config import ADMIN_IDS
+        from utils import bots
 
         actor = event.from_user
+        # Both bots share one dispatcher, so which one delivered this update is
+        # what decides the fallback language and the outbound routing below.
+        bot = getattr(event, "bot", None)
         if not actor or getattr(event, "successful_payment", None) or getattr(event, "refunded_payment", None):
             return await handler(event, data)
         chat = getattr(event, "chat", None) or getattr(getattr(event, "message", None), "chat", None)
         if chat and chat.type != "private":
             # No stored language this early, so the client's own code decides.
-            await event.answer(T.tr(T.GUARDS, normalize(
-                getattr(actor, "language_code", None)))["private_only"])
+            await event.answer(T.tr(T.GUARDS, bots.default_lang(bot, actor))["private_only"])
             return
         text = getattr(event, "text", "") or ""
         callback = isinstance(event, CallbackQuery)
@@ -43,17 +45,19 @@ class AccessMiddleware(BaseMiddleware):
             # running in en/uk, including the inline "help" and "rules" taps.
             row = await UserRepository().get(actor.id)
             data["anon_id"] = getattr(row, "anon_id", None)
-            data["lang"] = getattr(row, "language", None) or normalize(
-                getattr(actor, "language_code", None))
+            data["lang"] = getattr(row, "language", None) or bots.default_lang(bot, actor)
             return await handler(event, data)
         admin_commands = {"/admin", "/user", "/ban_user", "/unban", "/grant", "/price", "/setting", "/season"}
         if actor.id in ADMIN_IDS and (action.split()[0].split("@")[0] in admin_commands if action else False):
             return await handler(event, data)
         if actor.id in ADMIN_IDS and (action.startswith("admin:") or action.startswith("bc:")):
             return await handler(event, data)
-        user, _ = await UserRepository().get_or_create(actor.id, actor.username, actor.first_name)
+        user, _ = await UserRepository().get_or_create(
+            actor.id, actor.username, actor.first_name, bot_id=getattr(bot, "id", None))
         data["anon_id"] = getattr(user, "anon_id", None)
-        lang = getattr(user, "language", None) or "ru"
+        # The row's own choice wins; a user who has not picked one yet gets the
+        # delivering bot's default, which is Ukrainian on the second bot.
+        lang = getattr(user, "language", None) or bots.default_lang(bot, actor)
         data["lang"] = lang
         if banned(user):
             if callback:
@@ -123,12 +127,12 @@ class AntiFloodMiddleware(BaseMiddleware):
             return await handler(event, data)
         if event.from_user and await check_flood(event.from_user.id):
             from keyboards import texts as T
-            from locales import normalize
+            from utils import bots
             # Both attached observers land here. A Message carries no `.data`, so
             # the old guard stayed silent exactly while a reply-keyboard menu was
             # being hammered; a CallbackQuery still got its toast. AccessMiddleware
             # runs first and leaves `lang` behind whenever it resolved one.
-            lang = data.get("lang") or normalize(getattr(event.from_user, "language_code", None))
+            lang = data.get("lang") or bots.default_lang(getattr(event, "bot", None), event.from_user)
             await event.answer(T.tr(T.GUARDS, lang)["slow_down"])
             return None
         return await handler(event, data)

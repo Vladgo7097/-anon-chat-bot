@@ -130,9 +130,11 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.redis.zscan_iter = entries
         self.redis.exists.side_effect = lambda key: key == "search:user:1"
         with patch.object(search, "search_loop", side_effect=self.waiting_loop) as loop:
-            await search.restore_searches(self.bot)
+            await search.restore_searches()
             self.assertEqual(list(search._tasks), [1])
-            loop.assert_called_once_with(None, 1, self.bot)
+            # No bot is handed in: the loop resolves the sender from the row,
+            # which is the only way to reach a search started on the other bot.
+            loop.assert_called_once_with(None, 1)
             self.service.cancel.assert_awaited_once_with(2)
 
     async def test_restart_keeps_original_timeout(self):

@@ -10,6 +10,7 @@ from services.notifications import NotificationService
 from services.chats import ChatService
 from services import funnel_alert
 from keyboards.reply import main_menu_kb, chat_kb_reply
+from utils import bots
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,13 @@ async def refresh_broadcast_progress(bot, service):
     from handlers.admin import broadcast_card, broadcast_card_kb
     for update in await service.progress_updates():
         job = update["job"]
+        # The card sits in the chat that started the broadcast, which may
+        # belong to the other bot -- editing it through the wrong token is a 403.
+        target = await bots.bot_for(update["chat_id"], bot)
         try:
-            await bot.edit_message_text(broadcast_card(job, update["counts"], update.get("poll_totals")),
-                                        chat_id=update["chat_id"], message_id=update["message_id"],
-                                        reply_markup=broadcast_card_kb(job.id, job.status))
+            await target.edit_message_text(broadcast_card(job, update["counts"], update.get("poll_totals")),
+                                           chat_id=update["chat_id"], message_id=update["message_id"],
+                                           reply_markup=broadcast_card_kb(job.id, job.status))
         except TelegramRetryAfter as error:
             await service.defer_progress(job.id, error.retry_after)
             continue
@@ -79,7 +83,11 @@ async def run(bot):
                     # recipient's own language is looked up per notification.
                     from utils.db import user_lang
                     from keyboards import texts as T
-                    lang = await user_lang(notification.user_id)
+                    # Both bots share this table, so a notice has to leave through
+                    # the bot this recipient actually talks to. `bot` is only the
+                    # fallback for a row that does not name one yet.
+                    target = await bots.bot_for(notification.user_id, bot)
+                    lang = await user_lang(notification.user_id, bots.default_lang(target))
                     markup=None
                     if notification.type=="match":
                         markup=chat_kb_reply(lang)
@@ -100,11 +108,11 @@ async def run(bot):
                     poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None
                     if poll:
                         options, question = poll
-                        sent = await bot.send_poll(notification.user_id, question, options, is_anonymous=True)
+                        sent = await target.send_poll(notification.user_id, question, options, is_anonymous=True)
                         await service.record_poll(sent.poll.id, notification.broadcast_id, len(options))
                     else:
                         text, parse_mode = notification_content(notification)
-                        await bot.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)
+                        await target.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)
                     await service.finish(notification.id,"sent")
                 except TelegramForbiddenError:
                     await service.finish(notification.id,"failed","forbidden")

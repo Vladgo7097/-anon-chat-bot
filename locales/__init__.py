@@ -2,8 +2,10 @@ LANGS = ("ru", "en", "uk")
 DEFAULT_LANG = "ru"
 
 
-def normalize(lang):
-    return lang if lang in LANGS else DEFAULT_LANG
+def normalize(lang, default=DEFAULT_LANG):
+    """Keep a language the strings exist for, otherwise the caller's fallback
+    -- the second bot falls back to Ukrainian instead of Russian."""
+    return lang if lang in LANGS else default
 
 
 def tr(strings, lang):

@@ -84,12 +84,31 @@ async def main():
 
     await on_startup()
 
-    bot = Bot(
-        token=config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    from utils.telegram import RetryTelegramRequests
-    bot.session.middleware(RetryTelegramRequests())
+    def build_bot(token, default_lang, detect_client_lang):
+        from utils.telegram import RetryTelegramRequests
+        instance = Bot(
+            token=token,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        )
+        instance.session.middleware(RetryTelegramRequests())
+        # Bot.id is read out of the token, so telling the two apart costs no
+        # API call -- and these two attributes are what utils.bots.default_lang
+        # and the /start language auto-advance read to pick a fallback.
+        instance.default_lang = default_lang
+        instance.detect_client_lang = detect_client_lang
+        return instance
+
+    from locales import DEFAULT_LANG
+    from utils import bots as bot_registry
+    instances = [build_bot(config.BOT_TOKEN, DEFAULT_LANG, True)]
+    if config.BOT2_TOKEN:
+        # Same database, same handlers, same user pool: a user of either bot can
+        # be matched with a user of the other, and every relay already goes
+        # through whichever bot delivered the message.
+        instances.append(build_bot(config.BOT2_TOKEN, config.BOT2_DEFAULT_LANG, False))
+    for index, instance in enumerate(instances):
+        bot_registry.register(instance, primary=index == 0)
+
     from utils.storage import AvailableRedisStorage
     # Same reasoning as services/chat_manager.get_redis(): without a socket
     # timeout, a stalled Redis connection blocks FSM reads/writes forever
@@ -112,24 +131,26 @@ async def main():
     dp.message.outer_middleware(UpdateLoggingMiddleware())
     dp.callback_query.outer_middleware(UpdateLoggingMiddleware())
 
-    # Start background notification loop
-    worker = asyncio.create_task(maintenance_loop(bot))
+    # Start background notification loop. It routes every notice through
+    # utils.bots.bot_for(), so this bot is only the fallback.
+    worker = asyncio.create_task(maintenance_loop(instances[0]))
 
     @dp.errors()
-    async def on_error(event):
+    async def on_error(event, bot=None):
         import traceback
         logger.error("event=update_failed error_code=%s\n%s", type(event.exception).__name__, "".join(traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__)))
         update = event.update
         # This trap runs with no middleware data, so it resolves the language
-        # itself -- the DB row first, the client's own code as fallback.
+        # itself -- the DB row first, the delivering bot's own default.
         from keyboards import texts as T
+        from utils import bots
         from utils.db import user_lang
         actor = getattr(update.callback_query or update.message, "from_user", None)
+        fallback = bots.default_lang(bot, actor)
         try:
-            lang = await user_lang(getattr(actor, "id", None),
-                                   getattr(actor, "language_code", None) or "ru")
+            lang = await user_lang(getattr(actor, "id", None), fallback)
         except Exception:
-            lang = "ru"
+            lang = fallback
         try:
             if update.callback_query:
                 await update.callback_query.answer(T.tr(T.ERRORS, lang)["retry"])
@@ -143,8 +164,11 @@ async def main():
 
     try:
         from handlers.search import restore_searches
-        await restore_searches(bot)
-        await dp.start_polling(bot)
+        await restore_searches()
+        # One dispatcher, one polling loop per bot: aiogram builds a fresh
+        # workflow_data per bot, the dedupe key carries bot.id, and the FSM
+        # StorageKey carries it too, so the two never collide on shared state.
+        await dp.start_polling(*instances)
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     finally:
@@ -153,7 +177,7 @@ async def main():
         worker.cancel()
         await asyncio.gather(worker, return_exceptions=True)
         await dp.storage.close()
-        await bot.session.close()
+        await asyncio.gather(*(instance.session.close() for instance in instances))
         await on_shutdown()
 
 

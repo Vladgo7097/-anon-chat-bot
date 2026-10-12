@@ -29,6 +29,9 @@ class User(Base):
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     rules_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rules_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Which of the two bots this user actually talks to. Both share one
+    # database, so an out-of-band notice has to leave through that token.
+    bot_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     bot_blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
