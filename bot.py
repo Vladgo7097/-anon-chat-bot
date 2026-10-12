@@ -120,11 +120,21 @@ async def main():
         import traceback
         logger.error("event=update_failed error_code=%s\n%s", type(event.exception).__name__, "".join(traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__)))
         update = event.update
+        # This trap runs with no middleware data, so it resolves the language
+        # itself -- the DB row first, the client's own code as fallback.
+        from keyboards import texts as T
+        from utils.db import user_lang
+        actor = getattr(update.callback_query or update.message, "from_user", None)
+        try:
+            lang = await user_lang(getattr(actor, "id", None),
+                                   getattr(actor, "language_code", None) or "ru")
+        except Exception:
+            lang = "ru"
         try:
             if update.callback_query:
-                await update.callback_query.answer("Не удалось выполнить действие. Попробуй ещё раз.")
+                await update.callback_query.answer(T.tr(T.ERRORS, lang)["retry"])
             elif update.message:
-                await update.message.answer("Не удалось выполнить действие. Попробуй ещё раз чуть позже.")
+                await update.message.answer(T.tr(T.ERRORS, lang)["retry_later"])
         except Exception:
             logger.warning("event=error_reply_failed update_id=%s", update.update_id)
         return True

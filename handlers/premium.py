@@ -164,7 +164,7 @@ async def successful_payment(message: Message, lang: str = "ru"):
         await set_instant_search(message.from_user.id)
     if result.data["product"] in {"reveal_priority_request", "reveal_status"}:
         from handlers.reveal import paid_reveal
-        await paid_reveal(message, message.from_user.id, result.data["session_id"], result.data["product"])
+        await paid_reveal(message, message.from_user.id, result.data["session_id"], result.data["product"], lang)
 
 
 @premium_router.message(F.refunded_payment)

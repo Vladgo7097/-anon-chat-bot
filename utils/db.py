@@ -1,7 +1,11 @@
 """Read compatibility helpers. Mutations belong in transactional services."""
 import json
+import logging
+from locales import normalize
 from repositories.users import UserRepository
 from repositories.chats import premium_active
+
+logger = logging.getLogger(__name__)
 
 
 async def get_or_create_user(telegram_id, username=None, first_name=None):
@@ -11,6 +15,23 @@ async def get_or_create_user(telegram_id, username=None, first_name=None):
 
 async def get_user_by_id(telegram_id):
     return await UserRepository().get(telegram_id)
+
+
+async def user_lang(user_id, default="ru"):
+    """Language for messages built outside the dispatcher: the worker's notices
+    and bot.py's error trap never see `data["lang"]`, so they ask here. `default`
+    carries the client's own language_code when the row has none yet.
+
+    Fails soft on purpose. This only picks a label for a message that already
+    exists -- a lookup that raised would take the whole send down with it, which
+    is a worse outcome than shipping that one notice in the fallback language.
+    """
+    try:
+        user = await UserRepository().get(user_id) if user_id else None
+    except Exception:
+        logger.debug("event=user_lang_unavailable user_id=%s", user_id)
+        return normalize(default)
+    return normalize(getattr(user, "language", None) or default)
 
 
 async def is_premium(user_id):

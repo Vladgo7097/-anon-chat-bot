@@ -75,23 +75,28 @@ async def run(bot):
             notification=await service.next()
             if notification:
                 try:
+                    # Nothing routes through the dispatcher here, so the
+                    # recipient's own language is looked up per notification.
+                    from utils.db import user_lang
+                    from keyboards import texts as T
+                    lang = await user_lang(notification.user_id)
                     markup=None
                     if notification.type=="match":
-                        markup=chat_kb_reply()
+                        markup=chat_kb_reply(lang)
                     elif notification.type == "reveal_request":
                         from handlers.reveal import reveal_request_keyboard
-                        markup = reveal_request_keyboard(notification.callback_data)
+                        markup = reveal_request_keyboard(notification.callback_data, lang)
                     elif notification.type == "rating_prompt":
                         from handlers.chat import rating_keyboard
-                        markup = rating_keyboard(notification.callback_data)
+                        markup = rating_keyboard(notification.callback_data, lang)
                     elif notification.type=="chat_ended":
-                        markup=main_menu_kb()
+                        markup=main_menu_kb(lang)
                     elif notification.type == "reconnect_prompt":
                         markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            InlineKeyboardButton(text="Найти похожего собеседника",
+                            InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["similar"],
                                 callback_data="search:repeat", style="primary")]])
                     elif notification.callback_data:
-                        markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть",callback_data=notification.callback_data,style="primary")]])
+                        markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["open"],callback_data=notification.callback_data,style="primary")]])
                     poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None
                     if poll:
                         options, question = poll

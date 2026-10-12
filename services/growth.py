@@ -116,7 +116,7 @@ class GrowthService:
             offers=list((await s.scalars(select(Offer).where(Offer.user_id==user_id,Offer.status.in_(["active","reserved"]),Offer.ends_at>utcnow()))).all())
             return user,achievements,offers
 
-    async def upsell(self, user_id):
+    async def upsell(self, user_id, lang="ru"):
         from services.settings import bot_value
         threshold = await bot_value("upsell_chat_count", 3)
         from models.payment import Payment,Product
@@ -139,9 +139,12 @@ class GrowthService:
             if not product or not product.is_active:
                 return None
             spent=await s.scalar(select(func.coalesce(func.sum(Payment.stars_amount),0)).where(Payment.user_id==user_id,Payment.status=="paid",Payment.paid_at>utcnow()-timedelta(days=30),Payment.product.in_(["instant_search","gender_filter_one_match","skip_next_delay"])))
-            text="<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> С Premium доступны фильтры, приоритет поиска и «Следующий» без задержки."
+            from keyboards import texts as T
+            strings = T.tr(T.UPSELL_TEXT, lang)
+            text = strings["head"]
             if spent>product.price_stars:
-                text+=f"\nЗа последние 30 дней на эти улучшения потрачено {spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>. Premium на месяц стоит {product.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> — на {spent-product.price_stars}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> меньше."
+                text += strings["spent"].format(spent=spent, price=product.price_stars,
+                                                diff=spent-product.price_stars)
             return text
 
 

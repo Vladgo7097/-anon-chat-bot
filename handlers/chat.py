@@ -63,10 +63,11 @@ CANNOT_DELETE_NOW = {"ru": "Telegram уже не позволяет удалит
 UNDERSTAND_SEND_CONTACT = {"ru": "Понимаю, отправить контакт", "en": "I understand, send the contact", "uk": "Розумію, надіслати контакт"}
 
 
-def rating_keyboard(session_id):
+def rating_keyboard(session_id, lang="ru"):
+    buttons = T.tr(T.RATING_BUTTONS, lang)
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='Да', icon_custom_emoji_id="5350417283783084711", callback_data=f"v1:rate:{session_id}:1", style="success"),
-        InlineKeyboardButton(text='Нет', icon_custom_emoji_id="5348132683304156113", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
+        InlineKeyboardButton(text=buttons["yes"], icon_custom_emoji_id="5350417283783084711", callback_data=f"v1:rate:{session_id}:1", style="success"),
+        InlineKeyboardButton(text=buttons["no"], icon_custom_emoji_id="5348132683304156113", callback_data=f"v1:rate:{session_id}:-1", style="danger"),
     ]])
 
 
@@ -123,7 +124,7 @@ async def finish(message, user_id, reason="stop", lang="ru"):
     if reason in {"stop", "next"}:
         from services.growth import GrowthService, track
         from handlers.premium import product_keyboard
-        text=await GrowthService().upsell(user_id)
+        text=await GrowthService().upsell(user_id, lang)
         if text:
             await message.answer(text,reply_markup=await product_keyboard(["premium_1m"]))
             await track(user_id,"premium_offer_shown",f"premium_offer:{chat.session_id}:{user_id}")

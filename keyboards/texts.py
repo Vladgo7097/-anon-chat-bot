@@ -156,5 +156,147 @@ GUARDS = {
            "slow_down": "Зачекай трохи перед наступною дією."},
 }
 
+# Complaint screen. The six reason labels are shown as buttons, so they live
+# here too rather than in services.reports -- that module keeps only the keys
+# and the Russian label its moderator notice needs.
+REPORT_REASONS = {
+    "ru": {"18plus": "Контент 18+", "insult": "Оскорбления", "spam": "Спам/реклама",
+           "fraud": "Мошенничество", "minor": "Подозрение на несовершеннолетнего", "other": "Другое"},
+    "en": {"18plus": "18+ content", "insult": "Insults", "spam": "Spam/ads",
+           "fraud": "Fraud", "minor": "Suspected minor", "other": "Other"},
+    "uk": {"18plus": "Контент 18+", "insult": "Образи", "spam": "Спам/реклама",
+           "fraud": "Шахрайство", "minor": "Підозра на неповнолітнього", "other": "Інше"},
+}
+REPORT_TEXT = {
+    "ru": {"not_in_chat": "Жалоба доступна во время активного диалога.",
+           "ask": "<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> На что жалуетесь?",
+           "button_unavailable": "Кнопка недоступна.",
+           "describe": "Опиши причину жалобы (до 1000 символов). /cancel — отменить.",
+           "already": "Жалоба уже отправлена или диалог завершён.",
+           "sent": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Жалоба отправлена модераторам.\nСобеседник заблокирован для тебя.",
+           "partner_left": "<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> Собеседник покинул чат.",
+           "cancelled": "Ввод жалобы отменён.",
+           "describe_range": "Опиши причину текстом от 1 до 1000 символов.",
+           "old": "Открой новую жалобу кнопкой «Пожаловаться»."},
+    "en": {"not_in_chat": "You can complain only during an active chat.",
+           "ask": "<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> What are you complaining about?",
+           "button_unavailable": "This button is not available.",
+           "describe": "Describe the reason (up to 1000 characters). /cancel — to cancel.",
+           "already": "The complaint has already been sent or the chat has ended.",
+           "sent": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Complaint sent to the moderators.\nThe peer is blocked for you.",
+           "partner_left": "<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> The peer has left the chat.",
+           "cancelled": "Complaint input cancelled.",
+           "describe_range": "Describe the reason in text, 1 to 1000 characters.",
+           "old": "Open a new complaint with the «Report» button."},
+    "uk": {"not_in_chat": "Скарга доступна лише під час активного діалогу.",
+           "ask": "<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> На що скаржитесь?",
+           "button_unavailable": "Кнопка недоступна.",
+           "describe": "Опиши причину скарги (до 1000 символів). /cancel — скасувати.",
+           "already": "Скаргу вже надіслано або діалог завершено.",
+           "sent": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Скаргу надіслано модераторам.\nСпіврозмовника заблоковано для тебе.",
+           "partner_left": "<tg-emoji emoji-id=\"5927208490870248283\">😢</tg-emoji> Співрозмовник покинув чат.",
+           "cancelled": "Ввід скарги скасовано.",
+           "describe_range": "Опиши причину текстом від 1 до 1000 символів.",
+           "old": "Відкрий нову скаргу кнопкою «Поскаржитись»."},
+}
+
+# Reveal (exchange contacts) screens and the two keyboards behind them.
+REVEAL_BUTTONS = {
+    "ru": {"offer": "Предложить раскрыться", "agree": "Согласиться", "decline": "Отказать",
+           "priority": "Приоритетный запрос", "status": "Статус"},
+    "en": {"offer": "Offer to reveal", "agree": "Agree", "decline": "Decline",
+           "priority": "Priority request", "status": "Status"},
+    "uk": {"offer": "Запропонувати розкритися", "agree": "Погодитися", "decline": "Відмовити",
+           "priority": "Пріоритетний запит", "status": "Статус"},
+}
+REVEAL_TEXT = {
+    "ru": {"not_in_chat": "Ты сейчас не в чате.",
+           "intro": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Хочешь продолжить общение открыто?\n\nКонтакт станет виден только после согласия обоих собеседников.",
+           "extras": "Дополнительные возможности запроса:",
+           "included": "Включено в Premium:",
+           "decline_sent": "Отказ отправлен", "request_gone": "Запрос уже недоступен",
+           "declined": "Ты отказался раскрывать контакт. Диалог можно продолжить анонимно.",
+           "already": "Запрос уже отправлен или диалог завершён.",
+           "no_contact": "контакт в Telegram не настроен",
+           "mutual": "<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> Вы оба хотите общаться открыто!\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Собеседник: {contact}",
+           "sent": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Запрос отправлен. Ждём согласия собеседника.",
+           "need_paid": "Нужен Premium или отдельная покупка для этой функции.",
+           "ended": "Диалог уже завершён; контакт не раскрывается.",
+           "status_MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Согласие взаимно.",
+           "status_PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Ожидается ответ.",
+           "status_DECLINED": "Собеседник отказался раскрывать контакт.",
+           "status_NOT_REQUESTED": "Запрос ещё не отправлен.",
+           "status_default": "Запрос завершён.",
+           "priority_ready": "<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Приоритетный запрос доступен. Подтверди своё согласие:"},
+    "en": {"not_in_chat": "You are not in a chat right now.",
+           "intro": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Want to continue in the open?\n\nThe contact becomes visible only after both sides agree.",
+           "extras": "Extra request options:",
+           "included": "Included in Premium:",
+           "decline_sent": "Decline sent", "request_gone": "The request is no longer available",
+           "declined": "You declined to share your contact. The chat can continue anonymously.",
+           "already": "The request has already been sent or the chat has ended.",
+           "no_contact": "no Telegram contact set",
+           "mutual": "<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> You both want to talk in the open!\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Your peer: {contact}",
+           "sent": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Request sent. Waiting for the peer's consent.",
+           "need_paid": "Premium or a separate purchase is required for this feature.",
+           "ended": "The chat has already ended; the contact is not revealed.",
+           "status_MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Consent is mutual.",
+           "status_PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Waiting for an answer.",
+           "status_DECLINED": "The peer declined to share their contact.",
+           "status_NOT_REQUESTED": "No request has been sent yet.",
+           "status_default": "The request has ended.",
+           "priority_ready": "<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Priority request available. Confirm your consent:"},
+    "uk": {"not_in_chat": "Ти зараз не в діалозі.",
+           "intro": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Хочеш продовжити спілкування відкрито?\n\nКонтакт стане видимий лише за згоди обох співрозмовників.",
+           "extras": "Додаткові можливості запиту:",
+           "included": "Включено в Premium:",
+           "decline_sent": "Відмову надіслано", "request_gone": "Запит уже недоступний",
+           "declined": "Ти відмовився розкривати контакт. Діалог можна продовжити анонімно.",
+           "already": "Запит уже надіслано або діалог завершено.",
+           "no_contact": "контакт у Telegram не налаштовано",
+           "mutual": "<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> Ви обидва хочете спілкуватися відкрито!\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Співрозмовник: {contact}",
+           "sent": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Запит надіслано. Чекаємо згоди співрозмовника.",
+           "need_paid": "Потрібен Premium або окрема покупка для цієї функції.",
+           "ended": "Діалог уже завершено; контакт не розкривається.",
+           "status_MUTUAL": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Згода взаємна.",
+           "status_PENDING": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Очікується відповідь.",
+           "status_DECLINED": "Співрозмовник відмовився розкривати контакт.",
+           "status_NOT_REQUESTED": "Запит ще не надіслано.",
+           "status_default": "Запит завершено.",
+           "priority_ready": "<tg-emoji emoji-id=\"5350618807943576963\">⚡</tg-emoji> Пріоритетний запит доступний. Підтверди свою згоду:"},
+}
+
+# Notices built outside the dispatcher -- the error trap in bot.py has no
+# middleware data, so it resolves the language itself.
+ERRORS = {
+    "ru": {"retry": "Не удалось выполнить действие. Попробуй ещё раз.",
+           "retry_later": "Не удалось выполнить действие. Попробуй ещё раз чуть позже."},
+    "en": {"retry": "Something went wrong. Please try again.",
+           "retry_later": "Something went wrong. Please try again in a moment."},
+    "uk": {"retry": "Не вдалося виконати дію. Спробуй ще раз.",
+           "retry_later": "Не вдалося виконати дію. Спробуй ще раз трохи пізніше."},
+}
+
+# Buttons and upsell the worker assembles by hand, without a lang argument in
+# sight -- they followed the language of whoever wrote them.
+WORKER_BUTTONS = {
+    "ru": {"similar": "Найти похожего собеседника", "open": "Открыть"},
+    "en": {"similar": "Find a similar match", "open": "Open"},
+    "uk": {"similar": "Знайти схожого співрозмовника", "open": "Відкрити"},
+}
+RATING_BUTTONS = {
+    "ru": {"yes": "Да", "no": "Нет"},
+    "en": {"yes": "Yes", "no": "No"},
+    "uk": {"yes": "Так", "no": "Ні"},
+}
+UPSELL_TEXT = {
+    "ru": {"head": "<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> С Premium доступны фильтры, приоритет поиска и «Следующий» без задержки.",
+           "spent": "\nЗа последние 30 дней на эти улучшения потрачено {spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>. Premium на месяц стоит {price}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> — на {diff}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> меньше."},
+    "en": {"head": "<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium unlocks filters, search priority and instant «Next».",
+           "spent": "\nYou spent {spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> on these upgrades in the last 30 days. A month of Premium costs {price}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> — that is {diff}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> less."},
+    "uk": {"head": "<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> З Premium доступні фільтри, пріоритет пошуку і «Наступний» без затримки.",
+           "spent": "\nЗа останні 30 днів на ці покращення витрачено {spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>. Premium на місяць коштує {price}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> — на {diff}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> менше."},
+}
+
 LANGUAGE_NAMES = {"ru": "Русский", "en": "English", "uk": "Українська"}
 LANGUAGE_FLAGS = {"ru": "🇷🇺", "en": "🇬🇧", "uk": "🇺🇦"}
