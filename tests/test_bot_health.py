@@ -286,6 +286,18 @@ class AliveMarkerCase(unittest.TestCase):
         self.assertFalse(self.marker(9999999999).exists())
         self.assertTrue(self.marker(7828301604).exists())
 
+    def test_a_foreign_process_leaves_the_markers_alone(self):
+        # Пустой реестр -- это «этот процесс ботов не опрашивает», а не
+        # «опрашивать нечего»: иначе любой посторонний вызов probe() стирал
+        # бы живые метки настоящего, и healthcheck перезапускал бы здоровый
+        # контейнер.
+        bot_health.mark_alive(7828301604)
+        bot_health.mark_alive(8873771495)
+        with mock.patch.object(bot_health.bots, "all", return_value=()):
+            asyncio.run(bot_health.probe(force=True))
+        self.assertTrue(self.marker(7828301604).exists())
+        self.assertTrue(self.marker(8873771495).exists())
+
     def test_healthcheck_fails_on_a_silent_polling_bot(self):
         from utils import healthcheck
         self.touch_heartbeat()
