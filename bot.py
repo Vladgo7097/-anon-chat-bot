@@ -109,6 +109,10 @@ async def main():
         instances.append(build_bot(config.BOT2_TOKEN, config.BOT2_DEFAULT_LANG, False))
     for index, instance in enumerate(instances):
         bot_registry.register(instance, primary=index == 0)
+    # Метки живости -- единственное, по чему healthcheck отличает работающий
+    # опрос от зависшего. Без этой строки контейнер был бы здоров ровно до
+    # первой минуты работы, пока воркер не прогонит probe() сам.
+    await bot_health.probe(force=True)
 
     from utils.storage import AvailableRedisStorage
     # Same reasoning as services/chat_manager.get_redis(): without a socket

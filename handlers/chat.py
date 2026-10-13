@@ -9,6 +9,7 @@ from keyboards.reply import main_menu_kb
 from services.chats import ChatService
 from services.chat_manager import get_redis
 from repositories.chats import ChatRepository
+from utils import bots, repost
 import config
 import logging
 
@@ -191,13 +192,18 @@ async def forward_message(message: Message, album=None, lang: str = "ru"):
         await message.answer(T.tr(CONTACT_WARNING, lang), reply_markup=keyboard)
         return
     try:
+        # Пара может быть собрана из пользователей разных ботов, и тогда у
+        # бота-отправителя чат партнёра не существует: copy_message ответит
+        # 400, и сообщение не дойдёт вообще. Решает бот получателя.
+        target_bot = await bots.bot_for(partner, message.bot)
         if album:
             if any(item.content_type not in service.SUPPORTED for item in album):
                 await message.answer(T.tr(UNSUPPORTED_ALBUM, lang))
                 return
-            copied = await message.bot.copy_messages(chat_id=partner, from_chat_id=message.chat.id,
+            copied = await repost.copy_many(target_bot, message.bot, partner,
+                from_chat_id=message.chat.id,
                 message_ids=[item.message_id for item in album])
-            if len(copied) == len(album):
+            if copied and len(copied) == len(album):
                 for source, target in zip(album, copied):
                     await service.remember(result.data["session_id"], message.from_user.id, source.message_id, partner, target.message_id)
         else:
@@ -208,9 +214,10 @@ async def forward_message(message: Message, album=None, lang: str = "ru"):
                 if target:
                     from aiogram.types import ReplyParameters
                     params["reply_parameters"] = ReplyParameters(message_id=target, allow_sending_without_reply=True)
-            copied = await message.bot.copy_message(chat_id=partner, from_chat_id=message.chat.id,
-                message_id=message.message_id, **params)
-            await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
+            copied = await repost.copy(target_bot, message.bot, partner,
+                from_chat_id=message.chat.id, message_id=message.message_id, **params)
+            if copied:
+                await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
         await service.remember_context(result.data["session_id"], message.from_user.id, content)
     except TelegramForbiddenError:
@@ -241,12 +248,15 @@ async def sync_edited_message(message: Message, lang: str = "ru"):
         return
     partner = chat.user2_id if chat.user1_id == message.from_user.id else chat.user1_id
     try:
+        # Правленное сообщение лежит у бота, который его доставил -- это может
+        # быть и не тот бот, с которым пишет автор, если пара кросс-бот.
+        target_bot = await bots.bot_for(partner, message.bot)
         if message.text is not None:
-            await message.bot.edit_message_text(message.text, chat_id=partner,
-                                                message_id=target, parse_mode=None)
+            await target_bot.edit_message_text(message.text, chat_id=partner,
+                                               message_id=target, parse_mode=None)
         else:
-            await message.bot.edit_message_caption(chat_id=partner, message_id=target,
-                                                   caption=message.caption, parse_mode=None)
+            await target_bot.edit_message_caption(chat_id=partner, message_id=target,
+                                                  caption=message.caption, parse_mode=None)
         await service.remember_context(chat.session_id, message.from_user.id,
                                        message.text or message.caption)
     except TelegramBadRequest:
@@ -271,7 +281,10 @@ async def delete_relayed_message(message: Message, lang: str = "ru"):
         return
     partner = chat.user2_id if chat.user1_id == message.from_user.id else chat.user1_id
     try:
-        await message.bot.delete_message(partner, target)
+        # Сообщение удаляет бот, который его доставил, а не бот, с которым
+        # пишет автор: у кросс-бот пары это разные токены.
+        target_bot = await bots.bot_for(partner, message.bot)
+        await target_bot.delete_message(partner, target)
         await message.answer(T.tr(DELETED_OK, lang))
     except TelegramBadRequest:
         await message.answer(T.tr(CANNOT_DELETE_NOW, lang))

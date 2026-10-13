@@ -7,7 +7,7 @@ from services.chats import ChatService
 from services.reveal import RevealService
 from keyboards import texts as T
 from utils.db import user_lang
-from utils import photos
+from utils import bots, photos
 
 
 def reveal_keyboard(sid, lang="ru"):
@@ -88,12 +88,16 @@ async def cb_consent(callback: CallbackQuery, lang: str = "ru"):
             contact = f"@{escape(username)}" if username else theirs["no_contact"]
             caption = theirs["mutual"].format(contact=contact)
             try:
+                # Каждая сторона уведомляется ботом, которым она пользуется:
+                # для кросс-бот пары это не тот токен, в котором сработало
+                # раскрытие, и чужой бот просто не сможет ей написать.
+                target = await bots.bot_for(uid, callback.bot)
                 if other.get("photo"):
-                    # The photo's file_id belongs to the bot that uploaded it,
-                    # which may be the other one -- photos bridges the two.
-                    await photos.send_photo(callback.bot, uid, other["photo"], caption=caption)
+                    # file_id принадлежит боту, загрузившему фото; photos
+                    # поднимает его, если это другой бот.
+                    await photos.send_photo(target, uid, other["photo"], caption=caption)
                 else:
-                    await callback.bot.send_message(uid, caption)
+                    await target.send_message(uid, caption)
             except TelegramForbiddenError:
                 pass
             except (TelegramRetryAfter, TelegramBadRequest):

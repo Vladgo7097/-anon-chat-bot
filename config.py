@@ -8,6 +8,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 # BOT_TOKEN -- only the fallback language differs. Empty disables it.
 BOT2_TOKEN = os.getenv("BOT2_TOKEN", "")
 BOT2_DEFAULT_LANG = os.getenv("BOT2_DEFAULT_LANG", "uk")
+# Канал тревог, не зависящий ни от одного из наших токенов: очередь
+# уведомлений разносит тот же процесс, что и бота, поэтому при полной
+# смерти обоих токенов сообщить владельцу иначе некому. Принимает POST
+# с полями content (Discord) и text (Slack).
+ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 ADMIN_IDS: set[int] = set()
 for uid in os.getenv("ADMIN_IDS", "").split(","):

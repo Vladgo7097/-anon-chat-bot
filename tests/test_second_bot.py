@@ -150,6 +150,76 @@ class WorkerRoutingTests(unittest.IsolatedAsyncioTestCase):
         language.assert_awaited_once_with(123, "uk")
 
 
+class CrossBotRelayTests(unittest.IsolatedAsyncioTestCase):
+    """Пара на разных ботах должна доставляться ботом получателя.
+
+    copy_message копирует внутри одного бота, и до правки каждое сообщение
+    между пользователем первого бота и пользователем второго падало в 400 --
+    162 обрыва за шесть часов на одних только кросс-бот парах.
+    """
+
+    async def test_a_message_leaves_through_the_partners_own_bot(self):
+        from handlers import chat as chat_handlers
+        mine, theirs = SimpleNamespace(id=111), SimpleNamespace(id=222)
+        message = SimpleNamespace(
+            text="привет", caption=None, content_type="text",
+            from_user=SimpleNamespace(id=1), chat=SimpleNamespace(id=1),
+            message_id=10, bot=mine, answer=AsyncMock(), reply_to_message=None)
+        active = SimpleNamespace(user1_id=1, user2_id=2, session_id="s1")
+        with (
+            patch("handlers.chat.ChatService.active", AsyncMock(return_value=active)),
+            patch("services.relay.RelayService.contact_warning_required",
+                  AsyncMock(return_value=False)),
+            patch("services.relay.RelayService.remember", AsyncMock()),
+            patch("services.relay.RelayService.delivered", AsyncMock()),
+            patch("services.relay.RelayService.remember_context", AsyncMock()),
+            patch.object(chat_handlers.bots, "bot_for",
+                         AsyncMock(return_value=theirs)) as route,
+            patch.object(chat_handlers.repost, "copy",
+                         AsyncMock(return_value=SimpleNamespace(message_id=77))) as copy,
+        ):
+            await chat_handlers.forward_message(message)
+        route.assert_awaited_once_with(2, mine)
+        # Бот получателя идёт первым аргументом: именно он доставляет.
+        self.assertIs(copy.await_args.args[0], theirs)
+        self.assertIs(copy.await_args.args[1], mine)
+
+    async def test_edits_and_deletes_also_go_through_the_delivering_bot(self):
+        from handlers import chat as chat_handlers
+        mine, theirs = SimpleNamespace(id=111), SimpleNamespace(id=222)
+        active = SimpleNamespace(user1_id=1, user2_id=2, session_id="s1")
+        edited = SimpleNamespace(
+            text="правка", caption=None, content_type="text",
+            from_user=SimpleNamespace(id=1), message_id=10, bot=mine,
+            answer=AsyncMock())
+        reply = SimpleNamespace(message_id=10)
+        deleting = SimpleNamespace(
+            text="/delete", caption=None, content_type="text",
+            from_user=SimpleNamespace(id=1), chat=SimpleNamespace(id=1),
+            message_id=11, bot=mine, answer=AsyncMock(), reply_to_message=reply)
+        with (
+            patch("handlers.chat.ChatService.active", AsyncMock(return_value=active)),
+            patch("services.relay.RelayService.contact_warning_required",
+                  AsyncMock(return_value=False)),
+            patch("services.relay.RelayService.reply_target",
+                  AsyncMock(return_value=55)),
+            patch("services.relay.RelayService.remember_context", AsyncMock()),
+            patch.object(chat_handlers.bots, "bot_for",
+                         AsyncMock(return_value=theirs)) as route,
+        ):
+            theirs.edit_message_text = AsyncMock()
+            await chat_handlers.sync_edited_message(edited)
+            theirs.edit_message_text.assert_awaited_once_with(
+                "правка", chat_id=2, message_id=55, parse_mode=None)
+            route.assert_awaited_once_with(2, mine)
+
+            route.reset_mock()
+            theirs.delete_message = AsyncMock()
+            await chat_handlers.delete_relayed_message(deleting)
+            theirs.delete_message.assert_awaited_once_with(2, 55)
+            route.assert_awaited_once_with(2, mine)
+
+
 # The real token lives in .env and never in the repo: dispatch below only needs
 # a second Bot whose id differs from the primary's, and nothing here talks to
 # Telegram. Hardcoding a secret is how the first one ended up rotting in git.

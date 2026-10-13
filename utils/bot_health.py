@@ -20,6 +20,7 @@ import logging
 import re
 import time
 from collections import deque
+from pathlib import Path
 
 from aiogram import Bot
 
@@ -34,6 +35,9 @@ THRESHOLD = 5
 # час конфликт иначе зальёт чат владельца сотней копий одного и того же.
 COOLDOWN = 1800
 PROBE_INTERVAL = 60
+# Три пропущенных probe подряд -- опрос молчит, а не просто глючит сеть.
+ALIVE_STALE = 180
+ALIVE_DIR = "/tmp"
 
 HUMAN = {
     "conflict": "этот же токен опрашивает кто-то ещё — входящие уходят к нему",
@@ -116,7 +120,33 @@ async def report():
                           notice_text(bot_id, kind, count))
     logger.warning("event=bot_health_page sent=%s kinds=%s",
                    len(incidents), [kind for _, kind, _ in incidents])
+    for bot_id, kind, count in incidents:
+        await _webhook(notice_text(bot_id, kind, count))
     return len(incidents)
+
+
+async def _webhook(text_body):
+    """Уйти по вебхуку -- каналу, не зависящему ни от одного из наших токенов.
+
+    Очередь уведомлений разносит тот же процесс, что и бот: оба токена мертвы,
+    уведомление некому доставить, и владелец узнаёт о происшествии из чужого
+    репорта. Вебхук разрывает эту закольцовку. Discord и Slack читают свои
+    поля, поэтому шлём оба сразу.
+    """
+    import config
+    url = config.ALERT_WEBHOOK_URL
+    if not url:
+        return
+    try:
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json={"content": text_body,
+                                               "text": text_body}) as response:
+                if response.status >= 400:
+                    logger.warning("event=alert_webhook_failed status=%s", response.status)
+    except Exception:
+        logger.warning("event=alert_webhook_failed", exc_info=True)
 
 
 class DispatcherWatcher(logging.Handler):
@@ -165,21 +195,76 @@ async def probe(force: bool = False):
 
     Тупой канал против хрупкого лога: get_me не меняет формат сообщений и не
     зависит от того, что именно aiogram решил написать в конкретной версии.
+    Каждый успешный ответ -- ещё и метка живости для healthcheck, который
+    иначе не отличит работающий опрос от зависшего на мёртвом сокете.
     """
     global _last_probe
     now = time.monotonic()
     if not force and now - _last_probe < PROBE_INTERVAL:
         return
     _last_probe = now
+    alive = set()
     for bot in bots.all():
+        alive.add(bot.id)
         try:
             await bot.get_me()
         except Exception as error:
             record(bot.id, classify(error))
         else:
+            mark_alive(bot.id)
             # Токен живой — сбрасываем счётчик: иначе старый конфликт
             # повторно выстрелит через COOLDOWN и заспамит уведомлениями.
             _hits.pop((bot.id, "unauthorized"), None)
+    _drop_stale_markers(alive)
+
+
+def alive_path(bot_id):
+    return Path(ALIVE_DIR) / f"anon-bot-{bot_id}-alive"
+
+
+def mark_alive(bot_id):
+    """Метка живости: Telegram ответил, значит опрос идёт."""
+    try:
+        alive_path(bot_id).write_text(str(time.time()))
+    except OSError:
+        logger.debug("event=alive_marker_unwritable bot_id=%s", bot_id)
+
+
+def stale_alive(now=None):
+    """(bot_id, возраст в секундах) для ботов, чей опрос молчит.
+
+    Читается healthcheck'ом в отдельном процессе, поэтому источник -- файлы,
+    а не реестр: тот процесс ботов не регистрирует и не знает, сколько их.
+    Пустой каталог означает «метки ещё не успели появиться», а не беду.
+    """
+    now = time.time() if now is None else now
+    stale = []
+    for path in Path(ALIVE_DIR).glob("anon-bot-*-alive"):
+        try:
+            age = now - float(path.read_text() or 0)
+        except (OSError, ValueError):
+            continue
+        if age > ALIVE_STALE:
+            stale.append((path.stem.split("-")[2], round(age)))
+    return stale
+
+
+def _drop_stale_markers(alive):
+    """Убрать метки ботов, которых процесс больше не опрашивает.
+
+    Иначе вычеркнутый из .env бот навсегда подвешивал бы healthcheck своей
+    протухшей меткой.
+    """
+    for path in Path(ALIVE_DIR).glob("anon-bot-*-alive"):
+        try:
+            bot_id = int(path.stem.split("-")[2])
+        except (IndexError, ValueError):
+            continue
+        if bot_id not in alive:
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 def classify(error):

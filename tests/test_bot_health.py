@@ -9,10 +9,14 @@
 """
 import asyncio
 import logging
+import pathlib
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
@@ -207,6 +211,125 @@ class BotHealthCase(unittest.TestCase):
 
 class SimpleDispatcher:
     """Прокидка: attach() не смотрит на диспетчер, ему нужен любой объект."""
+
+
+class AliveMarkerCase(unittest.TestCase):
+    """Метки живости: единственное, по чему healthcheck видит сам опрос.
+
+    Heartbeat держит воркер, а не поллинг -- опрос способен зависнуть на
+    мёртвом сокете, пока воркер крутится. Поэтому проверяются файлы, которые
+    пишет bot_health.probe() после каждого ответа Telegram.
+    """
+
+    def setUp(self):
+        bot_health._hits.clear()
+        bot_health._paged.clear()
+        bot_health._last_probe = 0.0
+        self.tmp = tempfile.mkdtemp()
+        self.dir_patch = mock.patch.object(bot_health, "ALIVE_DIR", self.tmp)
+        self.dir_patch.start()
+        self.addCleanup(self.dir_patch.stop)
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def marker(self, bot_id):
+        return pathlib.Path(self.tmp) / f"anon-bot-{bot_id}-alive"
+
+    def touch_heartbeat(self):
+        """healthcheck падает на heartbeat раньше, чем доходит до меток."""
+        heartbeat = pathlib.Path("/tmp/anon-worker-heartbeat")
+        heartbeat.write_text(str(time.time()))
+        self.addCleanup(heartbeat.unlink, missing_ok=True)
+
+    def test_a_fresh_marker_is_not_stale(self):
+        bot_health.mark_alive(7828301604)
+        self.assertEqual(bot_health.stale_alive(), [])
+
+    def test_an_untouched_marker_becomes_stale(self):
+        bot_health.mark_alive(7828301604)
+        later = time.time() + bot_health.ALIVE_STALE + 1
+        self.assertEqual(bot_health.stale_alive(now=later), [("7828301604",
+                                                             bot_health.ALIVE_STALE + 1)])
+
+    def test_no_markers_at_all_is_not_a_failure(self):
+        # Контейнер только поднялся, probe ещё не успел -- это не беда.
+        self.assertEqual(bot_health.stale_alive(), [])
+
+    def test_a_corrupt_marker_is_ignored_rather_than_crashing(self):
+        self.marker(7828301604).write_text("не число")
+        self.assertEqual(bot_health.stale_alive(), [])
+
+    def test_probe_writes_the_marker_when_telegram_answers(self):
+        bot = AsyncMock()
+        bot.id = 7828301604
+        with mock.patch.object(bot_health.bots, "all", return_value=(bot,)):
+            asyncio.run(bot_health.probe(force=True))
+        self.assertTrue(self.marker(7828301604).exists())
+
+    def test_a_rejected_token_writes_no_marker(self):
+        bot = AsyncMock()
+        bot.id = 7828301604
+        bot.get_me.side_effect = TelegramUnauthorizedError(
+            method=GetMe(), message="Unauthorized")
+        with mock.patch.object(bot_health.bots, "all", return_value=(bot,)):
+            asyncio.run(bot_health.probe(force=True))
+        self.assertFalse(self.marker(7828301604).exists())
+        self.assertIn((7828301604, "unauthorized"), bot_health._hits)
+
+    def test_a_dropped_bot_leaves_no_marker_behind(self):
+        # Вычеркнутый из .env бот иначе навсегда подвешивал бы healthcheck
+        # своей протухшей меткой.
+        self.marker(9999999999).write_text(str(time.time()))
+        bot = AsyncMock()
+        bot.id = 7828301604
+        with mock.patch.object(bot_health.bots, "all", return_value=(bot,)):
+            asyncio.run(bot_health.probe(force=True))
+        self.assertFalse(self.marker(9999999999).exists())
+        self.assertTrue(self.marker(7828301604).exists())
+
+    def test_healthcheck_fails_on_a_silent_polling_bot(self):
+        from utils import healthcheck
+        self.touch_heartbeat()
+        # Метка записана напрямую и старше порога: probe давно не проходил,
+        # воркер при этом жив и heartbeat обновляет.
+        self.marker(7828301604).write_text(str(time.time() - bot_health.ALIVE_STALE - 1))
+        with mock.patch.object(healthcheck, "engine"), \
+             mock.patch.object(healthcheck, "get_redis"), \
+             mock.patch.object(healthcheck, "close_redis"):
+            with self.assertRaises(RuntimeError) as caught:
+                asyncio.run(healthcheck.check())
+        self.assertIn("Polling silent", str(caught.exception))
+
+    def test_healthcheck_passes_on_fresh_markers(self):
+        from utils import healthcheck
+        self.touch_heartbeat()
+        bot_health.mark_alive(7828301604)
+        bot_health.mark_alive(8873771495)
+
+        class _Conn:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def execute(self, *_):
+                return None
+
+        class _Engine:
+            def connect(self):
+                return _Conn()
+
+            async def dispose(self):
+                return None
+
+        class _Redis:
+            async def ping(self):
+                return True
+
+        with mock.patch.object(healthcheck, "engine", _Engine()), \
+             mock.patch.object(healthcheck, "get_redis", AsyncMock(return_value=_Redis())), \
+             mock.patch.object(healthcheck, "close_redis", AsyncMock()):
+            asyncio.run(healthcheck.check())
 
 
 if __name__ == "__main__":

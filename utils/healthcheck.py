@@ -6,12 +6,20 @@ from pathlib import Path
 from sqlalchemy import text
 from models.base import engine
 from services.chat_manager import get_redis, close_redis
+from utils import bot_health
 
 
 async def check():
     heartbeat = Path("/tmp/anon-worker-heartbeat")
     if not heartbeat.exists() or time.time() - heartbeat.stat().st_mtime > 120:
         raise RuntimeError("Worker heartbeat expired")
+    # Heartbeat держит воркер, а не поллинг: опрос способен зависнуть на
+    # мёртвом сокете, пока воркер крутится и метку обновляет. Метки живости
+    # пишет bot_health.probe() после каждого ответа Telegram -- то есть
+    # именно их и проверяет, что бот вообще доходит до сервера.
+    stale = bot_health.stale_alive()
+    if stale:
+        raise RuntimeError(f"Polling silent for {stale}")
     try:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
