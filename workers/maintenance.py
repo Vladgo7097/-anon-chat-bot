@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def notification_content(notification):
-    if notification.type not in {"match", "rating", "unban", "inactive", "reward", "startup", "owner_new_user", "reveal_mutual"}:
+    # Оба сигнала о новом пользователе уходят с HTML: в них теперь имя
+    # человека, а имя в Telegram не ограничено -- '<' и '&' пролезают.
+    if notification.type not in {"match", "rating", "unban", "inactive", "reward", "startup", "owner_new_user", "owner_activated", "reveal_mutual"}:
         return notification.text, None
-    if notification.type in {"startup", "owner_new_user", "reveal_mutual"}:
+    if notification.type in {"startup", "owner_new_user", "owner_activated", "reveal_mutual"}:
         return notification.text, "HTML"
     # Escape dynamic text, then restore only the supported custom emoji markup.
     text = escape(notification.text)
@@ -110,6 +112,11 @@ async def run(bot):
                         markup=InlineKeyboardMarkup(inline_keyboard=[[
                             InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["similar"],
                                 callback_data="search:repeat", style="primary")]])
+                    elif notification.type in {"owner_new_user", "owner_activated"}:
+                        from keyboards.inline import owner_signup_kb
+                        # callback_data уже несёт admin:user_card:{id}, а
+                        # клавиатура строит и «Открыть», и «Написать».
+                        markup = owner_signup_kb(int(notification.callback_data.rsplit(":", 1)[-1]))
                     elif notification.callback_data:
                         markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["open"],callback_data=notification.callback_data,style="primary")]])
                     poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None

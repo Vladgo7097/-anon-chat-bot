@@ -33,6 +33,21 @@ def all() -> tuple[Bot, ...]:
     return tuple(_bot_by_id.values())
 
 
+def label(bot_id) -> str:
+    """Человекочитаемое имя бота для уведомлений владельца.
+
+    Порядок реестра -- единственный источник: primary регистрируется первым,
+    поэтому «Бот 1» всегда @anonim_chatqbot независимо от того, в каком
+    порядке токены легли в .env. NULL -- это ещё ни один бот не записан.
+    """
+    if bot_id is None:
+        return "Бот не определён"
+    position = list(_bot_by_id).index(bot_id) if bot_id in _bot_by_id else -1
+    if position < 0:
+        return f"Бот {bot_id}"
+    return f"Бот {position + 1}"
+
+
 def resolve(bot_id) -> Bot | None:
     """Synchronous lookup for callers that already hold the row."""
     return _bot_by_id.get(bot_id)

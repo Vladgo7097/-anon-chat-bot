@@ -115,12 +115,23 @@ class OnboardingService:
                     return ServiceResult(False, "AGE", {"error": "Сервис доступен только с 18 лет. Выбери возраст от 18 до 99."})
                 user.age, user.onboarding_step = value, "RULES"
             elif action == "accept" and step == "RULES":
+                # Пользователем человек становится здесь, а не на /start:
+                # AccessMiddleware создаёт строку на первом же апдейте любого
+                # типа, поэтому уведомление «запустил бота» живёт в
+                # get_or_create, а здесь -- то, что он остался. К этому
+                # моменту заполнены пол, возраст и язык, а deep-link уже
+                # записал referrer_id и start_source.
+                was_completed = user.onboarding_completed
                 user.rules_version = config.CURRENT_RULES_VERSION
                 user.rules_accepted_at = utcnow()
                 user.onboarding_completed, user.onboarding_step = True, "MENU"
                 if isinstance(self.repository, UserRepository):
                     from services.growth import event
                     await event(session, telegram_id, "onboarding_completed", f"onboarding:{telegram_id}")
+                    # Обновление правил возвращает в RULES каждого, кто уже
+                    # был в меню: без гейта дубль ушёл бы на весь список.
+                    if not was_completed:
+                        await self.repository.notify_owner_signup(session, user)
             return ServiceResult(True, step_for(user))
         return await self.repository.transition(telegram_id, apply)
 

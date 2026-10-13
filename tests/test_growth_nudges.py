@@ -61,7 +61,7 @@ class OwnerNoticeCapTests(DatabaseCase):
             digest = await s.scalar(select(Notification).where(Notification.type == "owner_digest"))
         self.assertIsNotNone(digest)
         self.assertEqual(digest.user_id, 99)
-        self.assertIn("Новых пользователей: 9", digest.text)
+        self.assertIn("Запустили: 9", digest.text)
         self.assertIn("поштучно показано 2", digest.text)
 
     async def test_a_quiet_hour_produces_no_digest(self):

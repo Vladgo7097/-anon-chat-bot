@@ -315,7 +315,10 @@ class OperationsTests(DatabaseCase):
         async with self.factory() as s:
             rows = (await s.scalars(select(Notification).where(Notification.type == "owner_new_user"))).all()
             self.assertEqual([n.user_id for n in rows], [99])
-            self.assertEqual(rows[0].dedupe_key, "owner_new_user:4242:99")
+            # Бот в ключе дедупа -- не деталь: без неё человек, открывший оба
+            # бота, показался бы один раз, и наблюдение «кто запускает первый,
+            # кто второй» свелось бы к нулю. bot_id ещё не записан -> 0.
+            self.assertEqual(rows[0].dedupe_key, "owner_new_user:4242:0:99")
             self.assertEqual(rows[0].callback_data, "admin:user_card:4242")
 
     async def test_owner_notice_skipped_for_banned_user(self):

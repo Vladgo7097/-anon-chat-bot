@@ -86,6 +86,10 @@ class Notification(Base):
     dedupe_key: Mapped[str] = mapped_column(String(160), unique=True)
     text: Mapped[str] = mapped_column(Text)
     callback_data: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Каким ботом уведомление уходит / о каком боте оно. Нужен владельцу:
+    # два бота держат разные аудитории, и сводка вперемешку скрывает, какой
+    # из них растёт. NULL у прочих типов и у строк до миграции 019.
+    bot_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
