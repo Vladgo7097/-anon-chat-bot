@@ -25,7 +25,9 @@ class PrivacyFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("найден контакт", message.answer.await_args.args[0])
 
     async def test_mutual_reveal_sends_partner_photo_privately(self):
-        bot = SimpleNamespace(send_photo=AsyncMock(), send_message=AsyncMock())
+        # id обязателен: photos сверяет его с id бота, выдавшего file_id, чтобы
+        # понять, нужно ли переливать байты.
+        bot = SimpleNamespace(id=111, send_photo=AsyncMock(), send_message=AsyncMock())
         callback = SimpleNamespace(
             data="v1:reveal:session-1", from_user=SimpleNamespace(id=2),
             bot=bot, answer=AsyncMock(), message=SimpleNamespace(answer=AsyncMock()))

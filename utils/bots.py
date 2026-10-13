@@ -28,6 +28,11 @@ def register(bot: Bot, *, primary: bool = False) -> None:
         _primary = bot
 
 
+def all() -> tuple[Bot, ...]:
+    """Every bot this process polls, for checks that are per-process."""
+    return tuple(_bot_by_id.values())
+
+
 def resolve(bot_id) -> Bot | None:
     """Synchronous lookup for callers that already hold the row."""
     return _bot_by_id.get(bot_id)

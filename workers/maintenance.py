@@ -9,6 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from services.notifications import NotificationService
 from services.chats import ChatService
 from services import funnel_alert
+from utils import bot_health
 from keyboards.reply import main_menu_kb, chat_kb_reply
 from utils import bots
 
@@ -74,6 +75,12 @@ async def run(bot):
             if time.monotonic()-last_funnel>600:
                 await funnel_alert.check()
                 last_funnel=time.monotonic()
+            # Telegram never announces a dead token or one someone else is
+            # polling -- the bot just goes quiet and keeps retrying forever.
+            # probe() asks each token directly, report() turns repeated
+            # failures into a page instead of a week of silence.
+            await bot_health.probe()
+            await bot_health.report()
             await service.expand_broadcast()
             await refresh_broadcast_progress(bot, service)
             notification=await service.next()

@@ -11,6 +11,7 @@ from keyboards.reply import onboarding_kb, main_menu_kb
 from keyboards import texts as T
 from services.profile import ProfileService
 from utils.db import get_user_stats
+from utils import photos
 
 
 class ProfileEdit(StatesGroup):
@@ -187,7 +188,9 @@ async def show_profile(message, user_id, lang="ru"):
     kb = profile_kb(has_photo=bool(s['profile_photo']), lang=lang)
     if s['profile_photo']:
         try:
-            await message.answer_photo(s['profile_photo'], caption=text, reply_markup=kb)
+            # file_id знает только бот, с которым этот профиль открыли: если
+            # фото лежало от другого бота, photos поднимет его заново.
+            await photos.answer_photo(message, s['profile_photo'], caption=text, reply_markup=kb)
             return
         except TelegramBadRequest:
             pass

@@ -12,6 +12,7 @@ from models.base import engine, Base
 from services.chat_manager import close_redis
 from workers.maintenance import run as maintenance_loop
 from utils.middleware import AntiFloodMiddleware, AccessMiddleware
+from utils import bot_health
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,11 @@ async def main():
         "socket_connect_timeout": 3, "socket_timeout": 5, "health_check_interval": 30}))
     from utils.deduplication import UpdateDeduplication
     dp.update.outer_middleware(UpdateDeduplication())
+    # A dead token and a token someone else is polling both look identical
+    # from outside: the bot simply goes quiet, and aiogram keeps retrying
+    # forever without telling anybody. The polling log is the only place the
+    # reason ever shows up, so this is where it gets caught.
+    bot_health.attach(dp)
 
     from handlers import load_routers
 

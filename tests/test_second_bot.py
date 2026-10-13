@@ -77,7 +77,7 @@ class FallbackLanguageTests(RegistryMixin, unittest.TestCase):
     def test_bot_id_comes_straight_out_of_the_token(self):
         # No getMe round-trip: the id is the numeric prefix, so registering
         # both bots at startup costs nothing.
-        self.assertEqual(Bot(token="7828301604:AAEQmZA2").id, 7828301604)
+        self.assertEqual(Bot(token="7828301604:SYNTHETIC").id, 7828301604)
         self.assertEqual(Bot(token="111:AAA").id, 111)
 
 
@@ -150,7 +150,10 @@ class WorkerRoutingTests(unittest.IsolatedAsyncioTestCase):
         language.assert_awaited_once_with(123, "uk")
 
 
-SECOND = Bot(token="7828301604:AAEQmZA2qzZn4MR-dv4kOiyC0D2F5u6bNeg",
+# The real token lives in .env and never in the repo: dispatch below only needs
+# a second Bot whose id differs from the primary's, and nothing here talks to
+# Telegram. Hardcoding a secret is how the first one ended up rotting in git.
+SECOND = Bot(token="7828301604:OFFLINE_TEST_TOKEN",
              default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 SECOND.default_lang = "uk"
 SECOND.detect_client_lang = False
