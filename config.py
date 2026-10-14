@@ -67,3 +67,10 @@ SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "")
 
 # Сайт: доступ к /api/stats (просмотры/переходы в бота), пусто = эндпоинт выключен.
 STATS_ACCESS_KEY = os.getenv("STATS_ACCESS_KEY", "")
+
+# Локальная админка на /admin: контейнер web слушает только 127.0.0.1, но
+# nginx однажды может открыть его наружу, поэтому доступ держится на токене,
+# а не на адресе. Пусто = админка выключена целиком.
+ADMIN_WEB_TOKEN = os.getenv("ADMIN_WEB_TOKEN", "")
+# От чьего имени пишутся действия и аудит. 0 = первый из ADMIN_IDS.
+ADMIN_WEB_ID = int(os.getenv("ADMIN_WEB_ID", "0"))

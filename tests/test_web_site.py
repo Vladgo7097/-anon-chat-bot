@@ -18,7 +18,11 @@ import web.app as web_app
 from web.app import PAGE_DIRECTORIES, STATIC_DIR, app
 
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-PAGES = sorted(STATIC_DIR.rglob("index.html"))
+# Локальная админка -- не страница сайта: она за токеном, помечена noindex и
+# существует в одном экземпляре без языковых версий. Ни sitemap, ни
+# обязательные head-теги публичных страниц на неё не распространяются.
+PAGES = sorted(page for page in STATIC_DIR.rglob("index.html")
+               if page.parent != STATIC_DIR / "admin")
 
 
 def read(path):

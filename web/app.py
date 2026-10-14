@@ -47,6 +47,10 @@ CACHE_SECONDS = ((".html", 0), (".xml", 3600), (".txt", 3600),
 
 def cache_control(name: str) -> str:
     """HTML must revalidate: it is what changes on every deploy."""
+    # Панель обновляется одновременно с API: суевый ей сутки устаревшего
+    # app.js, который ломается о новый формат ответа.
+    if "/admin/" in name:
+        return "no-cache"
     for suffix, seconds in CACHE_SECONDS:
         if name.endswith(suffix):
             return "no-cache" if seconds == 0 else f"public, max-age={seconds}"
@@ -238,5 +242,12 @@ async def stats(request: Request):
     except RedisError:
         raise HTTPException(status_code=503, detail="REDIS_UNAVAILABLE")
 
+
+# Локальная админка: регистрируется до mount("/"), иначе Mount перехватит
+# каждый путь и маршруты ниже него никогда не сработают.
+from web.admin import page_router, router as admin_router  # noqa: E402
+
+app.include_router(admin_router)
+app.include_router(page_router)
 
 app.mount("/", CachedStaticFiles(directory=STATIC_DIR, html=True), name="static")

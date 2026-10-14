@@ -12,13 +12,16 @@ empty by the time anything can reach it.
 import logging
 
 from aiogram import Bot
+from aiogram.utils.token import extract_bot_id
 
+import config
 from locales import DEFAULT_LANG, normalize
 
 logger = logging.getLogger(__name__)
 
 _bot_by_id: dict[int, Bot] = {}
 _primary: Bot | None = None
+_configured: tuple[int, ...] | None = None
 
 
 def register(bot: Bot, *, primary: bool = False) -> None:
@@ -33,16 +36,44 @@ def all() -> tuple[Bot, ...]:
     return tuple(_bot_by_id.values())
 
 
+def _configured_ids() -> tuple[int, ...]:
+    """Номера ботов, вычисленные из токенов в конфиге.
+
+    bot.py зовёт register() на старте, но веб-контейнер ботов не поднимает
+    вообще -- и подписи в админке обязаны совпадать с подписями в
+    уведомлениях, иначе «Бот 1» в логе и «Бот 8873771495» в панели это
+    разные названия одного и того же. Порядок повторяет порядок регистрации:
+    primary идёт первым."""
+    global _configured
+    if _configured is None:
+        ids: list[int] = []
+        for token in (config.BOT_TOKEN, config.BOT2_TOKEN):
+            if token:
+                try:
+                    ids.append(extract_bot_id(token))
+                except Exception:
+                    logger.warning("utils.bots: не разобрать номер из токена")
+        _configured = tuple(ids)
+    return _configured
+
+
 def label(bot_id) -> str:
     """Человекочитаемое имя бота для уведомлений владельца.
 
-    Порядок реестра -- единственный источник: primary регистрируется первым,
-    поэтому «Бот 1» всегда @anonim_chatqbot независимо от того, в каком
-    порядке токены легли в .env. NULL -- это ещё ни один бот не записан.
+    Порядок реестра -- единственный источник там, где он есть: primary
+    регистрируется первым, поэтому «Бот 1» всегда @anonim_chatqbot
+    независимо от того, в каком порядке токены легли в .env. Когда
+    реестр пуст (веб), тот же порядок берётся из конфига. NULL -- это ещё
+    ни один бот не записан.
     """
     if bot_id is None:
         return "Бот не определён"
-    position = list(_bot_by_id).index(bot_id) if bot_id in _bot_by_id else -1
+    # Сначала конфиг: в нём порядок совпадает с порядком регистрации, и
+    # подпись не зависит от того, живёт ли в этом процессе реестр ботов.
+    order = list(_configured_ids())
+    if bot_id not in order:
+        order = list(_bot_by_id)
+    position = order.index(bot_id) if bot_id in order else -1
     if position < 0:
         return f"Бот {bot_id}"
     return f"Бот {position + 1}"

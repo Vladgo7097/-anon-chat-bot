@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Админка · анонимный чат</title>
+<link rel="stylesheet" href="/admin/app.css">
+</head>
+<body>
+
+<!-- Вход: страница отдаётся без токена, данные за токеном. -->
+<section id="gate" class="gate hidden">
+  <form class="gate-card" id="gate-form">
+    <div class="gate-title">Админка</div>
+    <p class="gate-sub">Вставьте токен доступа. Он хранится только в этом браузере.</p>
+    <input type="password" id="gate-token" placeholder="ADMIN_WEB_TOKEN"
+           autocomplete="current-password" spellcheck="false">
+    <button type="submit" class="btn btn-primary btn-block">Войти</button>
+    <p class="gate-err" id="gate-err"></p>
+  </form>
+</section>
+
+<div id="app" class="app hidden">
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <b>Админка</b>
+      <span class="brand-sub">анонимный чат</span>
+    </div>
+    <div class="topsys" id="topsys"></div>
+    <button class="btn btn-ghost" id="logout" title="Удалить токен">Выйти</button>
+  </header>
+
+  <div class="shell">
+    <nav class="side" id="nav">
+      <button class="nav-item is-on" data-tab="overview">Обзор</button>
+      <button class="nav-item" data-tab="users">Люди</button>
+      <button class="nav-item" data-tab="notices">Уведомления</button>
+      <button class="nav-item" data-tab="broadcasts">Рассылки</button>
+      <button class="nav-item" data-tab="reports">Жалобы<span class="badge" id="rep-badge"></span></button>
+      <button class="nav-item" data-tab="audit">Действия</button>
+      <button class="nav-item" data-tab="settings">Настройки</button>
+    </nav>
+
+    <main class="main" id="main"><div class="loading">Загрузка…</div></main>
+  </div>
+
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <span id="drawer-title">—</span>
+      <button class="btn btn-ghost" id="drawer-close">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/admin/app.js"></script>
+</body>
+</html>
