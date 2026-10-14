@@ -1066,10 +1066,14 @@ async function renderSettings() {
 
 /* ============================== старт ============================== */
 
-const fromUrl = new URLSearchParams(location.search).get("key");
+/* Токен приходит в #-части ссылки: она не уходит на сервер, поэтому не
+   оседает ни в access.log, ни в Referer. ?key= принимаем для старых
+   закладок и тут же вычищаем вместе с hash -- в адресе ключ не живёт. */
+const fromUrl = new URLSearchParams(location.hash.slice(1)).get("key")
+             || new URLSearchParams(location.search).get("key");
 if (fromUrl) {
   localStorage.setItem(TOKEN_KEY, fromUrl);
-  history.replaceState({}, "", location.pathname);   // токен не должен остаться в адресе
+  history.replaceState({}, "", location.pathname);
 }
 TOKEN = localStorage.getItem(TOKEN_KEY) || "";
 

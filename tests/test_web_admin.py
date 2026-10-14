@@ -52,6 +52,18 @@ class GateTests(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
         self.assertEqual(r.json()["detail"], "BAD_TOKEN")
 
+    def test_non_ascii_garbage_in_the_header_is_401_not_a_500(self):
+        """compare_digest на str кидает TypeError на не-ASCII.
+
+        Токен сверяется по байтам, поэтому любой мусор в заголовке -- 401,
+        а не 500 с раскрытием внутренностей. Байты, а не строки: curl и
+        прочие клиенты спокойно кладут в заголовок сырые не-ASCII байты.
+        """
+        r = self._get("/api/admin/overview", "right",
+                      headers={"Authorization": b"Bearer \xff\xff"})
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r.json()["detail"], "BAD_TOKEN")
+
     def test_token_also_accepted_from_query_for_the_first_open(self):
         r = self._get("/api/admin/overview?key=wrong", "right")
         self.assertEqual(r.status_code, 401)

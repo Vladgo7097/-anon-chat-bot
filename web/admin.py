@@ -11,6 +11,7 @@
 как и STATS_ACCESS_KEY выключает /api/stats.
 """
 import hashlib
+import hmac
 from datetime import timedelta
 from pathlib import Path
 
@@ -59,6 +60,8 @@ async def _guard(request: Request) -> None:
 
     Страницу открывают по ссылке, где заголовка ещё нет, поэтому ?key=
     тоже принимается -- и тут же вычищается из адресной строки на клиенте.
+    Ссылку для входа держат с #key=: #-часть не уходит на сервер и не
+    попадает ни в access.log, ни в Referer.
     """
     if not config.ADMIN_WEB_TOKEN:
         raise HTTPException(status_code=404)
@@ -66,7 +69,11 @@ async def _guard(request: Request) -> None:
     if supplied.lower().startswith("bearer "):
         supplied = supplied[7:]
     supplied = supplied or request.query_params.get("key", "")
-    if supplied != config.ADMIN_WEB_TOKEN:
+    # Сравнение по времени не зависит от содержимого. Байты, а не строки:
+    # compare_digest на str кидает TypeError на не-ASCII, и любой мусор в
+    # заголовке уходил бы в 500 вместо честного 401.
+    if not hmac.compare_digest(supplied.encode("utf-8", "replace"),
+                               config.ADMIN_WEB_TOKEN.encode("utf-8", "replace")):
         raise HTTPException(status_code=401, detail="BAD_TOKEN")
 
 
