@@ -167,13 +167,21 @@ document.getElementById("gate-form").addEventListener("submit", (e) => {
   if (!value) return;
   TOKEN = value;
   api("/api/admin/overview?days=1")
-    .then(() => { localStorage.setItem(TOKEN_KEY, TOKEN); showGate(""); showApp(); render(); })
+    .then(() => {
+      localStorage.setItem(TOKEN_KEY, TOKEN);
+      showGate(""); showApp();
+      // Разворот через маршрут: render() напрямую вызывать нельзя, пока TAB
+      // не разобрана из адреса -- иначе ни одна ветка не сработает.
+      TAB = "";
+      paintNav(); applyRoute();
+    })
     .catch((err) => { TOKEN = ""; showGate(err.message === "BAD_TOKEN" ? "Неверный токен" : err.message); });
 });
 
 document.getElementById("logout").addEventListener("click", () => {
   localStorage.removeItem(TOKEN_KEY);
   TOKEN = "";
+  TAB = "";               // при следующем входе отрисовка гарантирована
   showGate("");
 });
 
@@ -295,6 +303,9 @@ function requestCloseDrawer() {
 }
 
 async function render() {
+  // Прямой вызов до разбора адреса: TAB ещё пустая, иначе ни одна ветка ниже
+  // не сработает и панель навсегда останется на "Загрузка…".
+  if (!TAB) { applyRoute(); return; }
   takeFocus();
   main('<div class="loading">Загрузка…</div>');
   try {
