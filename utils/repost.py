@@ -31,28 +31,31 @@ _MEDIA = {
 }
 
 
-async def copy(target_bot, source_bot, chat_id, *, from_chat_id, message_id, **kwargs):
-    """copy_message, который выходит за пределы одного бота."""
-    if target_bot is source_bot:
-        return await target_bot.copy_message(chat_id=chat_id, from_chat_id=from_chat_id,
-                                             message_id=message_id, **kwargs)
-    message = await source_bot.get_messages(from_chat_id, message_id)
-    if not message:
-        return None
-    return await repost(target_bot, chat_id, message, **kwargs)
+async def copy(target_bot, chat_id, *, source, **kwargs):
+    """copy_message внутри одного бота, перелитие -- между ними.
+
+    source -- сам Message, он у зовущего уже есть. Bot API не умеет достать
+    сообщение по идентификатору: раньше здесь стоял несуществующий
+    get_messages, и каждое кросс-бот сообщение падало в AttributeError,
+    не дойдя до получателя и не оставив ответа отправителю.
+    """
+    if target_bot is source.bot:
+        return await target_bot.copy_message(chat_id=chat_id,
+                                             from_chat_id=source.chat.id,
+                                             message_id=source.message_id,
+                                             **kwargs)
+    return await repost(target_bot, chat_id, source, **kwargs)
 
 
-async def copy_many(target_bot, source_bot, chat_id, *, from_chat_id, message_ids):
-    """copy_messages, который выходит за пределы одного бота."""
-    if target_bot is source_bot:
-        return await target_bot.copy_messages(chat_id=chat_id, from_chat_id=from_chat_id,
-                                              message_ids=message_ids)
-    messages = await source_bot.get_messages(from_chat_id, message_ids)
-    if not messages:
-        return None
-    if not isinstance(messages, list):
-        messages = [messages]
-    return await repost_many(target_bot, chat_id, messages)
+async def copy_many(target_bot, chat_id, *, sources):
+    """copy_messages внутри одного бота, send_media_group -- между ними."""
+    if not sources:
+        return []
+    if target_bot is sources[0].bot:
+        return await target_bot.copy_messages(
+            chat_id=chat_id, from_chat_id=sources[0].chat.id,
+            message_ids=[item.message_id for item in sources])
+    return await repost_many(target_bot, chat_id, sources)
 
 
 async def repost(target_bot, chat_id, message, **kwargs):

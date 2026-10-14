@@ -182,7 +182,10 @@ class CrossBotRelayTests(unittest.IsolatedAsyncioTestCase):
         route.assert_awaited_once_with(2, mine)
         # Бот получателя идёт первым аргументом: именно он доставляет.
         self.assertIs(copy.await_args.args[0], theirs)
-        self.assertIs(copy.await_args.args[1], mine)
+        # Источник -- сам Message, а не его идентификаторы: Bot API не умеет
+        # достать сообщение по id, и прежняя возня с get_messages рвала в
+        # AttributeError каждое кросс-бот сообщение.
+        self.assertIs(copy.await_args.kwargs["source"], message)
 
     async def test_edits_and_deletes_also_go_through_the_delivering_bot(self):
         from handlers import chat as chat_handlers

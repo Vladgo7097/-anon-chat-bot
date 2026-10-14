@@ -200,9 +200,7 @@ async def forward_message(message: Message, album=None, lang: str = "ru"):
             if any(item.content_type not in service.SUPPORTED for item in album):
                 await message.answer(T.tr(UNSUPPORTED_ALBUM, lang))
                 return
-            copied = await repost.copy_many(target_bot, message.bot, partner,
-                from_chat_id=message.chat.id,
-                message_ids=[item.message_id for item in album])
+            copied = await repost.copy_many(target_bot, partner, sources=album)
             if copied and len(copied) == len(album):
                 for source, target in zip(album, copied):
                     await service.remember(result.data["session_id"], message.from_user.id, source.message_id, partner, target.message_id)
@@ -214,8 +212,7 @@ async def forward_message(message: Message, album=None, lang: str = "ru"):
                 if target:
                     from aiogram.types import ReplyParameters
                     params["reply_parameters"] = ReplyParameters(message_id=target, allow_sending_without_reply=True)
-            copied = await repost.copy(target_bot, message.bot, partner,
-                from_chat_id=message.chat.id, message_id=message.message_id, **params)
+            copied = await repost.copy(target_bot, partner, source=message, **params)
             if copied:
                 await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
