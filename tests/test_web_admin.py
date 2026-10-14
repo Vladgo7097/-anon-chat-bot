@@ -5,11 +5,12 @@
 фабрики, а аутентификация проверяется отдельным набором на TestClient.
 """
 import sys
+import time
 import unittest
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 import config  # noqa: E402
 from models.base import Base  # noqa: E402
 from models.chat import Chat  # noqa: E402
-from models.operations import Notification  # noqa: E402
+from models.operations import AnalyticsEvent, Notification  # noqa: E402
 from models.user import User  # noqa: E402
 import models.payment, models.report, models.ban  # noqa: E402,F401
 from utils.time import utcnow  # noqa: E402
@@ -135,6 +136,10 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
         ]
         async with self.factory.begin() as s:
             s.add_all(self.users + self.notices)
+            # Счётчики событий аналитики: overview() отдаёт их отдельным
+            # блоком, и потерять их при перестановке -- тоже регрессия.
+            s.add(AnalyticsEvent(user_id=101, event="start_source",
+                                 dedupe_key="start_source:101:landing"))
             s.add(Chat(user1_id=101, user2_id=102, status="ended",
                        duration_seconds=125, end_reason="left",
                        started_at=utcnow() - timedelta(minutes=9)))
@@ -268,6 +273,11 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
             data = await overview(1)
         self.assertIn("system", data)
         self.assertEqual(data["system"]["db"], True)
+        # Счётчики событий analytics уехали в events, а на ключе funnel --
+        # шаги онбординга, которые рисует панель.
+        self.assertIn("stages", data["funnel"])
+        self.assertEqual(data["funnel"]["stages"][0][0], "Запустили /start")
+        self.assertIn("start_source", data["events"])
         # Свежее сверху: активация 102 новее, чем запуск 101.
         self.assertEqual([r["type"] for r in data["recent"]],
                          ["owner_activated", "owner_new_user"])
@@ -275,6 +285,33 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["recent"][1]["bot"], "Бот 1")
         self.assertEqual({b["label"] for b in data["bots"]},
                          {"Бот 1", "Бот 2", "Бот не определён"})
+
+
+class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
+    """Воркер крутится в соседнем контейнере: его файл здесь не существует,
+    и без зеркала панель принимала бы работающий процесс за мёртвый."""
+
+    async def _age(self, file_exists, stamp):
+        from services.admin import worker_heartbeat
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=stamp)
+        with patch("pathlib.Path") as fake_path, \
+             patch("services.chat_manager.get_redis", AsyncMock(return_value=client)):
+            fake_path.return_value.exists.return_value = file_exists
+            if file_exists:
+                fake_path.return_value.read_text.return_value = stamp
+            return await worker_heartbeat()
+
+    async def test_the_local_file_wins_when_it_is_here(self):
+        age = await self._age(True, str(time.time() - 30))
+        self.assertTrue(29 <= age <= 33, age)
+
+    async def test_a_missing_file_falls_back_to_the_redis_mirror(self):
+        age = await self._age(False, str(time.time() - 42))
+        self.assertTrue(41 <= age <= 45, age)
+
+    async def test_total_silence_reads_as_unknown_not_as_a_dead_worker(self):
+        self.assertIsNone(await self._age(False, None))
 
 
 if __name__ == "__main__":

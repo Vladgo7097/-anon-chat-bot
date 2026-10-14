@@ -91,6 +91,31 @@ def audit(s, admin, action, target_type, target_id, before=None, after=None,requ
     s.add(AdminAudit(admin_id=admin, action=action, target_type=target_type, target_id=str(target_id), before_json=before, after_json=after,request_key=request_key))
 
 
+async def worker_heartbeat():
+    """Возраст последнего такта воркера в секундах, либо None -- данных нет.
+
+    None не значит «воркер мёртв»: файл лежит в /tmp контейнера с ботом, а
+    админка живёт в соседнем, где его не существует никогда. maintenance.run()
+    держит зеркало в Redis именно для этого, и только когда обе ветки молчат,
+    панель имеет право показать, что такта не было видно."""
+    import time as _time
+    from pathlib import Path
+    try:
+        beat = Path("/tmp/anon-worker-heartbeat")
+        if beat.exists():
+            return round(_time.time() - float(beat.read_text().strip() or 0), 1)
+    except (OSError, ValueError):
+        pass
+    try:
+        from services.chat_manager import get_redis
+        raw = await (await get_redis()).get("worker:heartbeat")
+        if raw:
+            return round(_time.time() - float(raw), 1)
+    except Exception:
+        pass
+    return None
+
+
 class StatsService:
     async def retention(self,s,days):
         history=await s.scalar(select(func.min(AnalyticsEvent.created_at)).where(AnalyticsEvent.event=="daily_active"))
@@ -555,17 +580,9 @@ class AdminService:
         shared connections -- the panel is a read, not a probe.
         """
         authorize(admin)
-        import time as _time
-        from pathlib import Path
         state={"heartbeat_age":None,"db":False,"redis":False,"queued":0,"sending":0,
                "broadcasts_active":0,"reports_pending":0,"users":0,"online":"—"}
-        beat=Path("/tmp/anon-worker-heartbeat")
-        try:
-            if beat.exists():
-                stamp=float(beat.read_text().strip() or 0)
-                state["heartbeat_age"]=round(_time.time()-stamp,1)
-        except (OSError,ValueError):
-            state["heartbeat_age"]=None
+        state["heartbeat_age"]=await worker_heartbeat()
         try:
             async with async_session() as s:
                 state["db"]=True

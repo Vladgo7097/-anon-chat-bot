@@ -65,9 +65,21 @@ async def run(bot):
     service=NotificationService()
     last=0
     last_funnel=time.monotonic()
+    last_beat=0.0
     while True:
         try:
-            Path('/tmp/anon-worker-heartbeat').write_text(str(time.time()))
+            now=time.time()
+            Path('/tmp/anon-worker-heartbeat').write_text(str(now))
+            # Файл виден только внутри этого контейнера, а админка живёт в
+            # соседнем: без зеркала в Redis она приняла бы работающий воркер
+            # за мёртвый. Раз в 15 секунд -- чаще не нужно, EX и так жрёт.
+            if now-last_beat>15:
+                last_beat=now
+                try:
+                    from services.chat_manager import get_redis
+                    await (await get_redis()).set("worker:heartbeat",str(now),ex=600)
+                except Exception:
+                    logger.debug("event=heartbeat_mirror_failed", exc_info=True)
             if time.monotonic()-last>60:
                 await ChatService().reconcile()
                 await service.schedule()

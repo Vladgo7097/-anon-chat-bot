@@ -162,8 +162,13 @@ async def _bots_split():
 async def overview(days: int = Query(1, ge=1, le=90), _: None = Depends(_guard)):
     """Обзор: цифры за период, воронка, живой статус, разбивка по ботам и
     свежий приток -- ради последнего сюда и заходят чаще всего."""
-    service = AdminService()
-    data = await StatsService().overview(days)
+    service, stats = AdminService(), StatsService()
+    data = await stats.overview(days)
+    # overview() отдаёт под ключом funnel счётчики событий аналитики, а панели
+    # нужны шаги онбординга -- меняем местами, не трогая сам сервис: телеграм-
+    # панель читает его так, как есть.
+    data["events"] = data.pop("funnel", {})
+    data["funnel"] = await stats.onboarding_funnel(days)
     data["system"] = await service.system_status(_admin_id())
     data["bots"] = await _bots_split()
     async with async_session() as s:
