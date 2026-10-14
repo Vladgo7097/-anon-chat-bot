@@ -197,11 +197,12 @@ let FOCUS = null;
 
 function takeFocus() {
   const a = document.activeElement;
-  FOCUS = a && a.id
-    ? { id: a.id,
-        start: "selectionStart" in a ? a.selectionStart : null,
-        end: "selectionEnd" in a ? a.selectionEnd : null }
-    : null;
+  // Пустой снимок прежний не затирает: внутри render() после заглушки
+  // "Загрузка…" фокус уже потерян, а снимок, снятый до неё, нужен дальше.
+  if (!a || !a.id) return;
+  FOCUS = { id: a.id,
+            start: "selectionStart" in a ? a.selectionStart : null,
+            end: "selectionEnd" in a ? a.selectionEnd : null };
 }
 
 function putFocus() {
@@ -216,6 +217,10 @@ function putFocus() {
 }
 
 function main(html) {
+  // Снимок до затирания innerHTML: старый DOM ещё на месте, каретка там, где
+  // её оставил пользователь. Дебаунс поиска зовёт рендереры напрямую, мимо
+  // render(), поэтому снимок обязан жить именно здесь, а не только в render.
+  takeFocus();
   document.getElementById("main").innerHTML = html;
   putFocus();
 }
