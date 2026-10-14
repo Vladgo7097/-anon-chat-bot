@@ -1,0 +1,29 @@
+# Editor defaults derived from the code as it is written today, not from a
+# style guide: measured indent width is 4 in Python (handlers/chat.py) and 2
+# in web/static/admin (app.js, app.css). Keeping editors on the same numbers
+# is what stops a save from producing a whitespace-only diff next to the
+# real change.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.py]
+indent_size = 4
+
+[*.{js,css,html,json,yml,yaml}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+# Two trailing spaces are a hard line break in Markdown -- trimming them
+# silently merges lines the author meant to keep apart.
+[*.md]
+trim_trailing_whitespace = false

@@ -22,7 +22,6 @@ import time
 from collections import deque
 from pathlib import Path
 
-from aiogram import Bot
 
 from utils import bots
 

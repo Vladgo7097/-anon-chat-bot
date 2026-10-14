@@ -5,7 +5,6 @@ from handlers import settings_router
 from keyboards import texts as T
 from keyboards.inline import settings_kb, language_kb
 from repositories.users import UserRepository
-from repositories.chats import premium_active
 from services.settings import SettingsService
 
 SETTINGS_TEXT = {

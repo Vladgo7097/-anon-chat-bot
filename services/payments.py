@@ -5,7 +5,6 @@ from sqlalchemy import select, or_
 from models.base import async_session
 from models.payment import Product, Payment, Entitlement, PremiumSubscription
 from models.user import User
-from repositories.chats import premium_active
 from services.onboarding import banned, step_for
 from services.result import ServiceResult
 from utils.time import utcnow

@@ -9,4 +9,6 @@
 from models.base import Base
 from models import user, chat, payment, operations, report, ban
 
-__all__ = ["Base"]
+# The model modules are part of the public surface on purpose -- listing them
+# here says the imports above are side-effect registration, not leftovers.
+__all__ = ["Base", "user", "chat", "payment", "operations", "report", "ban"]

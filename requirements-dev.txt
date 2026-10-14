@@ -7,3 +7,10 @@ pytest-asyncio>=0.24
 # nothing here pinned it, so a fresh install (no lockfile) broke collection
 # for the whole suite on first use, not just the site tests.
 httpx2
+
+# Imported by discord_bot.py (tracked in the repo) and by
+# tests/test_discord_config.py, but never declared anywhere: a fresh install
+# did not fail, it silently skipped those five tests, so the suite reported
+# 470 passed against a working 475.
+discord.py>=2,<3
+pytest-cov>=5

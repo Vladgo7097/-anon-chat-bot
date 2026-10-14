@@ -12,7 +12,6 @@ from keyboards import texts as T
 from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
 from services.matching import MatchingService
 from services.chat_manager import get_redis, get_online_count
-from services.chats import ChatService
 from utils import bots
 import config
 

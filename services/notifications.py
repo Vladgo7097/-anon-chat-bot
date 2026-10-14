@@ -214,7 +214,7 @@ class NotificationService:
                     .group_by(User.telegram_id))).all())
                 notices = []
                 def notice(user, kind, key, content, callback=None, marketing=False):
-                    notices.append(dict(user_id=user.telegram_id, type=kind, dedupe_key=key,
+                    notices.append(dict(user_id=user.telegram_id, type=kind, dedupe_key=key,  # noqa: B023 -- accumulator, consumed before the next iteration
                         text=content, callback_data=callback, marketing=marketing))
                 for user in users:
                     if user.is_banned and user.ban_expires and user.ban_expires <= now:

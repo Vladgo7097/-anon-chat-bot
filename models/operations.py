@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy import String, Integer, BigInteger, Boolean, Text, JSON, Date, UniqueConstraint, Index, text
+from sqlalchemy import String, Integer, BigInteger, Boolean, Text, JSON, Date, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base, UTCDateTime as DateTime
 from utils.time import utcnow

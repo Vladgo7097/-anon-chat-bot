@@ -7,7 +7,7 @@ from models.chat import Chat
 from models.report import Report
 from models.ban import Ban
 from models.payment import Payment, Product, PremiumSubscription
-from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Offer, Notification
+from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Notification
 from services.result import ServiceResult
 from services.chats import ChatService
 from services.matching import MatchingService
@@ -111,8 +111,8 @@ async def worker_heartbeat():
         raw = await (await get_redis()).get("worker:heartbeat")
         if raw:
             return round(_time.time() - float(raw), 1)
-    except Exception:
-        pass
+    except Exception:  # noqa: S110 -- a dead Redis or a malformed heartbeat
+        pass           # must report "unknown", not take the endpoint down
     return None
 
 

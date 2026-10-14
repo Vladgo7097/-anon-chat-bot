@@ -1,7 +1,6 @@
 import time
 from models.base import async_session
 from repositories.chats import ChatRepository, lock_matching, premium_active
-from repositories.users import UserRepository
 from services.onboarding import step_for, banned
 from services.chats import ChatService
 from services.result import ServiceResult

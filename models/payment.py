@@ -1,6 +1,6 @@
 from utils.time import utcnow
 from datetime import datetime
-from sqlalchemy import BigInteger, Integer, DateTime, String, Text, Boolean, JSON, ForeignKey
+from sqlalchemy import BigInteger, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base, UTCDateTime as DateTime
 

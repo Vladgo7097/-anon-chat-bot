@@ -2,7 +2,7 @@ import secrets
 
 from utils.time import utcnow
 from datetime import datetime, date
-from sqlalchemy import BigInteger, String, Integer, DateTime, Date, Boolean, Float, Text
+from sqlalchemy import BigInteger, String, Integer, Date, Boolean, Float, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base, UTCDateTime as DateTime
 

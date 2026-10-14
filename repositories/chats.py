@@ -1,6 +1,5 @@
 import uuid
 import logging
-from datetime import timedelta
 from sqlalchemy import select, update, delete, or_, and_, text
 from models.base import async_session
 from models.user import User

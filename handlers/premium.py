@@ -3,7 +3,6 @@ from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice
 from handlers import premium_router
 from services.payments import PaymentService
 from keyboards import texts as T
-from keyboards.reply import main_menu_kb
 
 PREMIUM_TEXT = {
     "ru": (

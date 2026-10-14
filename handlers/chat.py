@@ -8,7 +8,6 @@ from keyboards import texts as T
 from keyboards.reply import main_menu_kb
 from services.chats import ChatService
 from services.chat_manager import get_redis
-from repositories.chats import ChatRepository
 from utils import bots, repost
 import config
 import logging

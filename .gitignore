@@ -3,6 +3,9 @@ __pycache__/
 .env
 .venv/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 .deploy-rescue/
 *.bak
 *.tgz
