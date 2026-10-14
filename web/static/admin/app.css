@@ -267,6 +267,22 @@ textarea.field{width:100%;min-height:96px;resize:vertical;line-height:1.5}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.err{border-color:rgba(229,100,90,.6);color:#ff9d95}
 
+/* ---------- подсветка поиска, копирование, пагинация ---------- */
+mark{background:rgba(217,164,65,.3);color:#f6d69a;border-radius:3px;padding:0 2px}
+.copy{cursor:copy}
+.copy:hover{color:var(--accent)}
+.pgnum{width:62px;text-align:center;padding:6px 4px}
+.pgsel{padding:6px 8px}
+
+/* ---------- горячие клавиши ---------- */
+.keys{display:flex;gap:10px;align-items:center;color:var(--dim);font-size:11.5px}
+.keys span{white-space:nowrap}
+kbd{
+  font-family:var(--mono);font-size:10.5px;padding:1px 5px;border-radius:4px;
+  background:var(--panel2);border:1px solid var(--line2);color:var(--muted);
+  margin-right:3px;
+}
+
 /* ---------- мобильный ---------- */
 @media (max-width:860px){
   .shell{grid-template-columns:1fr}
@@ -278,4 +294,6 @@ textarea.field{width:100%;min-height:96px;resize:vertical;line-height:1.5}
   .main{padding:16px 13px 50px}
   .fstep{grid-template-columns:110px 1fr 56px}
   .kv{grid-template-columns:112px 1fr}
+  .keys{display:none}          /* подсказки по клавишам: на телефоне их нет */
+  .topsys{display:none}
 }

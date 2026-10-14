@@ -5,7 +5,9 @@
 
 const TOKEN_KEY = "anon.admin.token";
 let TOKEN = "";
-let TAB = "overview";
+// Пусто, пока applyRoute не разберёт адрес: иначе первая отрисовка пропускала
+// вкладку из ссылки и всегда открывала "Обзор".
+let TAB = "";
 
 /* ============================== безопасность ============================== */
 
@@ -178,12 +180,64 @@ document.getElementById("logout").addEventListener("click", () => {
 /* ============================== навигация ============================== */
 
 const R = {};   // состояние каждой вкладки
+const TABS = ["overview", "users", "notices", "broadcasts", "reports", "audit", "settings"];
+
+/* Перерисовка main() убивала фокус: поле поиска после ввода слова исчезало
+   вместе с кареткой, и дописать второе слово можно было только кликом мыши.
+   Снимаем снимок до отрисовки и возвращаем курсор на место. */
+let FOCUS = null;
+
+function takeFocus() {
+  const a = document.activeElement;
+  FOCUS = a && a.id
+    ? { id: a.id,
+        start: "selectionStart" in a ? a.selectionStart : null,
+        end: "selectionEnd" in a ? a.selectionEnd : null }
+    : null;
+}
+
+function putFocus() {
+  const f = FOCUS;
+  if (!f) return;
+  const el = document.getElementById(f.id);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  if (f.start !== null && typeof el.setSelectionRange === "function") {
+    try { el.setSelectionRange(f.start, f.end); } catch (_) {}
+  }
+}
+
+function main(html) {
+  document.getElementById("main").innerHTML = html;
+  putFocus();
+}
+
+function paintNav() {
+  document.querySelectorAll(".nav-item").forEach((b) =>
+    b.classList.toggle("is-on", b.dataset.tab === TAB));
+}
+
+/* Вкладка и открытая карточка живут в адресе: перезагрузка и кнопка "назад"
+   возвращают туда, где остался, а вкладку можно скинуть ссылкой. */
+function route() {
+  const parts = (location.hash || "").replace(/^#/, "").split("/");
+  const tab = TABS.includes(parts[0]) ? parts[0] : "overview";
+  // Сегментов бывает ровно два: лишние молча отбрасываем, а не трактуем.
+  const card = parts.length === 2 ? parts[1] : null;
+  return { tab, user: card && /^u\d+$/.test(card) ? card.slice(1) : null };
+}
+
+function applyRoute() {
+  const r = route();
+  if (r.tab !== TAB) { TAB = r.tab; paintNav(); render(); }
+  if (r.user) openUserCard(r.user);
+  else closeDrawer();
+}
 
 function go(tab) {
-  TAB = tab;
-  document.querySelectorAll(".nav-item").forEach((b) =>
-    b.classList.toggle("is-on", b.dataset.tab === tab));
-  render();
+  if (!TABS.includes(tab)) return;
+  if (location.hash === "#" + tab) { paintNav(); render(); return; }
+  location.hash = tab;   // отрисовку ведёт hashchange
 }
 
 document.getElementById("nav").addEventListener("click", (e) => {
@@ -191,9 +245,32 @@ document.getElementById("nav").addEventListener("click", (e) => {
   if (btn) go(btn.dataset.tab);
 });
 
-document.getElementById("drawer-close").addEventListener("click", closeDrawer);
-document.getElementById("scrim").addEventListener("click", closeDrawer);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+document.getElementById("drawer-close").addEventListener("click", requestCloseDrawer);
+document.getElementById("scrim").addEventListener("click", requestCloseDrawer);
+
+/* ============================== горячие клавиши ============================== */
+
+let pendingSearch = false;
+
+function focusSearch() {
+  const el = document.querySelector("[data-search]");
+  if (el) { el.focus(); el.select(); return; }
+  pendingSearch = true;      // поиск по людям -- основной, туда и уходим
+  go("users");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { requestCloseDrawer(); return; }
+  const t = e.target;
+  const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" ||
+                       t.tagName === "SELECT" || t.isContentEditable);
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/") { e.preventDefault(); focusSearch(); return; }
+  const n = Number(e.key);
+  if (Number.isInteger(n) && n >= 1 && n <= TABS.length) { go(TABS[n - 1]); return; }
+  // "к" -- это "r" на русской раскладке.
+  if (e.key === "r" || e.key === "к") { render(); toast("Обновлено"); }
+});
 
 function openDrawer(title, html) {
   document.getElementById("drawer-title").textContent = title;
@@ -202,14 +279,23 @@ function openDrawer(title, html) {
   document.getElementById("scrim").classList.add("on");
 }
 
+/* Только DOM. Закрытие не должно трогать адрес -- иначе рекурсия через
+   hashchange: закрытие меняет hash, hashchange снова зовёт закрытие. */
 function closeDrawer() {
   document.getElementById("drawer").classList.remove("on");
   document.getElementById("scrim").classList.remove("on");
 }
 
-function main(html) { document.getElementById("main").innerHTML = html; }
+/* Явное закрытие (крестик, Esc, клик мимо) убирает карточку и из адреса,
+   чтобы кнопка "назад" браузера не открыла её снова. */
+function requestCloseDrawer() {
+  const r = route();
+  if (r.user) location.hash = r.tab;
+  else closeDrawer();
+}
 
 async function render() {
+  takeFocus();
   main('<div class="loading">Загрузка…</div>');
   try {
     if (TAB === "overview") await renderOverview();
@@ -220,10 +306,108 @@ async function render() {
     else if (TAB === "audit") await renderAudit();
     else if (TAB === "settings") await renderSettings();
   } catch (err) {
-    if (err.message !== "BAD_TOKEN" && err.message !== "OFF") {
-      main(`<div class="empty">Не удалось загрузить: ${esc(err.message)}</div>`);
-    }
+    if (err.message === "BAD_TOKEN" || err.message === "OFF") return;
+    main(`<div class="empty">Не удалось загрузить: ${esc(err.message)}
+      <div style="margin-top:12px"><button class="btn btn-sm" data-retry>Повторить</button></div>
+    </div>`);
+    const b = document.querySelector("[data-retry]");
+    if (b) b.addEventListener("click", render);
   }
+}
+
+/* Панель сама догоняет реальность: раз в 30 секунд, и только когда её видно
+   -- на скрытой вкладке опрашивать сервер глупо. Открытая карточка не
+   перерисовывается: пользователь мог начать там что-то писать. */
+setInterval(async () => {
+  if (document.hidden) return;
+  const app = document.getElementById("app");
+  if (app.classList.contains("hidden")) return;
+  try {
+    const data = await api(`/api/admin/overview?days=${R.days || 1}`);
+    setTopSys(data.system || {});
+    setBadge((data.system || {}).reports_pending || 0);
+    if (TAB === "overview" && !document.querySelector(":focus")) paintOverview(data);
+  } catch (_) { /* фоновая догонка: ошибка не должна дёргать пользователя */ }
+}, 30000);
+
+/* ============================== пагинация ============================== */
+
+/* Общая для "Людей", "Уведомлений" и "Действий". До правки везде были только
+   стрелки на страницу, и на пяти тысячах людей это боль: до последней
+   страницы приходилось идти по одной. */
+function pagerHTML(f, sizes) {
+  const pages = Math.max(1, Math.ceil(f.total / f.size));
+  const atFirst = f.page <= 1, atLast = f.page >= pages;
+  return `<div class="pager">
+    <span class="info">стр. ${num(f.page)} из ${num(pages)} · всего ${num(f.total)}</span>
+    <button class="btn btn-sm" data-pg="first" ${atFirst ? "disabled" : ""} title="Первая страница">«</button>
+    <button class="btn btn-sm" data-pg="-1" ${atFirst ? "disabled" : ""} title="Назад">←</button>
+    <input class="field pgnum" id="pg-input" data-pg-input value="${f.page}"
+           inputmode="numeric" aria-label="Номер страницы">
+    <button class="btn btn-sm" data-pg="1" ${atLast ? "disabled" : ""} title="Вперёд">→</button>
+    <button class="btn btn-sm" data-pg="last" ${atLast ? "disabled" : ""} title="Последняя страница">»</button>
+    <select class="field pgsel" data-size aria-label="Строк на странице">
+      ${(sizes || [25, 50, 100]).map((n) =>
+        `<option value="${n}" ${Number(f.size) === n ? "selected" : ""}>${n} стр.</option>`).join("")}
+    </select>
+  </div>`;
+}
+
+function bindPager(f, rerender) {
+  document.querySelectorAll("[data-pg]").forEach((b) => b.addEventListener("click", () => {
+    const pages = Math.max(1, Math.ceil(f.total / f.size));
+    const v = b.dataset.pg;
+    f.page = v === "first" ? 1 : v === "last" ? pages
+           : Math.min(pages, Math.max(1, f.page + Number(v)));
+    rerender();
+  }));
+  const jump = document.querySelector("[data-pg-input]");
+  if (jump) jump.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const pages = Math.max(1, Math.ceil(f.total / f.size));
+    const n = parseInt(jump.value, 10);
+    if (Number.isFinite(n)) { f.page = Math.min(pages, Math.max(1, n)); rerender(); }
+  });
+  const sel = document.querySelector("[data-size]");
+  if (sel) sel.addEventListener("change", (e) => {
+    f.size = Number(e.target.value) || 25;
+    f.page = 1;
+    rerender();
+  });
+}
+
+/* Копирование по клику: id и анон приходится переносить руками, а это
+   основной способ найти человека. Обработчик висит на document, но всплытие
+   до строки доходит раньше -- там и отсекается, чтобы не открывать карточку. */
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-copy]");
+  if (!el) return;
+  const text = el.dataset.copy;
+  if (!text) return;
+  const done = () => toast("Скопировано: " + clip(text, 40));
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => toast("Не удалось скопировать", true));
+  } else {
+    toast("Не удалось скопировать", true);
+  }
+});
+
+/* Подсветка совпадения поиска. Режем исходную строку, а не готовый HTML:
+   иначе срез уехал бы посреди entity вроде `&amp;`. */
+function mark(text, q) {
+  const raw = String(text || "");
+  const needle = String(q || "").trim();
+  if (!needle) return esc(raw);
+  const i = raw.toLowerCase().indexOf(needle.toLowerCase());
+  if (i < 0) return esc(raw);
+  return esc(raw.slice(0, i)) + "<mark>" + esc(raw.slice(i, i + needle.length)) +
+         "</mark>" + esc(raw.slice(i + needle.length));
+}
+
+function setBadge(pending) {
+  const badge = document.getElementById("rep-badge");
+  badge.textContent = pending;
+  badge.classList.toggle("on", pending > 0);
 }
 
 /* ============================== обзор ============================== */
@@ -234,13 +418,16 @@ async function renderOverview() {
   const days = R.days || 1;
   const data = await api(`/api/admin/overview?days=${days}`);
   R.days = days;
+  paintOverview(data);
+}
 
+/* Отрисовка отделена от запроса: фоновая догонка приносит уже готовые данные
+   и не должна ходить в сеть второй раз. */
+function paintOverview(data) {
+  const days = R.days || 1;
   const s = data.system || {};
   setTopSys(s);
-  const pending = s.reports_pending || 0;
-  const badge = document.getElementById("rep-badge");
-  badge.textContent = pending;
-  badge.classList.toggle("on", pending > 0);
+  setBadge(s.reports_pending || 0);
 
   const o = data;
   const growth = o.growth_7d_pct;
@@ -302,7 +489,7 @@ async function renderOverview() {
       s.heartbeat_age === null || s.heartbeat_age === undefined
         ? "нет сигнала" : "heartbeat " + dur(s.heartbeat_age) + " назад"],
     ["Черновиков рассылок", true, num(o.drafts)],
-    ["Жалоб в очереди", true, num(pending)],
+    ["Жалоб в очереди", true, num(s.reports_pending || 0)],
   ].map(([k, ok, v]) => `<div class="fstep" style="grid-template-columns:150px 1fr">
       <div class="muted">${k}</div>
       <div><span class="chip ${ok ? "ok" : "bad"}">${ok ? "✓" : "✕"}</span> ${esc(v)}</div>
@@ -409,13 +596,15 @@ async function renderUsers() {
   if (f.only_new) p.set("only_new", "1");
   p.set("page", f.page); p.set("size", f.size);
   const data = await api("/api/admin/users?" + p);
+  f.total = data.total;
 
+  const needle = f.q;
   const rows = data.items.map((u) => `
     <tr class="clickable" data-id="${u.telegram_id}">
-      <td class="mono nowrap">${esc(u.telegram_id)}</td>
-      <td class="mono">${esc(anon(u.anon_id))}</td>
-      <td>${u.username ? "@" + esc(u.username) : '<span class="dim">—</span>'}</td>
-      <td>${esc(u.first_name) || '<span class="dim">—</span>'}</td>
+      <td class="mono nowrap copy" data-copy="${esc(u.telegram_id)}" title="Скопировать ID">${esc(u.telegram_id)}</td>
+      <td class="mono copy" data-copy="${esc(anon(u.anon_id))}" title="Скопировать анон">${mark(anon(u.anon_id), needle)}</td>
+      <td class="copy" data-copy="${esc(u.username || "")}">${u.username ? "@" + mark(u.username, needle) : '<span class="dim">—</span>'}</td>
+      <td class="copy" data-copy="${esc(u.first_name || "")}">${mark(u.first_name, needle) || '<span class="dim">—</span>'}</td>
       <td>${botChip(u.bot, u.bot_id)}</td>
       <td class="dim">${esc(u.language || "—")}</td>
       <td class="num">${u.age || "—"}</td>
@@ -438,7 +627,7 @@ async function renderUsers() {
       <div class="form-row">
         <div class="form-col" style="flex:1;min-width:220px">
           <label>Поиск</label>
-          <input class="field" id="u-q" placeholder="id, #анон, юзернейм или имя" value="${esc(f.q)}">
+          <input class="field" id="u-q" data-search placeholder="id, #анон, юзернейм или имя" value="${esc(f.q)}">
         </div>
         <div class="form-col">
           <label>Бот</label>
@@ -467,13 +656,15 @@ async function renderUsers() {
           <th class="num">Рейт.</th><th>Статус</th><th>Активность</th>
         </tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Никто не найден</div>'}
       </div>
-      <div class="pager">
-        <span class="info">стр. ${data.page} из ${Math.max(1, Math.ceil(data.total / data.size))}</span>
-        <button class="btn btn-sm" data-pg="-1" ${data.page <= 1 ? "disabled" : ""}>←</button>
-        <button class="btn btn-sm" data-pg="1" ${data.page * data.size >= data.total ? "disabled" : ""}>→</button>
-      </div>
+      ${pagerHTML(f)}
     </div>
   `);
+
+  if (pendingSearch) {
+    pendingSearch = false;
+    const el = document.getElementById("u-q");
+    if (el) { el.focus(); el.select(); }
+  }
 
   const q = document.getElementById("u-q");
   let timer;
@@ -490,12 +681,15 @@ async function renderUsers() {
   document.querySelectorAll("[data-f]").forEach((b) => b.addEventListener("click", () => {
     f[b.dataset.f] = f[b.dataset.f] ? 0 : 1; f.page = 1; renderUsers();
   }));
-  document.querySelectorAll("[data-pg]").forEach((b) => b.addEventListener("click", () => {
-    f.page = Math.max(1, f.page + Number(b.dataset.pg)); renderUsers();
-  }));
+  bindPager(f, renderUsers);
   document.querySelector('[data-act="refresh"]').addEventListener("click", renderUsers);
   document.querySelectorAll("tr[data-id]").forEach((tr) =>
-    tr.addEventListener("click", () => openUser(tr.dataset.id)));
+    tr.addEventListener("click", (e) => {
+      // Клик по id или анону -- это копирование, а не открытие карточки.
+      // Всплытие доходит до tr раньше, чем до document, поэтому проверяем тут.
+      if (e.target.closest("[data-copy]")) return;
+      openUser(tr.dataset.id);
+    }));
 }
 
 function badges(u) {
@@ -510,7 +704,16 @@ function badges(u) {
 
 /* ============================== карточка человека ============================== */
 
-async function openUser(id) {
+/* Открыть карточку человека. Адрес меняется первым, а отрисовку ведёт
+   hashchange: так кнопка "назад" браузера просто закрывает карточку, а
+   перезагрузка возвращает к тому же человеку. */
+function openUser(id) {
+  const want = TAB + "/u" + id;
+  if (location.hash.replace(/^#/, "") === want) openUserCard(id);
+  else location.hash = want;
+}
+
+async function openUserCard(id) {
   openDrawer("Загрузка…", '<div class="loading">Загрузка…</div>');
   let data;
   try {
@@ -673,6 +876,7 @@ async function renderNotices() {
   if (f.status) p.set("status", f.status);
   p.set("page", f.page); p.set("size", f.size);
   const data = await api("/api/admin/notifications?" + p);
+  f.total = data.total;
 
   const counts = data.counts || {};
   const chips = NOTICE_KINDS.map(([k, label]) => {
@@ -729,11 +933,7 @@ async function renderNotices() {
           <th>Время</th><th>Тип</th><th>Бот</th><th>Статус</th><th>О ком</th><th>Текст</th>
         </tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Пусто</div>'}
       </div>
-      <div class="pager">
-        <span class="info">стр. ${data.page} из ${Math.max(1, Math.ceil(data.total / data.size))} · всего ${num(data.total)}</span>
-        <button class="btn btn-sm" data-pg="-1" ${data.page <= 1 ? "disabled" : ""}>←</button>
-        <button class="btn btn-sm" data-pg="1" ${data.page * data.size >= data.total ? "disabled" : ""}>→</button>
-      </div>
+      ${pagerHTML(f)}
     </div>
   `);
 
@@ -746,9 +946,7 @@ async function renderNotices() {
   document.getElementById("n-bot").addEventListener("change", (e) => {
     f.bot = e.target.value; f.page = 1; renderNotices();
   });
-  document.querySelectorAll("[data-pg]").forEach((b) => b.addEventListener("click", () => {
-    f.page = Math.max(1, f.page + Number(b.dataset.pg)); renderNotices();
-  }));
+  bindPager(f, renderNotices);
   document.querySelector('[data-act="refresh"]').addEventListener("click", renderNotices);
   document.querySelectorAll("tr[data-nid]").forEach((tr) =>
     tr.addEventListener("click", () => {
@@ -953,6 +1151,7 @@ async function renderAudit() {
   const p = new URLSearchParams({ page: f.page, size: f.size });
   if (f.action) p.set("action", f.action);
   const data = await api("/api/admin/audit?" + p);
+  f.total = data.total;
 
   const chips = ['<button class="tab ' + (f.action ? "" : "is-on") + '" data-a="">все</button>']
     .concat((data.actions || []).map((a) =>
@@ -986,20 +1185,14 @@ async function renderAudit() {
           <th>Время</th><th>Админ</th><th>Действие</th><th>Цель</th><th>Изменение</th>
         </tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Пока пусто</div>'}
       </div>
-      <div class="pager">
-        <span class="info">стр. ${data.page} из ${Math.max(1, Math.ceil(data.total / data.size))}</span>
-        <button class="btn btn-sm" data-pg="-1" ${data.page <= 1 ? "disabled" : ""}>←</button>
-        <button class="btn btn-sm" data-pg="1" ${data.page * data.size >= data.total ? "disabled" : ""}>→</button>
-      </div>
+      ${pagerHTML(f)}
     </div>
   `);
 
   document.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", () => {
     f.action = b.dataset.a; f.page = 1; renderAudit();
   }));
-  document.querySelectorAll("[data-pg]").forEach((b) => b.addEventListener("click", () => {
-    f.page = Math.max(1, f.page + Number(b.dataset.pg)); renderAudit();
-  }));
+  bindPager(f, renderAudit);
   document.querySelector('[data-act="refresh"]').addEventListener("click", renderAudit);
 }
 
@@ -1077,11 +1270,13 @@ if (fromUrl) {
 }
 TOKEN = localStorage.getItem(TOKEN_KEY) || "";
 
+window.addEventListener("hashchange", applyRoute);
+
 if (!TOKEN) {
   showGate("");
 } else {
   api("/api/admin/overview?days=1")
-    .then(() => { showApp(); render(); })
+    .then(() => { showApp(); paintNav(); applyRoute(); })
     .catch((err) => {
       if (err.message === "BAD_TOKEN") { localStorage.removeItem(TOKEN_KEY); TOKEN = ""; showGate("Неверный токен"); }
       else if (err.message === "OFF") showGate("Админка выключена: в .env нет ADMIN_WEB_TOKEN");
