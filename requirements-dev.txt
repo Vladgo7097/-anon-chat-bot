@@ -14,3 +14,4 @@ httpx2
 # 470 passed against a working 475.
 discord.py>=2,<3
 pytest-cov>=5
+hypothesis>=6
