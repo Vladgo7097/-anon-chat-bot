@@ -224,7 +224,12 @@ async def stats(request: Request):
     """Aggregate counters only, gated by a shared secret in the query string
     -- there is no login system on this site, and view counts are harmless
     but no reason to leave them world-readable either."""
-    if not config.STATS_ACCESS_KEY or request.query_params.get("key") != config.STATS_ACCESS_KEY:
+    # Постоянное по времени сравнение -- контрастная точка != на строках
+    # (L2); _guard в web/admin.py уже работает через compare_digest.
+    import hmac
+    supplied = request.query_params.get("key", "").encode("utf-8", "replace")
+    if not config.STATS_ACCESS_KEY or not hmac.compare_digest(
+            supplied, config.STATS_ACCESS_KEY.encode("utf-8", "replace")):
         raise HTTPException(status_code=404)
     from datetime import timedelta
     from redis.exceptions import RedisError

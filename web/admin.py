@@ -55,20 +55,35 @@ def _admin_id() -> int:
     raise HTTPException(status_code=503, detail="ADMIN_NOT_CONFIGURED")
 
 
-async def _guard(request: Request) -> None:
-    """Токен из заголовка или из query.
+def _as_int(value, default=None, lo=None, hi=None):
+    """int() из произвольного JSON/query: без исключений и без конверсий
+    длиннее 18 цифр (лимит CPython на int() -- 4300 цифр, дальше ValueError)."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return default
+    text = str(value).strip()
+    if not text or len(text) > 18 or not text.lstrip("-").isdigit():
+        return default
+    number = int(text)
+    if lo is not None and number < lo:
+        return default
+    if hi is not None and number > hi:
+        return default
+    return number
 
-    Страницу открывают по ссылке, где заголовка ещё нет, поэтому ?key=
-    тоже принимается -- и тут же вычищается из адресной строки на клиенте.
-    Ссылку для входа держат с #key=: #-часть не уходит на сервер и не
-    попадает ни в access.log, ни в Referer.
+
+async def _guard(request: Request) -> None:
+    """Токен только из заголовка.
+
+    ?key= больше не принимается (L1): полный токен утекал в access-лог nginx
+    ($request содержит query), историю браузера и Referer. Ссылку для входа
+    держат на #key=: фрагмент не уходит на сервер, а app.js дальше шлёт
+    Authorization: Bearer.
     """
     if not config.ADMIN_WEB_TOKEN:
         raise HTTPException(status_code=404)
     supplied = request.headers.get("authorization", "")
     if supplied.lower().startswith("bearer "):
         supplied = supplied[7:]
-    supplied = supplied or request.query_params.get("key", "")
     # Сравнение по времени не зависит от содержимого. Байты, а не строки:
     # compare_digest на str кидает TypeError на не-ASCII, и любой мусор в
     # заголовке уходил бы в 500 вместо честного 401.
@@ -195,7 +210,7 @@ async def overview(days: int = Query(1, ge=1, le=90), _: None = Depends(_guard))
 @router.get("/users")
 async def users_list(q: str = "", bot: int | None = None, banned: int = 0,
                      premium: int = 0, only_new: int = 0,
-                     page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200),
+                     page: int = Query(1, ge=1, le=10**6), size: int = Query(25, ge=1, le=200),
                      _: None = Depends(_guard)):
     """Люди: поиск по id/анону/юзернейму/имени и фильтры по боту и состоянию."""
     where = []
@@ -205,7 +220,10 @@ async def users_list(q: str = "", bot: int | None = None, banned: int = 0,
         conditions = [func.lower(User.anon_id).like(f"%{needle}%"),
                       func.lower(User.username).like(f"%{needle}%"),
                       func.lower(User.first_name).like(f"%{needle}%")]
-        if needle.isascii() and needle.isdigit():
+        # 18 цифр -- безопасная верхняя граница для INTEGER в SQLite:
+        # 19-значный "999..." уже шире 2^63-1, int() на нём уводил запрос
+        # в OverflowError/ValueError (M1).
+        if needle.isascii() and needle.isdigit() and len(needle) <= 18:
             conditions.append(User.telegram_id == int(needle))
         where.append(or_(*conditions))
     if bot is not None:
@@ -234,6 +252,9 @@ async def users_list(q: str = "", bot: int | None = None, banned: int = 0,
 @router.get("/users/{telegram_id}")
 async def user_detail(telegram_id: int, _: None = Depends(_guard)):
     """Карточка человека: профиль, его уведомления владельцу, последние диалоги."""
+    if not 0 < telegram_id <= 2**63 - 1:
+        # Шире int64: SQLite не принимает такое значение в WHERE (M1).
+        raise HTTPException(status_code=404, detail="NOT_FOUND")
     partner = aliased(User)
     # Сторона, которой собеседник не является: в чате всегда user1 и user2.
     partner_id = case((Chat.user1_id == telegram_id, Chat.user2_id),
@@ -274,9 +295,17 @@ async def user_detail(telegram_id: int, _: None = Depends(_guard)):
 
 @router.post("/users/{telegram_id}/ban")
 async def ban_user(telegram_id: int, body: dict, _: None = Depends(_guard)):
+    raw = body.get("hours")
+    if raw in (None, ""):
+        hours = None
+    else:
+        hours = _as_int(raw, None, 0, 87600)
+        if hours is None:
+            raise HTTPException(status_code=400, detail="INVALID_HOURS")
+        hours = hours or None  # 0 -- как раньше, бессрочная блокировка
     _require(await AdminService().ban(_admin_id(), telegram_id,
                                       body.get("reason", "") or "без причины",
-                                      int(body["hours"]) if body.get("hours") else None))
+                                      hours))
     return {"ok": True}
 
 
@@ -288,8 +317,10 @@ async def unban_user(telegram_id: int, _: None = Depends(_guard)):
 
 @router.post("/users/{telegram_id}/premium")
 async def grant_premium(telegram_id: int, body: dict, _: None = Depends(_guard)):
-    _require(await AdminService().grant(_admin_id(), telegram_id,
-                                        int(body.get("days", 30)),
+    days = _as_int(body.get("days", 30), None, 1, 3650)
+    if days is None:
+        raise HTTPException(status_code=400, detail="INVALID_DAYS")
+    _require(await AdminService().grant(_admin_id(), telegram_id, days,
                                         body.get("reason", "") or "выдано из админки"))
     return {"ok": True}
 
@@ -316,7 +347,7 @@ async def message_user(telegram_id: int, body: dict, _: None = Depends(_guard)):
 @router.get("/notifications")
 async def notifications(kind: str = "owner", bot: int | None = None,
                         status: str = "",
-                        page: int = Query(1, ge=1), size: int = Query(30, ge=1, le=200),
+                        page: int = Query(1, ge=1, le=10**6), size: int = Query(30, ge=1, le=200),
                         _: None = Depends(_guard)):
     """Уведомления владельцу: кто запустил, кто дошёл до меню, часовые сводки."""
     where = []
@@ -360,7 +391,7 @@ def _notice_subject(note) -> int | None:
 
 
 @router.get("/audit")
-async def audit_log(page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200),
+async def audit_log(page: int = Query(1, ge=1, le=10**6), size: int = Query(25, ge=1, le=200),
                     action: str = "", _: None = Depends(_guard)):
     """Что админы делали: баны, премиум, рассылки, смена настроек."""
     where = [AdminAudit.action == action] if action else []
@@ -392,8 +423,9 @@ async def settings_all(_: None = Depends(_guard)):
 
 @router.post("/settings")
 async def setting_save(body: dict, _: None = Depends(_guard)):
-    _require(await AdminService().setting(_admin_id(), body.get("key", ""),
-                                          int(body.get("value", -1))))
+    # Не-число/объект/5000 цифр -> default -1, сервис отвечает INVALID (400).
+    value = _as_int(body.get("value", -1), -1, 0, 10**9)
+    _require(await AdminService().setting(_admin_id(), body.get("key", ""), value))
     return {"ok": True}
 
 
@@ -454,7 +486,7 @@ async def broadcast_cancel(job_id: int, _: None = Depends(_guard)):
 
 
 @router.get("/reports")
-async def reports(offset: int = Query(0, ge=0), _: None = Depends(_guard)):
+async def reports(offset: int = Query(0, ge=0, le=10**9), _: None = Depends(_guard)):
     """Жалобы, ожидающие решения."""
     rows = await AdminService().reports(_admin_id(), offset)
     return {"items": [{"id": r.id, "reporter_id": r.reporter_id,

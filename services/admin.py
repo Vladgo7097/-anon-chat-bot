@@ -330,6 +330,9 @@ class AdminService:
         authorize(admin)
         if action not in {"ban1", "banf", "dismiss"}:
             return ServiceResult(False,"INVALID")
+        if not 0 < report_id <= 2**63 - 1:
+            # int64: шире -- s.get() кидал OverflowError посреди транзакции (M1).
+            return ServiceResult(False,"NOT_FOUND")
         async with async_session.begin() as s:
             from repositories.chats import lock_matching
             await lock_matching(s)
@@ -445,7 +448,7 @@ class AdminService:
     async def setting(self,admin,key,value):
         authorize(admin)
         limits=SETTING_LIMITS
-        if type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
+        if not isinstance(key, str) or type(value) is not int or key not in limits or not limits[key][0]<=value<=limits[key][1]:
             return ServiceResult(False,"INVALID")
         async with async_session.begin() as s:
             setting=await s.get(BotSetting,key,with_for_update=True)
@@ -460,6 +463,9 @@ class AdminService:
     async def broadcast(self,admin,segment,content,kind="text",poll_options=None):
         authorize(admin)
         if segment not in BROADCAST_SEGMENTS or kind not in {"text","poll"}:
+            return ServiceResult(False,"INVALID")
+        if not isinstance(content, str):
+            # len() на int из JSON-тела падал TypeError (M1).
             return ServiceResult(False,"INVALID")
         if kind=="text":
             if not 1<=len(content)<=4000:

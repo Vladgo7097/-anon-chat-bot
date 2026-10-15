@@ -200,16 +200,14 @@ class GateMatrixTests(unittest.TestCase):
     def test_query_key_wrong_401(self):
         self.assertEqual(self._get("/api/admin/overview?key=wrong").status_code, 401)
 
-    def test_query_key_accepted_when_correct(self):
-        """Воспроизведение находки W1: токен принимается в query-строке.
+    def test_query_key_is_refused_even_when_correct(self):
+        """Защита: _guard принимает токен только из Authorization: Bearer.
 
-        Ради первого захода по ссылке ?key= принимается в _guard
-        (web/admin.py:71): страницу открывают без заголовка. Цена: токен
-        попадает в
-        access-лог nginx ($request), историю браузера и Referer, пока
-        клиентский app.js не вычистит его из адресной строки.
+        Раньше ?key= тоже принимался (W1/L1) -- и полный токен попадал в
+        access-лог nginx ($request), историю браузера и Referer. Ссылку для
+        входа держат на #key=: фрагмент на сервер не уходит вовсе.
         """
-        self.assertEqual(self._get(f"/api/admin/overview?key={TOKEN}").status_code, 200)
+        self.assertEqual(self._get(f"/api/admin/overview?key={TOKEN}").status_code, 401)
 
     def test_path_traversal_in_user_id_is_404(self):
         r = self._get("/api/admin/users/..%2F..%2Fetc%2Fpasswd")
@@ -372,126 +370,121 @@ class WebDbBase(unittest.IsolatedAsyncioTestCase):
             return client.get(path, headers=H)
         return client.post(path, json=payload, headers=H)
 
-    def _crash(self, method, path, payload=None):
-        """Возвращает исключение, поднятое strict-клиентом из внутренности 500."""
-        try:
-            self._call(self.strict, method, path, payload)
-        except Exception as error:  # noqa: BLE001 - нам нужно именно исключение
-            return error
-        self.fail(f"{method} {path} не упал — воспроизведение не сработало")
-
-    def _assert500(self, method, path, payload, exc_type):
-        error = self._crash(method, path, payload)
-        self.assertIs(
-            type(error),
-            exc_type,
-            f"{method} {path}: ожидался {exc_type.__name__}, "
-            f"получен {type(error).__name__}: {error}",
-        )
+    def _assert_status(self, method, path, payload, expected):
+        """Защита: мусорный параметр при валидном токене отбивается 4xx."""
         response = self._call(self.soft, method, path, payload)
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.status_code,
+            expected,
+            f"{method} {path} -> {response.status_code}, ждали {expected}",
+        )
 
 
 # --------------------------------------------------------------------------- #
 # 3. Аутентифицированные 500: необработанные исключения на инъекции
 # --------------------------------------------------------------------------- #
 class Authenticated500Tests(WebDbBase):
-    """Каждый кейс — реальный необработанный 500 с валидным токеном."""
+    """Защита: валидный токен + мусорный параметр -- ни один кейс не роняет
+    сервис в 500: разряд ограничен на входе, конверсии погашены 4xx."""
 
-    def test_users_page_overflow(self):
-        """web/admin.py:223 — offset((page-1)*size) роняет SQLite:
-        Python int шире INTEGER, OverflowError уходит наружу."""
-        self._assert500(
+    def test_users_page_overflow_is_capped_by_query_bound(self):
+        """Защита: page ограничен le=10**6 -- offset() не получает число
+        шире INTEGER и SQLite не получает OverflowError."""
+        self._assert_status(
             "GET",
             "/api/admin/users?page=" + "9" * 18 + "&size=200",
             None,
-            OverflowError,
+            422,
         )
 
-    def test_users_search_q_hundred_digits_overflow(self):
-        """web/admin.py:209 — int(needle): 100 цифр не влезают в SQLite INTEGER."""
-        self._assert500("GET", "/api/admin/users?q=" + "1" * 100, None, OverflowError)
+    def test_users_search_q_hundred_digits_stays_a_text_search(self):
+        """Защита: 100 цифр не конвертируются в id (лимит 18 знаков) --
+        уходят в LIKE как текст, запрос отвечает 200."""
+        self._assert_status("GET", "/api/admin/users?q=" + "1" * 100, None, 200)
 
-    def test_users_search_q_5000_digits_value_error(self):
-        """web/admin.py:209 — тот же int(): CPython (3.11+) режет конверсию
-        длиннее 4300 цифр, ValueError уходит наружу."""
-        self._assert500("GET", "/api/admin/users?q=" + "1" * 5000, None, ValueError)
+    def test_users_search_q_5000_digits_never_reaches_int_conversion(self):
+        """Защита: длинная цифровая строка отсекается по длине ДО int() --
+        лимит CPython на конверсию (ValueError) недостижим."""
+        self._assert_status("GET", "/api/admin/users?q=" + "1" * 5000, None, 200)
 
-    def test_user_detail_overflow(self):
-        """web/admin.py:242 — WHERE telegram_id == 21-значный int."""
-        self._assert500("GET", "/api/admin/users/" + "9" * 21, None, OverflowError)
+    def test_user_detail_overflow_is_404(self):
+        """Защита: telegram_id вне int64 не доходит до WHERE -- чистый 404."""
+        self._assert_status("GET", "/api/admin/users/" + "9" * 21, None, 404)
 
-    def test_reports_offset_overflow(self):
-        """web/admin.py:457 -> services/admin.py:296 — .offset() без верхней
-        границы у Query-параметра."""
-        self._assert500(
-            "GET", "/api/admin/reports?offset=" + "9" * 21, None, OverflowError
+    def test_reports_offset_overflow_is_capped_by_query_bound(self):
+        """Защита: offset ограничен le=10**9 -- .offset() не получает
+        число шире INTEGER."""
+        self._assert_status(
+            "GET", "/api/admin/reports?offset=" + "9" * 21, None, 422
         )
 
-    def test_report_resolve_overflow(self):
-        """web/admin.py:467 -> services/admin.py:319 — s.get(Report, huge_id)."""
-        self._assert500(
+    def test_report_resolve_overflow_is_a_clean_400(self):
+        """Защита: report_id вне int64 отсекается до s.get() -- сервис
+        отвечает NOT_FOUND, а OverflowError не рвёт транзакцию."""
+        self._assert_status(
             "POST",
             "/api/admin/reports/" + "9" * 21 + "/resolve",
             {"action": "dismiss"},
-            OverflowError,
+            400,
         )
 
-    def test_settings_value_abc(self):
-        """web/admin.py:396 — int(body["value"]) до валидации сервиса."""
-        self._assert500(
+    def test_settings_value_abc_is_a_clean_400(self):
+        """Защита: не-число не конвертируется int() -- сервис отвечает INVALID."""
+        self._assert_status(
             "POST",
             "/api/admin/settings",
             {"key": "search_timeout", "value": "abc"},
-            ValueError,
+            400,
         )
 
-    def test_settings_value_object(self):
-        """web/admin.py:396 — int() на dict кидает TypeError."""
-        self._assert500(
+    def test_settings_value_object_is_a_clean_400(self):
+        """Защита: объект вместо числа не конвертируется -- INVALID, не TypeError."""
+        self._assert_status(
             "POST",
             "/api/admin/settings",
             {"key": "search_timeout", "value": {"a": 1}},
-            TypeError,
+            400,
         )
 
-    def test_settings_value_5000_digits(self):
-        """web/admin.py:396 — лимит цифр CPython на конверсии."""
-        self._assert500(
+    def test_settings_value_5000_digits_is_a_clean_400(self):
+        """Защита: длиннее 18 цифр не доходит до int() -- INVALID."""
+        self._assert_status(
             "POST",
             "/api/admin/settings",
             {"key": "search_timeout", "value": "9" * 5000},
-            ValueError,
+            400,
         )
 
-    def test_settings_key_list(self):
-        """services/admin.py:427 — `key not in limits` на unhashable-ключе."""
-        self._assert500(
-            "POST", "/api/admin/settings", {"key": ["a"], "value": 60}, TypeError
+    def test_settings_key_list_is_a_clean_400(self):
+        """Защита: не-str ключ гасится isinstance-проверкой до `key not in limits`."""
+        self._assert_status(
+            "POST", "/api/admin/settings", {"key": ["a"], "value": 60}, 400
         )
 
-    def test_ban_hours_abc(self):
-        """web/admin.py:279 — int(body["hours"]) без try."""
-        self._assert500(
+    def test_ban_hours_abc_is_a_clean_400(self):
+        """Защита: часы блокировки конвертируются через _as_int с границей
+        87600 -- мусор получает 400, а не ValueError в 500."""
+        self._assert_status(
             "POST",
             "/api/admin/users/101/ban",
             {"hours": "abc", "reason": "x"},
-            ValueError,
+            400,
         )
 
-    def test_premium_days_abc(self):
-        """web/admin.py:292 — int(body["days"]) без try."""
-        self._assert500(
-            "POST", "/api/admin/users/101/premium", {"days": "abc"}, ValueError
+    def test_premium_days_abc_is_a_clean_400(self):
+        """Защита: дни премиума конвертируются через _as_int с границей
+        3650 -- мусор получает 400, а не ValueError в 500."""
+        self._assert_status(
+            "POST", "/api/admin/users/101/premium", {"days": "abc"}, 400
         )
 
-    def test_broadcast_content_int(self):
-        """services/admin.py:444 — len(content) на int из JSON-тела."""
-        self._assert500(
+    def test_broadcast_content_int_is_a_clean_400(self):
+        """Защита: не-str content гасится до len() -- INVALID, не TypeError."""
+        self._assert_status(
             "POST",
             "/api/admin/broadcasts",
             {"content": 123, "segment": "all"},
-            TypeError,
+            400,
         )
 
     def test_benign_bad_input_gets_4xx_not_500(self):
