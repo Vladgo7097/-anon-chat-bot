@@ -1,4 +1,5 @@
 import json
+import unicodedata
 from sqlalchemy import select
 from models.base import async_session
 from models.user import User
@@ -17,8 +18,21 @@ class ProfileService:
             return ServiceResult(False, "INVALID")
         if field == "age" and (not isinstance(value, int) or not config.MIN_AGE <= value <= config.MAX_AGE):
             return ServiceResult(False, "INVALID")
-        if field == "bio" and (not isinstance(value, str) or len(value) > 150):
-            return ServiceResult(False, "INVALID")
+        if field == "bio":
+            if not isinstance(value, str) or len(value) > 150:
+                return ServiceResult(False, "INVALID")
+            # NUL/управляющие: на Postgres asyncpg роняет ValueError посреди
+            # транзакции -- валидация обязана отсечь их до записи.
+            if any(ord(c) < 32 for c in value):
+                return ServiceResult(False, "INVALID")
+            # Cf (bidi-оверрайды, ZWSP, ZWJ): U+202E переворачивает порядок
+            # слов в карточке партнёра -- анти-spoofing ценой составных эмодзи.
+            # Явный "" остаётся очисткой био; био из одного невидимого символа
+            # -- мусор, отвечаем отказом, а не тихой пустой строкой.
+            cleaned = "".join(c for c in value if unicodedata.category(c) != "Cf")
+            if value and not cleaned:
+                return ServiceResult(False, "INVALID")
+            value = cleaned
         if field not in {"gender", "age", "bio"}:
             return ServiceResult(False, "INVALID")
         await MatchingService().cancel(user_id)

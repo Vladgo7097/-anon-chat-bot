@@ -125,7 +125,9 @@ class AntiFloodMiddleware(BaseMiddleware):
     ) -> Any:
         if getattr(event, "successful_payment", None) or getattr(event, "refunded_payment", None):
             return await handler(event, data)
-        if event.from_user and await check_flood(event.from_user.id):
+        if event.from_user and await check_flood(
+            getattr(event, "bot", None) and event.bot.id, event.from_user.id
+        ):
             from keyboards import texts as T
             from utils import bots
             # Both attached observers land here. A Message carries no `.data`, so

@@ -178,6 +178,9 @@ async def forward_message(message: Message, album=None, lang: str = "ru"):
     service=RelayService()
     result=await service.prepare(message.from_user.id,message.content_type)
     if result.code=="NOT_CHATTING":
+        # Отказ FSM опускает mid-flow ввод сюда: раньше -- пустой return и
+        # чистая тишина, которую не видит даже @dp.errors().
+        await message.answer(T.tr(T.GUARDS, lang)["slow_down"])
         return
     if not result.ok:
         await message.answer(T.tr(UNSUPPORTED_TYPE, lang))

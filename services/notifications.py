@@ -125,6 +125,7 @@ def broadcast_segment(query, segment, now=None):
 # две разные корзины лимита, но одна очередь владельца -- темпятся вместе,
 # иначе второй вид выдавал бы первому флуд в ответ на флуд.
 OWNER_SIGNUP_TYPES = ("owner_new_user", "owner_activated")
+CRITICAL_OWNER_TYPES = {"backup_failed", "owner_first_payment", "funnel_alert"}
 
 
 async def enqueue(s, user_id, kind, key, content, callback=None, marketing=False, broadcast_id=None, bot_id=None):
@@ -271,8 +272,13 @@ class NotificationService:
             offers = (await s.scalars(select(Offer).where(Offer.status == "reserved").with_for_update())).all()
             for offer in offers:
                 payment = await s.get(Payment, offer.reserved_payment_id)
-                if payment and payment.status == "created" and payment.expires_at <= now:
-                    payment.status = "failed"
+                # Релиз из любого незавершённого статуса, а не только из
+                # "created": precheckout_ok больше нигде не снимается, кроме
+                # complete(), и оффер оставался в reserved навсегда -- скидка
+                # первого отзыва пропадала, следующий счёт шёл уже без неё.
+                if payment and payment.expires_at <= now and payment.status != "paid":
+                    if payment.status == "created":
+                        payment.status = "failed"
                     offer.status = "active" if offer.ends_at > now else "expired"
                     offer.reserved_payment_id = None
 
@@ -376,6 +382,11 @@ class NotificationService:
                         Notification.status == "sent"))
                     if sent:
                         cooldown = max(cooldown or sent, sent+timedelta(seconds=3))
+                # Критические алерты владельца идут в обход чужого rate-limit:
+                # cooldown считался на всего получателя целиком, и одна 429 на
+                # жалобе удерживала backup_failed в очереди до её снятия.
+                if owner_notice and n.type in CRITICAL_OWNER_TYPES:
+                    cooldown = None
                 if cooldown and cooldown > now:
                     n.scheduled_at = cooldown
                     return None

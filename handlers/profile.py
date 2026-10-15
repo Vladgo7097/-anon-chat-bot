@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
+from html import escape
 import json
 from handlers import profile_router
 from keyboards.inline import profile_kb, profile_edit_kb
@@ -180,11 +181,20 @@ async def show_profile(message, user_id, lang="ru"):
     if s['profile_photo']:
         extra = f" (+{s['extra_photos_count']})" if s['extra_photos_count'] else ""
         photos_line = "\n<tg-emoji emoji-id=\"5258254475386167466\">🖼</tg-emoji> " + words["photos"].format(v=f"1{extra}")
-    bio_line = ("\n<tg-emoji emoji-id=\"5301173701323028420\">✏️</tg-emoji> " + words["bio"].format(v=s['bio'])) if s.get('bio') else ""
-    text = words["card"].format(anon=s['anon_id'], gicon=gender_icon[0], gemoji=gender_icon[1],
-                                gender=gender, age=s['age'], joined=f"{s['created_at']:%d.%m.%Y}",
-                                photos=photos_line, bio=bio_line, chats=s['chats_count'],
-                                likes=s['likes'], dislikes=s['dislikes'], premium=premium)
+    def build_text(bio_value: str) -> str:
+        return words["card"].format(anon=s['anon_id'], gicon=gender_icon[0], gemoji=gender_icon[1],
+                                    gender=gender, age=s['age'], joined=f"{s['created_at']:%d.%m.%Y}",
+                                    photos=photos_line, bio=bio_value, chats=s['chats_count'],
+                                    likes=s['likes'], dislikes=s['dislikes'], premium=premium)
+
+    # Экранирование обязатено: parse_mode=HTML стоит как default bot property,
+    # а валидация в services/profile.py проверяет только isinstance и длину.
+    # Сырой < в био сохранялся (пользователь видел «Сохранено»), но рендер
+    # карточки падал с 400 на каждом открытии -- карточка была недостижима
+    # перманентно, лечилось только удалением строки из БД вручную.
+    bio_line = ("\n<tg-emoji emoji-id=\"5301173701323028420\">✏️</tg-emoji> "
+                + words["bio"].format(v=escape(s['bio']))) if s.get('bio') else ""
+    text = build_text(bio_line)
     kb = profile_kb(has_photo=bool(s['profile_photo']), lang=lang)
     if s['profile_photo']:
         try:
@@ -194,7 +204,12 @@ async def show_profile(message, user_id, lang="ru"):
             return
         except TelegramBadRequest:
             pass
-    await message.answer(text, reply_markup=kb)
+    try:
+        await message.answer(text, reply_markup=kb)
+    except TelegramBadRequest:
+        # Страховка для строк, накопленных до экранирования: карточка важнее
+        # био -- снять био и ответить, а не уронить весь ответ навсегда.
+        await message.answer(build_text(""), reply_markup=kb)
 
 
 @profile_router.message(Command("profile"))
@@ -243,9 +258,13 @@ async def cb_delete_photo(callback: CallbackQuery, lang: str = "ru"):
 @profile_router.message(ProfileEdit.AGE)
 @profile_router.message(ProfileEdit.BIO)
 @profile_router.message(ProfileEdit.PHOTO)
-async def save_field(message: Message, state: FSMContext, lang: str = "ru"):
+async def save_field(message: Message, state: FSMContext, lang: str = "ru",
+                     raw_state: str | None = None):
     words = T.tr(P, lang)
-    step = (await state.get_state()).split(":")[-1]
+    # Второе чтение state -- точка отказа: между диспатчем и телом хендлера
+    # состояние может вернуться None (гонка «Меню», отказ хранилища), и
+    # handler падал на None.split(). Снимок диспатча уже лежит в raw_state.
+    step = (raw_state or "").split(":")[-1]
     text = message.text or ""
     if text in T.SYSTEM_TEXTS - {T.MALE, T.FEMALE, T.PAGE_NEXT, T.PAGE_PREV}:
         await state.clear()
@@ -275,7 +294,11 @@ async def save_field(message: Message, state: FSMContext, lang: str = "ru"):
             await state.update_data(age_page=page)
             await message.answer(words["ask_age"], reply_markup=onboarding_kb("AGE", page, lang))
             return
-        result = await ProfileService().edit(message.from_user.id, "age", int(text) if text.isascii() and text.isdigit() else None)
+        # Нормализация повторяет handlers/start.py: Telegram Web и часть
+        # Android-клавиатур подставляют NBSP/хвостовой пробел -- онбординг
+        # такой ввод принимает, редактор обязан принимать тоже.
+        digits = text.replace("\u00a0", " ").strip()
+        result = await ProfileService().edit(message.from_user.id, "age", int(digits) if digits.isascii() and digits.isdigit() else None)
     if result.ok:
         await state.clear()
         await message.answer(words["saved"], reply_markup=main_menu_kb(lang))
@@ -307,6 +330,18 @@ async def cb_confirm_delete(callback: CallbackQuery, state: FSMContext, lang: st
     await state.clear()
     await callback.answer()
     await callback.message.answer(T.tr(P, lang)["delete_done"])
+
+
+@profile_router.message(ProfileEdit.DELETE_CONFIRM, F.text,
+                        ~F.text.in_(T.SYSTEM_TEXTS), ~F.text.startswith("/"))
+async def delete_confirm_fallback(message: Message, lang: str = "ru"):
+    # «нет» обычным текстом не должно уходить в тишину: состояние держат
+    # только кнопки, но бот обязан повторить вопрос с той же клавиатурой.
+    words = T.tr(P, lang)
+    await message.answer(words["delete_ask"],
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=words["delete_yes"], icon_custom_emoji_id="5312229088876847138", callback_data="profile:delete:confirm", style="danger"),
+            InlineKeyboardButton(text=words["delete_no"], callback_data="profile")]]))
 
 
 @profile_router.callback_query(F.data.in_({"profile:privacy", "profile:push:on", "profile:push:off"}))

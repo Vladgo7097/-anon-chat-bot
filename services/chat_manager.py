@@ -63,10 +63,27 @@ async def get_online_count():
     return await r.zcount("online:heartbeats", time.time()-config.ONLINE_UPDATE_INTERVAL*3, "+inf")
 
 
-@redis_fallback(False)
-async def check_flood(user_id):
-    r = await get_redis()
-    return not await r.set(f"rate:message:{user_id}", "1", nx=True, px=int(config.ANTI_FLOOD_DELAY*1000))
+# Локальный слайдер на время отказа Redis: @redis_fallback(False) превращал
+# отказ Redis в полное отсутствие лимитов -- 10 мгновенных тапов подряд все
+# доходят до хендлера. Лимит обязан остаться и без Redis.
+_local_flood: dict = {}
+
+
+async def check_flood(bot_id, user_id):
+    # bot_id в ключе: изолированы dedupe и FSM-состояния двух ботов, и флуд
+    # обязан -- иначе серия сообщений в боте 1 троттлит бота 2.
+    bucket = f"{bot_id}:{user_id}"
+    try:
+        r = await get_redis()
+        return not await r.set(f"rate:message:{bucket}", "1", nx=True,
+                               px=int(config.ANTI_FLOOD_DELAY*1000))
+    except (RedisError, TimeoutError, ConnectionError):
+        logging.getLogger(__name__).warning("redis_flood_fallback")
+        now = time.monotonic()
+        window = [t0 for t0 in _local_flood.get(bucket, ()) if now - t0 < config.ANTI_FLOOD_DELAY]
+        window.append(now)
+        _local_flood[bucket] = window
+        return len(window) > 1  # первый в окне проходит, остальные -- флуд
 
 
 async def get_partner(user_id):

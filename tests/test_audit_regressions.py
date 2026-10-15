@@ -222,7 +222,7 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
         with patch("services.chat_manager.get_redis", AsyncMock(side_effect=ConnectionError("offline"))):
             self.assertIsNone(await set_online(1))
             self.assertEqual(await get_online_count(), "—")
-            self.assertFalse(await check_flood(1))
+            self.assertFalse(await check_flood(1, 1))
         from aiogram.fsm.storage.base import StorageKey
         self.assertIsNone(await AvailableRedisStorage(redis).get_state(StorageKey(bot_id=1, chat_id=1, user_id=1)))
 

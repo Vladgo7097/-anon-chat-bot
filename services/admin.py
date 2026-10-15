@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import timedelta
 from sqlalchemy import select, func, or_, update, case
@@ -13,6 +14,22 @@ from services.chats import ChatService
 from services.matching import MatchingService
 from utils.time import utcnow
 import config
+
+# ban и unban сериализуются в пределах процесса: на Postgres их держит
+# FOR UPDATE/advisory lock, на SQLite обе блокировки -- пустышка, и
+# интерливинг рвёт инвариант is_banned ⇔ активная строка Ban. Мьютекс
+# живёт на event loop (глобальный asyncio.Lock привязывается к первому
+# loop и роняет остальные).
+_ban_locks: dict = {}
+
+
+def _ban_mutex():
+    loop = asyncio.get_running_loop()
+    lock = _ban_locks.get(id(loop))
+    if lock is None:
+        lock = asyncio.Lock()
+        _ban_locks[id(loop)] = lock
+    return lock
 
 
 # Single source of truth: the panel, the service layer and audience_size all
@@ -361,11 +378,12 @@ class AdminService:
         authorize(admin)
         if not reason or (hours is not None and hours != 0 and not 1<=hours<=87600):
             return ServiceResult(False,"INVALID")
-        async with async_session.begin() as s:
-            from repositories.chats import lock_matching
-            await lock_matching(s)
-            await self._ban(s,admin,uid,reason,hours)
-            audit(s,admin,"ban","user",uid,after={"reason":reason,"hours":hours})
+        async with _ban_mutex():
+            async with async_session.begin() as s:
+                from repositories.chats import lock_matching
+                await lock_matching(s)
+                await self._ban(s,admin,uid,reason,hours)
+                audit(s,admin,"ban","user",uid,after={"reason":reason,"hours":hours})
         await MatchingService().cancel(uid)
         await ChatService().end_chat(uid,reason="ban")
         logging.getLogger(__name__).info("user_banned", extra={"user_id": uid})
@@ -373,17 +391,20 @@ class AdminService:
 
     async def unban(self,admin,uid):
         authorize(admin)
-        async with async_session.begin() as s:
-            user=await s.scalar(select(User).where(User.telegram_id==uid).with_for_update())
-            if not user:
-                return ServiceResult(False,"NOT_FOUND")
-            before={"is_banned":user.is_banned}
-            user.is_banned,user.ban_expires=False,None
-            await s.execute(update(Ban).where(Ban.user_id==uid, Ban.is_active.is_(True)).values(is_active=False))
-            if before["is_banned"]:
-                from services.notifications import enqueue
-                await enqueue(s,uid,"unban",f"unban:{uid}:{utcnow().isoformat()}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Блокировка снята, добро пожаловать обратно!", "menu")
-            audit(s,admin,"unban","user",uid,before,{"is_banned":False})
+        async with _ban_mutex():
+            async with async_session.begin() as s:
+                from repositories.chats import lock_matching
+                await lock_matching(s)
+                user=await s.scalar(select(User).where(User.telegram_id==uid).with_for_update())
+                if not user:
+                    return ServiceResult(False,"NOT_FOUND")
+                before={"is_banned":user.is_banned}
+                user.is_banned,user.ban_expires=False,None
+                await s.execute(update(Ban).where(Ban.user_id==uid, Ban.is_active.is_(True)).values(is_active=False))
+                if before["is_banned"]:
+                    from services.notifications import enqueue
+                    await enqueue(s,uid,"unban",f"unban:{uid}:{utcnow().isoformat()}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Блокировка снята, добро пожаловать обратно!", "menu")
+                audit(s,admin,"unban","user",uid,before,{"is_banned":False})
         return ServiceResult(True,"UNBANNED")
 
     async def bans(self,admin):

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import timedelta
@@ -9,6 +10,26 @@ from services.onboarding import banned, step_for
 from services.result import ServiceResult
 from utils.time import utcnow
 import config
+
+
+# Оплата приходит через polling одного процесса, а read-modify-write на
+# user.premium_expires читает значение ДО записи соседа: на Postgres гонку
+# закрывает FOR UPDATE на строке юзера, на SQLite блокировки нет и молча
+# теряется месяц (в журнале 30+90, на счёте 90). Один мьютекс на complete()
+# закрывает обе среды -- оплаты редки, параллельность тут не нужна.
+# Мьютекс живёт на event loop, а не глобально: asyncio.Lock привязывается к
+# loop при первом захвате, а тесты поднимают новый loop на каждый прогон --
+# глобальный объект ронял бы их с "bound to a different event loop".
+_complete_locks: dict = {}
+
+
+def _complete_mutex():
+    loop = asyncio.get_running_loop()
+    lock = _complete_locks.get(id(loop))
+    if lock is None:
+        lock = asyncio.Lock()
+        _complete_locks[id(loop)] = lock
+    return lock
 
 
 async def seed_products():
@@ -174,6 +195,10 @@ class PaymentService:
             return True
 
     async def complete(self, user_id, payload, amount, currency, charge_id):
+        async with _complete_mutex():
+            return await self._complete_locked(user_id, payload, amount, currency, charge_id)
+
+    async def _complete_locked(self, user_id, payload, amount, currency, charge_id):
         async with async_session.begin() as s:
             p = await s.scalar(select(Payment).where(Payment.payload == payload).with_for_update())
             if not p or p.user_id != user_id or p.stars_amount != amount or currency != "XTR" or not charge_id:

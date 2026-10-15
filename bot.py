@@ -133,8 +133,12 @@ async def main():
 
     from utils.albums import AlbumMiddleware
     dp.message.middleware(AlbumMiddleware())
-    dp.message.middleware(AntiFloodMiddleware())
-    dp.callback_query.middleware(AntiFloodMiddleware())
+    # AntiFlood -- outer и до Access: aiogram вызывает outer в порядке
+    # регистрации, и раньше Access означает лимит ДО его DB-работы
+    # (get_or_create/set_online/streak). Как inner-миддлвар он не вызывался
+    # вовсе для незарегистрированных -- Access возвращал раньше.
+    dp.message.outer_middleware(AntiFloodMiddleware())
+    dp.callback_query.outer_middleware(AntiFloodMiddleware())
     dp.message.outer_middleware(AccessMiddleware())
     dp.callback_query.outer_middleware(AccessMiddleware())
     dp.message.outer_middleware(UpdateLoggingMiddleware())
