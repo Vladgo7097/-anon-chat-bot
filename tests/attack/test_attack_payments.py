@@ -486,8 +486,11 @@ class StaleInvoiceTests(PaymentAttackCase):
 
 
 class PendingStateTests(PaymentAttackCase):
-    async def test_complete_has_no_expiry_check(self):
-        """A payment approved before the deadline can still be credited after it."""
+    async def test_complete_credits_retries_within_a_day_and_refuses_stale(self):
+        """Защита: complete() сверяет expires_at. Ретрай доставки в пределах
+        суток после срока -- кредит проходит (Telegram могла принести апдейт
+        позже, деньги списались сразу); старше суток счёт мёртв и кредит
+        не проходит."""
         inv = await self._buy(ATTACKER, "premium_1m")
         async with self.factory() as s:
             row = await s.get(Payment, inv.payment_id)
@@ -499,12 +502,26 @@ class PendingStateTests(PaymentAttackCase):
         with self._freeze(later):
             reply = await self._pay(ATTACKER, inv.payload, inv.amount, charge="late-1")
         self.assertIn("Оплата получена", reply)
-        self.assertEqual(await self._count(PremiumSubscription), 1)
         row = await self._payment(inv.payment_id)
-        # Settled at a moment when the invoice had been dead for two hours.
         self.assertLess(row.expires_at, later)
         self.assertGreaterEqual(row.paid_at, later)
         self.assertEqual(row.telegram_payment_charge_id, "late-1")
+
+        # Тот же сценарий за сутки+ после срока: счёт мёртв, кредит отвергнут.
+        stale = await self._buy(ATTACKER, "premium_1m")
+        async with self.factory() as s:
+            row2 = await s.get(Payment, stale.payment_id)
+            expires2 = row2.expires_at
+        self.assertTrue(
+            await self._precheckout(ATTACKER, stale.payload, stale.amount, query_id="q2")
+        )
+        with self._freeze(expires2 + timedelta(hours=25)):
+            reply2 = await self._pay(ATTACKER, stale.payload, stale.amount, charge="late-2")
+        self.assertNotIn("Оплата получена", reply2)
+        row2 = await self._payment(stale.payment_id)
+        self.assertEqual(row2.status, "precheckout_ok")
+        self.assertIsNone(row2.paid_at)
+        self.assertEqual(await self._count(PremiumSubscription), 1)
 
     async def test_second_pre_checkout_query_for_the_same_invoice_is_refused(self):
         """The classic retry: first attempt fails on the Telegram side (not enough
@@ -821,7 +838,9 @@ class RaceTests(PaymentAttackCase):
             "the lost update reproduced -- a paid month vanished",
         )
 
-    async def test_parallel_buy_taps_multiply_payments_and_invoices(self):
+    async def test_parallel_buy_taps_share_one_live_invoice(self):
+        """Защита: create() сериализован мьютексом -- параллельные тапы
+        «Купить» переиспользуют живой счёт: одна строка, одна отправка."""
         await asyncio.gather(
             self._tap(ATTACKER, "v1:buy:premium_1m"),
             self._tap(ATTACKER, "v1:buy:premium_1m"),
@@ -834,12 +853,12 @@ class RaceTests(PaymentAttackCase):
                     )
                 )
             ).all()
-        self.assertEqual(len(rows), 2, "the one-invoice guard lost the race")
-        self.assertEqual(len(self._sent("sendInvoice")), 2)
+        self.assertEqual(len(rows), 1, [r.id for r in rows])
+        self.assertEqual(len(self._sent("sendInvoice")), 1)
 
-    async def test_parallel_buy_taps_spend_one_discount_twice(self):
-        """A single 50%-off offer is reserved by both racing create() calls, so
-        one "first purchase only" discount buys two discounted invoices."""
+    async def test_parallel_buy_taps_spend_one_discount_once(self):
+        """Защита: живой счёт один (мьютекс create()), резерв скидки -- CAS
+        по active, поэтому одна 50%-скидка выкупает ровно один счёт."""
         from services.growth import first_purchase_discount
 
         self.assertEqual(await first_purchase_discount(ATTACKER), 50)
@@ -856,7 +875,8 @@ class RaceTests(PaymentAttackCase):
                 )
             ).all()
         discounted = [r for r in rows if r.offer_id is not None]
-        self.assertEqual(len(discounted), 2, [r.stars_amount for r in rows])
+        self.assertEqual(len(rows), 1, [r.stars_amount for r in rows])
+        self.assertEqual(len(discounted), 1)
         self.assertEqual({r.stars_amount for r in discounted}, {49})
 
 

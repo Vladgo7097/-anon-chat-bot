@@ -2,7 +2,7 @@ import asyncio
 import uuid
 import logging
 from datetime import timedelta
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, update
 from models.base import async_session
 from models.payment import Product, Payment, Entitlement, PremiumSubscription
 from models.user import User
@@ -29,6 +29,23 @@ def _complete_mutex():
     if lock is None:
         lock = asyncio.Lock()
         _complete_locks[id(loop)] = lock
+    return lock
+
+
+# Параллельные тапы «Купить» (F6): на SQLite FOR UPDATE -- пустышка, обе
+# ветки create() читают старый счёт ДО коммита соседа и плодят вторую строку
+# счёта плюс второй резерв одной скидки. Один мьютекс на create() закрывает
+# ветки в пределах процесса: оплата -- редкое событие, глобальная очередь тут
+# ничего не стоит. Как и _complete_locks, живёт на event loop, не глобально.
+_create_locks: dict = {}
+
+
+def _create_mutex():
+    loop = asyncio.get_running_loop()
+    lock = _create_locks.get(id(loop))
+    if lock is None:
+        lock = asyncio.Lock()
+        _create_locks[id(loop)] = lock
     return lock
 
 
@@ -117,6 +134,10 @@ class PaymentService:
             return list((await s.scalars(q)).all())
 
     async def create(self, user_id, code, target_session=None):
+        async with _create_mutex():
+            return await self._create_locked(user_id, code, target_session)
+
+    async def _create_locked(self, user_id, code, target_session=None):
         async with async_session.begin() as s:
             user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
             product = await s.get(Product, code)
@@ -152,7 +173,18 @@ class PaymentService:
                 s.add(payment)
                 await s.flush()
                 if discount:
-                    discount.status, discount.reserved_payment_id = "reserved", payment.id
+                    # CAS (F6): резерв только из active. Кто проиграл раунд --
+                    # тот покупает по полной цене, одна скидка не выкупает
+                    # два счёта. Ноль строк UPDATE = скидка уже не твоя.
+                    res = await s.execute(
+                        update(Offer)
+                        .where(Offer.id == discount.id, Offer.status == "active")
+                        .values(status="reserved", reserved_payment_id=payment.id)
+                    )
+                    if res.rowcount == 0:
+                        payment.stars_amount = product.price_stars
+                        payment.offer_id = None
+                        payment.expires_at = now + timedelta(minutes=15)
             return ServiceResult(True, "INVOICE", {"payment": payment, "title": product.title})
 
     async def claim_invoice(self,user_id,payment_id):
@@ -207,6 +239,11 @@ class PaymentService:
                 return ServiceResult(False, "ALREADY_PAID")
             if p.status != "precheckout_ok":
                 return ServiceResult(False, "INVALID_PAYMENT")
+            if p.expires_at and p.expires_at <= utcnow() - timedelta(hours=24):
+                # Ретраи доставки отведены на сутки (F3): раньше апдейт от
+                # Telegram мог прийти с опозданием и кредит задним числом был
+                # верным, дальше счёт мёртв и не кредитуется.
+                return ServiceResult(False, "INVOICE_EXPIRED")
             if await s.scalar(select(Payment).where(Payment.telegram_payment_charge_id == charge_id)):
                 return ServiceResult(False, "ALREADY_PAID")
             user = await s.scalar(select(User).where(User.telegram_id == user_id).with_for_update())
