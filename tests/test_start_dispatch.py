@@ -210,6 +210,7 @@ class StartDispatchTests(unittest.TestCase):
             # returns before the onboarding gate, so here there is no row yet.
             patch("repositories.users.UserRepository.get", AsyncMock(return_value=None)),
             patch("services.onboarding.banned", return_value=False),
+            patch("services.onboarding.muted", return_value=False),
             patch("services.onboarding.step_for", return_value="MENU") as step,
             patch("services.chat_manager.set_online", AsyncMock()),
             patch("services.chat_manager.get_partner", AsyncMock(return_value=456)) as partner,
@@ -256,6 +257,7 @@ class StartDispatchTests(unittest.TestCase):
             patch("config.ADMIN_IDS", {123}),
             patch("repositories.users.UserRepository.get_or_create", AsyncMock(return_value=(SimpleNamespace(), False))),
             patch("services.onboarding.banned", return_value=False),
+            patch("services.onboarding.muted", return_value=False),
             patch("services.onboarding.step_for", return_value="MENU"),
             patch("services.chat_manager.set_online", AsyncMock()),
             patch("services.growth.StreakService.checkin", AsyncMock()),

@@ -619,6 +619,18 @@ class TelegramSpoofTests(AttackCase):
         self._assert_denied()
         self.assertEqual(self.bot_errors, [])
 
+    async def test_non_admin_callback_mute_is_denied(self):
+        uid = next_uid()
+        await self.register(uid)
+        with patch(
+            "services.admin.AdminService.resolve",
+            AsyncMock(return_value=ServiceResult(True, "RESOLVED")),
+        ) as resolve:
+            await self.tap("admin:mute1:1", uid)
+        resolve.assert_not_awaited()
+        self._assert_denied()
+        self.assertEqual(self.bot_errors, [])
+
     async def test_non_admin_callback_send_job_is_denied(self):
         uid = next_uid()
         await self.register(uid)

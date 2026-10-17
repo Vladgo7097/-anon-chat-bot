@@ -13,7 +13,7 @@ class AccessMiddleware(BaseMiddleware):
         from keyboards import texts as T
         from keyboards.reply import chat_kb_reply
         from repositories.users import UserRepository
-        from services.onboarding import step_for, banned
+        from services.onboarding import step_for, banned, muted
         from services.result import ServiceResult
         from handlers.start import show_step, onboarding_input
         from services.chat_manager import get_partner, set_online
@@ -47,7 +47,7 @@ class AccessMiddleware(BaseMiddleware):
             data["anon_id"] = getattr(row, "anon_id", None)
             data["lang"] = getattr(row, "language", None) or bots.default_lang(bot, actor)
             return await handler(event, data)
-        admin_commands = {"/admin", "/user", "/ban_user", "/unban", "/grant", "/price", "/setting", "/season"}
+        admin_commands = {"/admin", "/user", "/ban_user", "/unban", "/mute_user", "/unmute", "/grant", "/price", "/setting", "/season"}
         if actor.id in ADMIN_IDS and (action.split()[0].split("@")[0] in admin_commands if action else False):
             return await handler(event, data)
         if actor.id in ADMIN_IDS and (action.startswith("admin:") or action.startswith("bc:")):
@@ -59,6 +59,11 @@ class AccessMiddleware(BaseMiddleware):
         # delivering bot's default, which is Ukrainian on the second bot.
         lang = getattr(user, "language", None) or bots.default_lang(bot, actor)
         data["lang"] = lang
+        # Мут не режет dispatch: меню и профиль должны работать. Флаг уходит
+        # в хендлеры, чтобы relaying и поиск сказали "нельзя" без повторного
+        # запроса к users.
+        data["muted"] = muted(user)
+        data["mute_until"] = user.mute_expires if data["muted"] else None
         if banned(user):
             if callback:
                 await event.answer(T.tr(T.GUARDS, lang)["banned"], show_alert=True)

@@ -22,6 +22,9 @@ ALREADY_SEARCHING = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-
                       "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Пошук вже триває."}
 FAIL_REASONS = {
     "BANNED": {"ru": "⛔ Ты заблокирован.", "en": "⛔ You are banned.", "uk": "⛔ Тебе заблоковано."},
+    "MUTED": {"ru": "🔇 Ты в муте — писать и искать собеседника нельзя.",
+               "en": "🔇 You're muted — writing and searching are unavailable.",
+               "uk": "🔇 Ти в муті — писати і шукати співрозмовника не можна."},
     "ALREADY_CHATTING": {"ru": "Ты уже в диалоге. Нажми «Стоп».", "en": "You're already chatting. Tap \"Stop\".",
                           "uk": "Ти вже в діалозі. Натисни «Стоп»."},
     "ONBOARDING_REQUIRED": {"ru": "Сначала заверши регистрацию: /start", "en": "Finish registration first: /start",
@@ -171,6 +174,10 @@ async def _begin_search(message, user_id, lang="ru"):
         await message.answer(T.tr(ALREADY_SEARCHING, lang), reply_markup=search_kb_reply(lang))
         return
     if not result.ok:
+        if result.code == "MUTED":
+            from services.onboarding import mute_alert
+            await message.answer(mute_alert((result.data or {}).get("until"), lang))
+            return
         # Send the chat keyboard along with the "press Стоп" answer: a user whose
         # match notice never arrived still has the menu keyboard on screen and no
         # Стоп button to press, which is a dead end.

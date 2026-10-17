@@ -1,7 +1,7 @@
 import time
 from models.base import async_session
 from repositories.chats import ChatRepository, lock_matching, premium_active
-from services.onboarding import step_for, banned
+from services.onboarding import step_for, banned, muted
 from services.chats import ChatService
 from services.result import ServiceResult
 from sqlalchemy import select
@@ -23,6 +23,8 @@ class MatchingService:
                 return ServiceResult(False, "ONBOARDING_REQUIRED")
             if banned(user):
                 return ServiceResult(False, "BANNED")
+            if muted(user):
+                return ServiceResult(False, "MUTED", {"until": user.mute_expires})
             if await s.get(ActiveParticipant, user_id):
                 return ServiceResult(False, "ALREADY_CHATTING")
             from services.payments import available_entitlement

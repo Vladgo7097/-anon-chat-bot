@@ -77,6 +77,36 @@ class OperationsTests(DatabaseCase):
         self.assertIn("Жалоб на него: 1", text)
         self.assertNotIn("Жалоб на него: —", text)
 
+    async def test_resolve_mute_actions_apply_state_and_notice(self):
+        for action, hours in (("mute1", 1), ("mute24", 24), ("mute7", 168)):
+            async with self.factory.begin() as s:
+                report = Report(reporter_id=2, reported_id=1, chat_session_id=f"sess-{action}", reason="Спам/реклама")
+                s.add(report)
+                await s.flush()
+                report_id = report.id
+            self.assertTrue((await AdminService().resolve(99, report_id, action)).ok)
+            async with self.factory() as s:
+                user = await s.scalar(select(User).where(User.telegram_id == 1))
+                self.assertTrue(user.is_muted)
+                left = (user.mute_expires - utcnow()).total_seconds()
+                self.assertGreater(left, (hours - 1) * 3600)
+                self.assertLess(left, (hours + 1) * 3600)
+                notice = await s.scalar(select(Notification).where(Notification.type == "mute").order_by(Notification.id.desc()))
+                self.assertIn("Мут", notice.text)
+            await AdminService().unmute(99, 1)
+        async with self.factory() as s:
+            self.assertFalse((await s.scalar(select(User).where(User.telegram_id == 1))).is_muted)
+
+    async def test_muted_user_cannot_start_search(self):
+        from services.matching import MatchingService
+        async with self.factory.begin() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.is_muted = True
+            user.mute_expires = utcnow() + timedelta(hours=1)
+        with patch("services.chat_manager.get_redis", AsyncMock(return_value=self.redis)):
+            result = await MatchingService().enqueue(1)
+        self.assertEqual(result.code, "MUTED")
+
     async def test_old_end_notification_does_not_interrupt_new_chat(self):
         old = await self.repo.match(1, 2, self.redis)
         await self.repo.end(1, old.session_id, "timeout")
@@ -166,6 +196,16 @@ class OperationsTests(DatabaseCase):
         async with self.factory() as s:
             self.assertFalse((await s.scalar(select(User).where(User.telegram_id==1))).is_banned)
         self.assertEqual((await NotificationService().next()).type,"unban")
+
+    async def test_expired_mute_becomes_inactive_without_manual_action(self):
+        async with self.factory.begin() as s:
+            user=await s.scalar(select(User).where(User.telegram_id==1))
+            user.is_muted=True
+            user.mute_expires=utcnow()-timedelta(seconds=1)
+        await NotificationService().schedule()
+        async with self.factory() as s:
+            self.assertFalse((await s.scalar(select(User).where(User.telegram_id==1))).is_muted)
+        self.assertEqual((await NotificationService().next()).type,"unmute")
 
     async def test_report_saved_once_and_resolved_once(self):
         chat=await self.repo.match(1,2,self.redis)

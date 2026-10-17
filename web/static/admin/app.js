@@ -712,6 +712,7 @@ function badges(u) {
   const out = [];
   if (u.deleted) out.push('<span class="chip">удалён</span>');
   if (u.is_banned) out.push('<span class="chip bad">бан</span>');
+  if (u.is_muted) out.push('<span class="chip warn">мут</span>');
   if (u.premium_expires) out.push('<span class="chip acc">premium</span>');
   if (!u.onboarding_completed) out.push('<span class="chip warn">не дошёл</span>');
   if (!out.length) out.push('<span class="chip ok">норма</span>');
@@ -790,6 +791,8 @@ async function openUserCard(id) {
     <div class="actions">
       <button class="btn btn-danger" data-u="ban">Забанить</button>
       <button class="btn" data-u="unban">Разбанить</button>
+      <button class="btn" data-u="mute">Замутить</button>
+      <button class="btn" data-u="unmute">Снять мут</button>
       <button class="btn" data-u="premium">Выдать premium</button>
       <button class="btn" data-u="msg">Написать в личку</button>
     </div>
@@ -815,9 +818,20 @@ async function userAction(kind, id, host) {
     await post(`/api/admin/users/${id}/unban`, {}, "Разбанен");
     return refreshUser(id);
   }
+  if (kind === "unmute") {
+    await post(`/api/admin/users/${id}/unmute`, {}, "Мут снят");
+    return refreshUser(id);
+  }
   host.innerHTML = "";
 
-  if (kind === "ban") {
+  if (kind === "mute") {
+    host.innerHTML = `<div class="action-box"><label>Причина</label>
+      <input class="field" id="a-reason" style="width:100%" placeholder="нарушение правил">
+      <div class="row"><label style="margin:0">Часов (пусто = бессрочно)</label>
+      <input class="field" id="a-hours" style="width:110px" placeholder="24" inputmode="numeric"></div>
+      <div class="row"><button class="btn btn-primary" id="a-go">Замутить</button>
+      <button class="btn btn-ghost" id="a-cancel">Отмена</button></div></div>`;
+  } else if (kind === "ban") {
     host.innerHTML = `<div class="action-box"><label>Причина</label>
       <input class="field" id="a-reason" style="width:100%" placeholder="нарушение правил">
       <div class="row"><label style="margin:0">Часов (пусто = бессрочно)</label>
@@ -846,6 +860,10 @@ async function userAction(kind, id, host) {
         const hours = parseInt(val("a-hours"), 10);
         await post(`/api/admin/users/${id}/ban`,
           { reason: val("a-reason"), hours: isNaN(hours) ? null : hours }, "Забанен");
+      } else if (kind === "mute") {
+        const hours = parseInt(val("a-hours"), 10);
+        await post(`/api/admin/users/${id}/mute`,
+          { reason: val("a-reason"), hours: isNaN(hours) ? null : hours }, "Замучен");
       } else if (kind === "premium") {
         const days = parseInt(val("a-days"), 10) || 30;
         await post(`/api/admin/users/${id}/premium`,
@@ -1154,6 +1172,9 @@ async function renderReports() {
         <div class="actions">
           <button class="btn btn-danger btn-sm" data-r="${r.id}" data-a="ban1">Бан на 24 часа</button>
           <button class="btn btn-danger btn-sm" data-r="${r.id}" data-a="banf">Бан навсегда</button>
+          <button class="btn btn-sm" data-r="${r.id}" data-a="mute1">Мут 1 час</button>
+          <button class="btn btn-sm" data-r="${r.id}" data-a="mute24">Мут 24 часа</button>
+          <button class="btn btn-sm" data-r="${r.id}" data-a="mute7">Мут 7 дней</button>
           <button class="btn btn-ghost btn-sm" data-r="${r.id}" data-a="dismiss">Отклонить</button>
           <button class="btn btn-ghost btn-sm" data-user="${esc(r.target_id)}">Открыть карточку</button>
         </div>
@@ -1172,12 +1193,18 @@ async function renderReports() {
 
   document.querySelectorAll("[data-r]").forEach((b) => b.addEventListener("click", async () => {
     const a = b.dataset.a;
-    if (a !== "dismiss" && !confirm(a === "banf"
-      ? "Забанить навсегда? Это действие останется в журнале."
-      : "Забанить на 24 часа?")) return;
+    const CONFIRM = {
+      ban1: "Забанить на 24 часа?",
+      banf: "Забанить навсегда? Это действие останется в журнале.",
+      mute1: "Выдать мут на 1 час?",
+      mute24: "Выдать мут на 24 часа?",
+      mute7: "Выдать мут на 7 дней?",
+    };
+    if (a !== "dismiss" && !confirm(CONFIRM[a] || "Подтвердить решение?")) return;
+    const DONE = { dismiss: "Жалоба отклонена", ban1: "Пользователь забанен", banf: "Пользователь забанен",
+      mute1: "Выдан мут на 1 час", mute24: "Выдан мут на 24 часа", mute7: "Выдан мут на 7 дней" };
     try {
-      await post(`/api/admin/reports/${b.dataset.r}/resolve`, { action: a },
-        a === "dismiss" ? "Жалоба отклонена" : "Пользователь забанен");
+      await post(`/api/admin/reports/${b.dataset.r}/resolve`, { action: a }, DONE[a] || "Готово");
       renderReports();
     } catch (e) { toast(e.message, true); }
   }));

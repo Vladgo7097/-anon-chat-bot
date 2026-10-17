@@ -11,6 +11,25 @@ def banned(user):
     return bool(user.is_banned and (user.ban_expires is None or user.ban_expires > utcnow()))
 
 
+def muted(user):
+    return bool(user.is_muted and (user.mute_expires is None or user.mute_expires > utcnow()))
+
+
+# Текст для попытки писать/искать в муте. Строится из строки users, а не из
+# mutes, чтобы горячие пути не делали лишний join.
+MUTE_ALERT = {"ru": "🔇 Ты в муте{tail} — писать и искать собеседника нельзя.",
+              "en": "🔇 You're muted{tail} — you can't write or search for a chat.",
+              "uk": "🔇 Ти в муті{tail} — писати і шукати співрозмовника не можна."}
+
+
+def mute_alert(until, lang="ru"):
+    if until:
+        tail = {"ru": " до ", "en": " until ", "uk": " до "}.get(lang, " до ") + f"{until:%d.%m.%Y %H:%M} UTC"
+    else:
+        tail = {"ru": " бессрочно", "en": " until further notice", "uk": " безстроково"}.get(lang, " бессрочно")
+    return MUTE_ALERT.get(lang, MUTE_ALERT["ru"]).format(tail=tail)
+
+
 def step_for(user):
     # Only genuinely new/incomplete accounts are sent through LANGUAGE --
     # a user who already finished onboarding before this column existed

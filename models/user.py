@@ -67,6 +67,10 @@ class User(Base):
     # Бан
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     ban_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Мут -- мягче бана: аккаунт живёт, но писать и искать собеседника
+    # нельзя до mute_expires (None при is_muted=True -- бессрочно).
+    is_muted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    mute_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Прочее
     settings_gender_filter: Mapped[str] = mapped_column(String(1), default="a")  # m/f/a (all)

@@ -7,6 +7,7 @@ from models.user import User
 from models.chat import Chat
 from models.report import Report
 from models.ban import Ban
+from models.mute import Mute
 from models.payment import Payment, Product, PremiumSubscription
 from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Notification
 from services.result import ServiceResult
@@ -324,11 +325,12 @@ class AdminService:
             names={u.telegram_id:u.anon_id for u in users}
             previous=await s.scalar(select(func.count(Report.id)).where(Report.reported_id==report.reported_id,Report.id!=report.id))
             bans=await s.scalar(select(func.count(Ban.id)).where(Ban.user_id==report.reported_id))
-            return names,previous,bans
+            mutes=await s.scalar(select(func.count(Mute.id)).where(Mute.user_id==report.reported_id))
+            return names,previous,bans,mutes
 
     async def resolve(self, admin, report_id, action):
         authorize(admin)
-        if action not in {"ban1", "banf", "dismiss"}:
+        if action not in {"ban1", "banf", "mute1", "mute24", "mute7", "dismiss"}:
             return ServiceResult(False,"INVALID")
         if not 0 < report_id <= 2**63 - 1:
             # int64: шире -- s.get() кидал OverflowError посреди транзакции (M1).
@@ -342,12 +344,16 @@ class AdminService:
             report.status="dismissed" if action=="dismiss" else "resolved"
             report.resolved_at,report.resolved_by=utcnow(),admin
             if action!="dismiss":
-                await self._ban(s,admin,report.reported_id,report.reason,24 if action=="ban1" else None,report.id)
+                if action.startswith("mute"):
+                    hours={"mute1":1,"mute24":24,"mute7":168}[action]
+                    await self._mute(s,admin,report.reported_id,report.reason,hours,report.id)
+                else:
+                    await self._ban(s,admin,report.reported_id,report.reason,24 if action=="ban1" else None,report.id)
             audit(s,admin,action,"report",report_id,{"status":"pending"},{"status":report.status})
             uid=report.reported_id
         if action!="dismiss":
             await MatchingService().cancel(uid)
-            await ChatService().end_chat(uid,reason="ban")
+            await ChatService().end_chat(uid,reason="mute" if action.startswith("mute") else "ban")
         return ServiceResult(True,"RESOLVED")
 
     async def _ban(self,s,admin,uid,reason,hours,report_id=None):
@@ -363,6 +369,20 @@ class AdminService:
         from services.notifications import enqueue
         until=f"до {expires:%d.%m.%Y %H:%M} UTC" if expires else "бессрочно"
         await enqueue(s,uid,"ban",f"ban:{record.id}",f"⛔ Ты заблокирован {until}. Причина: {reason[:500]}")
+
+    async def _mute(self,s,admin,uid,reason,hours,report_id=None):
+        user=await s.scalar(select(User).where(User.telegram_id==uid).with_for_update())
+        if not user:
+            raise ValueError("User not found")
+        expires=utcnow()+timedelta(hours=hours) if hours else None
+        await s.execute(update(Mute).where(Mute.user_id==uid, Mute.is_active.is_(True)).values(is_active=False))
+        user.is_muted,user.mute_expires=True,expires
+        record=Mute(user_id=uid,reason=reason[:64],duration_hours=hours,expires_at=expires,muted_by=admin,report_id=report_id)
+        s.add(record)
+        await s.flush()
+        from services.notifications import enqueue
+        until=f"до {expires:%d.%m.%Y %H:%M} UTC" if expires else "бессрочно"
+        await enqueue(s,uid,"mute",f"mute:{record.id}",f"🔇 Мут {until}: писать и искать собеседника нельзя. Причина: {reason[:500]}")
 
     async def find_user(self,admin,value):
         authorize(admin)
@@ -392,6 +412,21 @@ class AdminService:
         logging.getLogger(__name__).info("user_banned", extra={"user_id": uid})
         return ServiceResult(True,"BANNED")
 
+    async def mute(self,admin,uid,reason,hours=None):
+        authorize(admin)
+        if not reason or (hours is not None and hours != 0 and not 1<=hours<=87600):
+            return ServiceResult(False,"INVALID")
+        async with _ban_mutex():
+            async with async_session.begin() as s:
+                from repositories.chats import lock_matching
+                await lock_matching(s)
+                await self._mute(s,admin,uid,reason,hours)
+                audit(s,admin,"mute","user",uid,after={"reason":reason,"hours":hours})
+        await MatchingService().cancel(uid)
+        await ChatService().end_chat(uid,reason="mute")
+        logging.getLogger(__name__).info("user_muted", extra={"user_id": uid})
+        return ServiceResult(True,"MUTED")
+
     async def unban(self,admin,uid):
         authorize(admin)
         async with _ban_mutex():
@@ -409,6 +444,24 @@ class AdminService:
                     await enqueue(s,uid,"unban",f"unban:{uid}:{utcnow().isoformat()}","<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Блокировка снята, добро пожаловать обратно!", "menu")
                 audit(s,admin,"unban","user",uid,before,{"is_banned":False})
         return ServiceResult(True,"UNBANNED")
+
+    async def unmute(self,admin,uid):
+        authorize(admin)
+        async with _ban_mutex():
+            async with async_session.begin() as s:
+                from repositories.chats import lock_matching
+                await lock_matching(s)
+                user=await s.scalar(select(User).where(User.telegram_id==uid).with_for_update())
+                if not user:
+                    return ServiceResult(False,"NOT_FOUND")
+                before={"is_muted":user.is_muted}
+                user.is_muted,user.mute_expires=False,None
+                await s.execute(update(Mute).where(Mute.user_id==uid, Mute.is_active.is_(True)).values(is_active=False))
+                if before["is_muted"]:
+                    from services.notifications import enqueue
+                    await enqueue(s,uid,"unmute",f"unmute:{uid}:{utcnow().isoformat()}","🔊 Мут снят — можно снова писать и искать собеседника.","search:start")
+                audit(s,admin,"unmute","user",uid,before,{"is_muted":False})
+        return ServiceResult(True,"UNMUTED")
 
     async def bans(self,admin):
         authorize(admin)

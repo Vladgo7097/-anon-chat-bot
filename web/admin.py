@@ -123,6 +123,8 @@ def _user_row(user, *, detail: bool = False):
         "chats_count": user.chats_count,
         "is_banned": user.is_banned,
         "ban_expires": _iso(user.ban_expires),
+        "is_muted": user.is_muted,
+        "mute_expires": _iso(user.mute_expires),
         "premium_expires": _iso(user.premium_expires),
         "onboarding_completed": user.onboarding_completed,
         "onboarding_step": user.onboarding_step,
@@ -313,6 +315,28 @@ async def ban_user(telegram_id: int, body: dict, _: None = Depends(_guard)):
 @router.post("/users/{telegram_id}/unban")
 async def unban_user(telegram_id: int, _: None = Depends(_guard)):
     _require(await AdminService().unban(_admin_id(), telegram_id))
+    return {"ok": True}
+
+
+@router.post("/users/{telegram_id}/mute")
+async def mute_user(telegram_id: int, body: dict, _: None = Depends(_guard)):
+    raw = body.get("hours")
+    if raw in (None, ""):
+        hours = None
+    else:
+        hours = _as_int(raw, None, 0, 87600)
+        if hours is None:
+            raise HTTPException(status_code=400, detail="INVALID_HOURS")
+        hours = hours or None  # 0 -- бессрочный мут
+    _require(await AdminService().mute(_admin_id(), telegram_id,
+                                       body.get("reason", "") or "без причины",
+                                       hours))
+    return {"ok": True}
+
+
+@router.post("/users/{telegram_id}/unmute")
+async def unmute_user(telegram_id: int, _: None = Depends(_guard)):
+    _require(await AdminService().unmute(_admin_id(), telegram_id))
     return {"ok": True}
 
 
@@ -514,7 +538,7 @@ async def reports(offset: int = Query(0, ge=0, le=10**9), _: None = Depends(_gua
 @router.post("/reports/{report_id}/resolve")
 async def report_resolve(report_id: int, body: dict, _: None = Depends(_guard)):
     action = body.get("action", "dismiss")
-    if action not in {"ban1", "banf", "dismiss"}:
+    if action not in {"ban1", "banf", "mute1", "mute24", "mute7", "dismiss"}:
         raise HTTPException(status_code=400, detail="INVALID")
     _require(await AdminService().resolve(_admin_id(), report_id, action))
     return {"ok": True}

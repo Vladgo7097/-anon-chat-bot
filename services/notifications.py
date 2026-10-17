@@ -9,11 +9,14 @@ from models.payment import Payment
 from models.user import User
 from models.chat import Chat, ActiveParticipant
 from utils.time import utcnow
-from services.onboarding import banned
+from services.onboarding import banned, muted
 
 UNBAN_TEXT = {"ru": "✅ Срок блокировки истёк. Добро пожаловать обратно!",
               "en": "✅ Your ban has expired. Welcome back!",
               "uk": "✅ Термін блокування минув. Ласкаво просимо назад!"}
+MUTE_END_TEXT = {"ru": "🔊 Мут снят — можно снова писать и искать собеседника.",
+                 "en": "🔊 Your mute is over — you can write and search again.",
+                 "uk": "🔊 Мут знято — можна знову писати і шукати співрозмовника."}
 ONBOARDING_NUDGE_TEXTS = [
     {"ru": "⏳ Ты начал — но не закончил. Одна кнопка, и случайный собеседник твой. Чего ждёшь?",
      "en": "⏳ You started but didn't finish. One button and a random match is yours. What's stopping you?",
@@ -186,6 +189,7 @@ class NotificationService:
     async def schedule(self):
         from services.settings import bot_value
         from models.ban import Ban
+        from models.mute import Mute
         from sqlalchemy import text
         marketing_enabled = await bot_value("marketing_enabled", 1)
         nudge_after = timedelta(hours=await bot_value("onboarding_nudge_hours", 3))
@@ -222,9 +226,13 @@ class NotificationService:
                         notice(user, "unban", f"unban_expired:{user.telegram_id}:{user.ban_expires.isoformat()}",
                                _tr(UNBAN_TEXT, user), "menu")
                         user.is_banned = False
+                    if user.is_muted and user.mute_expires and user.mute_expires <= now:
+                        notice(user, "unmute", f"unmute_expired:{user.telegram_id}:{user.mute_expires.isoformat()}",
+                               _tr(MUTE_END_TEXT, user), "search:start")
+                        user.is_muted = False
                     if user.is_premium and user.premium_expires and user.premium_expires <= now:
                         user.is_premium = False
-                    if user.deleted_at or user.bot_blocked_at or banned(user):
+                    if user.deleted_at or user.bot_blocked_at or banned(user) or muted(user):
                         continue
                     if not user.onboarding_completed:
                         # The people who tapped /start and stopped are the single
@@ -259,6 +267,8 @@ class NotificationService:
                                "search:start", True)
                 await s.execute(update(Ban).where(Ban.user_id.in_(ids), Ban.is_active.is_(True),
                     Ban.expires_at <= now).values(is_active=False))
+                await s.execute(update(Mute).where(Mute.user_id.in_(ids), Mute.is_active.is_(True),
+                    Mute.expires_at <= now).values(is_active=False))
                 if notices:
                     if s.bind.dialect.name == "postgresql":
                         from sqlalchemy.dialects.postgresql import insert
@@ -368,7 +378,7 @@ class NotificationService:
                 owner_notice = n.type in owner_types and n.user_id == config.OWNER_ID
                 if (n.type in owner_types and not owner_notice) or (not owner_notice and (
                         not user or (banned(user) and n.type != "ban") or user.deleted_at
-                        or user.bot_blocked_at or marketing_disabled)):
+                        or user.bot_blocked_at or marketing_disabled or (n.marketing and muted(user)))):
                     n.status = "skipped"
                     return None
                 cooldown = await s.scalar(select(func.max(Notification.scheduled_at)).where(

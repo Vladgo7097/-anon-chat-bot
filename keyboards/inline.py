@@ -271,6 +271,11 @@ def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Навсегда", icon_custom_emoji_id="5260342697075416641", callback_data=f"admin:banf:{report_id}", style="danger"),
         ],
         [
+            InlineKeyboardButton(text="Мут 1 ч", callback_data=f"admin:mute1:{report_id}", style="primary"),
+            InlineKeyboardButton(text="Мут 24 ч", callback_data=f"admin:mute24:{report_id}", style="primary"),
+            InlineKeyboardButton(text="Мут 7 д", callback_data=f"admin:mute7:{report_id}", style="primary"),
+        ],
+        [
             InlineKeyboardButton(text="Отклонить", icon_custom_emoji_id="5210952531676504517", callback_data=f"admin:dismiss:{report_id}"),
             InlineKeyboardButton(text="Следующая", callback_data=f"admin:reports:{offset}"),
         ],
@@ -331,11 +336,25 @@ def admin_confirm_grant_kb(telegram_id: int) -> InlineKeyboardMarkup:
     ]])
 
 
+def admin_confirm_mute_kb(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="1 час", callback_data=f"admin:domute:{telegram_id}:1", style="primary"),
+        InlineKeyboardButton(text="24 часа", callback_data=f"admin:domute:{telegram_id}:24", style="primary"),
+        InlineKeyboardButton(text="7 дней", callback_data=f"admin:domute:{telegram_id}:168", style="primary"),
+    ], [
+        InlineKeyboardButton(text="Отмена", icon_custom_emoji_id="5210952531676504517", callback_data=f"admin:ucard:{telegram_id}"),
+    ]])
+
+
 def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Забанить", icon_custom_emoji_id="5260342697075416641", callback_data=f"admin:uban:{telegram_id}", style="danger"),
             InlineKeyboardButton(text="Выдать Premium", icon_custom_emoji_id="5920281855378068765", callback_data=f"admin:ugrant:{telegram_id}", style="success"),
+        ],
+        [
+            InlineKeyboardButton(text="Замутить", callback_data=f"admin:umute:{telegram_id}", style="primary"),
+            InlineKeyboardButton(text="Снять мут", callback_data=f"admin:unmute:{telegram_id}"),
         ],
         [
             InlineKeyboardButton(text="Написать от бота", icon_custom_emoji_id="5224455462178549802", callback_data=f"admin:message:{telegram_id}", style="primary"),

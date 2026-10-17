@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import admin_router
 from keyboards import texts as T
-from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb, admin_back_kb, admin_analytics_kb, admin_users_section_kb, admin_moderation_kb, admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb, admin_growth_kb, admin_settings_kb, admin_setting_kb, admin_prices_kb, admin_audit_kb, admin_user_list_kb
+from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb, admin_confirm_mute_kb, admin_back_kb, admin_analytics_kb, admin_users_section_kb, admin_moderation_kb, admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb, admin_growth_kb, admin_settings_kb, admin_setting_kb, admin_prices_kb, admin_audit_kb, admin_user_list_kb
 from services.admin import AdminService, StatsService, authorize, BROADCAST_SEGMENTS, SETTING_LIMITS, SETTING_TITLES, SETTING_DEFAULTS, SETTING_PRESETS, SETTING_KEYS, SETTING_PAGE_SIZE
 from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
@@ -358,12 +358,15 @@ async def cb_reports(callback: CallbackQuery):
         await callback.message.answer("<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб нет.",reply_markup=admin_back_kb("admin:sec:moderation"))
         return
     r=reports[0]
-    names,previous,bans=await AdminService().report_details(callback.from_user.id,r)
-    await callback.message.answer(f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
+    names,previous,bans,mutes=await AdminService().report_details(callback.from_user.id,r)
+    await callback.message.answer(f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов, {mutes} мутов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
 
 
 @admin_router.callback_query(F.data.startswith("admin:ban1:"))
 @admin_router.callback_query(F.data.startswith("admin:banf:"))
+@admin_router.callback_query(F.data.startswith("admin:mute1:"))
+@admin_router.callback_query(F.data.startswith("admin:mute24:"))
+@admin_router.callback_query(F.data.startswith("admin:mute7:"))
 @admin_router.callback_query(F.data.startswith("admin:dismiss:"))
 async def cb_resolve(callback: CallbackQuery):
     parts=callback.data.split(":")
@@ -395,6 +398,10 @@ async def cb_users(callback: CallbackQuery):
 async def user_card_text(admin_id, user):
     reports_count = await AdminService().reports_against(admin_id, user.telegram_id)
     premium = f"до {user.premium_expires:%d.%m.%Y}" if user.premium_expires else "нет"
+    from services.onboarding import muted
+    mute = "нет"
+    if muted(user):
+        mute = f"до {user.mute_expires:%d.%m.%Y %H:%M} UTC" if user.mute_expires else "бессрочно"
     return (
         f"<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> {escape(user.anon_id or '?')}\n"
         f"Telegram ID: {user.telegram_id}\n"
@@ -402,6 +409,7 @@ async def user_card_text(admin_id, user):
         f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
         f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: {reports_count}\n"
         f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
+        f"🔇 Мут: {mute}\n"
         f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>")
 
 
@@ -450,6 +458,30 @@ async def cb_admin_ban_user(callback: CallbackQuery):
     await callback.message.answer(f"⛔ Забанить {target_id} на сколько?",reply_markup=admin_confirm_ban_kb(target_id))
 
 
+@admin_router.callback_query(F.data.startswith("admin:umute:"))
+async def cb_admin_mute_user(callback: CallbackQuery):
+    target_id=int(callback.data.split(":")[-1])
+    await callback.answer()
+    await callback.message.answer(f"🔇 Замутить {target_id} на сколько?",reply_markup=admin_confirm_mute_kb(target_id))
+
+
+@admin_router.callback_query(F.data.startswith("admin:domute:"))
+async def cb_admin_domute(callback: CallbackQuery):
+    parts=callback.data.split(":")
+    target_id,hours=int(parts[2]),int(parts[3])
+    result=await AdminService().mute(callback.from_user.id,target_id,"Решение администратора",hours or None)
+    await callback.answer("Мут выдан" if result.ok else "Не удалось замутить")
+    if result.ok:
+        await callback.message.edit_text(f"🔇 {target_id}"+(" в муте навсегда." if not hours else f" в муте на {hours} ч."))
+
+
+@admin_router.callback_query(F.data.startswith("admin:unmute:"))
+async def cb_admin_unmute_user(callback: CallbackQuery):
+    target_id=int(callback.data.split(":")[-1])
+    result=await AdminService().unmute(callback.from_user.id,target_id)
+    await callback.answer("Мут снят" if result.ok else "Не удалось снять мут")
+
+
 @admin_router.callback_query(F.data.startswith("admin:ugrant:"))
 async def cb_admin_grant_user(callback: CallbackQuery):
     target_id=int(callback.data.split(":")[-1])
@@ -490,7 +522,7 @@ async def cb_admin_dogrant(callback: CallbackQuery):
         await callback.message.edit_text(f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> {target_id}: Premium на {days} дн.")
 
 
-@admin_router.message(Command("user","ban_user","unban","grant"))
+@admin_router.message(Command("user","ban_user","unban","grant","mute_user","unmute"))
 async def cmd_user_action(message: Message):
     parts=message.text.split(maxsplit=3)
     if len(parts)<2:
@@ -507,9 +539,13 @@ async def cmd_user_action(message: Message):
         return
     if command=="/unban":
         result=await AdminService().unban(message.from_user.id,user.telegram_id)
+    elif command=="/unmute":
+        result=await AdminService().unmute(message.from_user.id,user.telegram_id)
     elif len(parts)==4 and parts[2].isdigit():
         if command=="/grant":
             result=await AdminService().grant(message.from_user.id,user.telegram_id,int(parts[2]),parts[3],request_key=f"grant:{message.chat.id}:{message.message_id}")
+        elif command=="/mute_user":
+            result=await AdminService().mute(message.from_user.id,user.telegram_id,parts[3],int(parts[2]) or None)
         else:
             result=await AdminService().ban(message.from_user.id,user.telegram_id,parts[3],int(parts[2]) or None)
     else:

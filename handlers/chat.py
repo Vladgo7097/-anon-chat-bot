@@ -168,11 +168,15 @@ async def cb_chat_control(callback: CallbackQuery, lang: str = "ru"):
 
 
 @chat_router.message()
-async def forward_message(message: Message, album=None, lang: str = "ru"):
+async def forward_message(message: Message, album=None, lang: str = "ru", muted: bool = False, mute_until=None):
     if message.text == "/delete":
         await delete_relayed_message(message, lang=lang)
         return
     if message.text and (message.text.startswith("/") or message.text in T.SYSTEM_TEXTS):
+        return
+    if muted:
+        from services.onboarding import mute_alert
+        await message.answer(mute_alert(mute_until, lang))
         return
     from services.relay import RelayService
     service=RelayService()
