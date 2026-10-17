@@ -35,12 +35,40 @@ CATEGORIES = {"spam", "insult", "adult", "minor", "fraud", "other"}
 SEVERITIES = {"low", "medium", "high"}
 
 SYSTEM_PROMPT = (
-    "Ты -- модератор анонимного чата. По жалобе поставь квалификацию. "
-    "Ответь СТРОГО одним JSON-объектом без markdown и пояснений: "
-    '{"category": "spam|insult|adult|minor|fraud|other", '
-    '"severity": "low|medium|high", '
-    '"summary": "2-3 фразы по-русски: суть нарушения и что сделать модератору"}'
+    "Ты -- модератор анонимного чата. Тебе дадут причину жалобы и диалог. "
+    "Выбери РОВНО ОДНО значение category: spam (реклама), insult (оскорбления), "
+    "adult (контент 18+), minor (несовершеннолетние), fraud (мошенничество), "
+    "other (прочее). Выбери РОВНО ОДНО значение severity: "
+    "low -- мелочь, formalностями, medium -- стоит проверить, "
+    "high -- серьёзно, нужен бан. summary -- две фразы по-русски: "
+    "что случилось и что сделать модератору. "
+    "Пример: причина «Спам/реклама», в диалоге «заходи в @signals, "
+    "плюс 5% каждый день» → ответ "
+    '{"category": "spam", "severity": "medium", "summary": "Приглашение в '
+    'канал с рекламой -- нежелательная реклама; предупредить или отклонить."} '
+    "Отвечай только одним JSON-объектом, без markdown и пояснений."
 )
+
+# Русские ответы модели сводятся к канону до проверки схемы: 0.6B часто
+# отдаёт «реклама»/«средняя» вместо английских токенов из промпта.
+CATEGORY_ALIASES = {
+    "реклама": "spam", "спам": "spam", "спам/реклама": "spam",
+    "оскорбление": "insult", "оскорбления": "insult", "унижение": "insult",
+    "травля": "insult", "грубость": "insult",
+    "18+": "adult", "взрослый": "adult", "взрослые": "adult",
+    "порно": "adult", "откровенный": "adult", "эротика": "adult",
+    "несовершеннолетний": "minor", "несовершеннолетние": "minor",
+    "подозрение на несовершеннолетнего": "minor", "возраст": "minor",
+    "мошенничество": "fraud", "обман": "fraud", "развод": "fraud",
+    "кража": "fraud", "вымогательство": "fraud",
+    "другое": "other", "прочее": "other", "разное": "other", "иное": "other",
+}
+SEVERITY_ALIASES = {
+    "низкая": "low", "низкий": "low", "малая": "low",
+    "средняя": "medium", "средний": "medium",
+    "высокая": "high", "высокий": "high", "критическая": "high",
+    "критичная": "high", "критический": "high",
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("report-ai")
@@ -245,8 +273,18 @@ def ask_model(reason, content):
     category = str(payload.get("category", "")).lower()
     severity = str(payload.get("severity", "")).lower()
     summary = re.sub(r"\s+", " ", str(payload.get("summary", ""))).strip()
+    category = CATEGORY_ALIASES.get(category, category)
+    severity = SEVERITY_ALIASES.get(severity, severity)
     if category not in CATEGORIES or severity not in SEVERITIES or not summary:
         log.warning("вердикт вне схемы: %s", str(payload)[:300])
+        return None
+    # Эхо собственной инструкции вместо вердикта: считать успехом нельзя.
+    if any(
+        frag in summary
+        for frag in ("фразы по-русски", "две фразы по-русски",
+                     "что сделать модератору", "суть нарушения")
+    ):
+        log.warning("summary -- эхо инструкции: %s", summary[:120])
         return None
     return {"category": category, "severity": severity, "summary": summary[:500]}
 
