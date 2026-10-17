@@ -7,6 +7,14 @@
 иначе ~900 МБ RSS висят в RAM постоянно. Классифицируются только
 pending-жалобы без строки в report_ai; после MAX_ATTEMPTS неудач пишется
 служебный вердикт «не разобрано», чтобы очередь не зависала навсегда.
+
+v5: вывод ограничен JSON-схемой (response_format -> json_schema), кривой
+JSON физически невозможен, а пример из промпта убран: 0.6B копировала его
+в summary даже поперёк диалога. Severity прижата полом по категории
+(несовершеннолетние/мошенничество -- минимум high), эхо инструкции в
+summary ловит фильтр ECHO_FRAGMENTS; зацикливания (одно слово много раз
+подряд) давятся repeat_penalty и ретраем; если фильтры не пропускают
+вердикт за 3 попытки, сохраняется категория/severity с пометкой summary-fail.
 """
 
 import json
@@ -30,27 +38,28 @@ HEALTH_TIMEOUT = 90
 BATCH = 4
 MAX_ATTEMPTS = 3
 CONTENT_LIMIT = 1500
+MODEL_TAG = "qwen3-0.6b-q4_k_m/v5.2"
 
 CATEGORIES = {"spam", "insult", "adult", "minor", "fraud", "other"}
 SEVERITIES = {"low", "medium", "high"}
 
 SYSTEM_PROMPT = (
-    "Ты -- модератор анонимного чата. Тебе дадут причину жалобы и диалог. "
-    "Выбери РОВНО ОДНО значение category: spam (реклама), insult (оскорбления), "
+    "Ты -- модератор анонимного чата. Тебе дадут причину жалобы и последние "
+    "реплики диалога. Реши по репликам и верни JSON.\n"
+    "category -- ровно одно: spam (реклама), insult (оскорбления), "
     "adult (контент 18+), minor (несовершеннолетние), fraud (мошенничество), "
-    "other (прочее). Выбери РОВНО ОДНО значение severity: "
-    "low -- мелочь, formalностями, medium -- стоит проверить, "
-    "high -- серьёзно, нужен бан. summary -- две фразы по-русски: "
-    "что случилось и что сделать модератору. "
-    "Пример: причина «Спам/реклама», в диалоге «заходи в @signals, "
-    "плюс 5% каждый день» → ответ "
-    '{"category": "spam", "severity": "medium", "summary": "Приглашение в '
-    'канал с рекламой -- нежелательная реклама; предупредить или отклонить."} '
-    "Отвечай только одним JSON-объектом, без markdown и пояснений."
+    "other (прочее). Категорию ставь по содержанию реплик, а не по причине "
+    "жалобы.\n"
+    "severity -- ровно одно: low (единичная грубость), medium (реклама, "
+    "спам, контент 18+), high (мошенничество, несовершеннолетние, угрозы).\n"
+    "summary -- одна короткая фраза по-русски: конкретные слова или "
+    "поступки из реплик (цитируй ключевые слова). Без советов. Если "
+    "нарушения в репликах не видно, так и напиши."
 )
 
 # Русские ответы модели сводятся к канону до проверки схемы: 0.6B часто
-# отдаёт «реклама»/«средняя» вместо английских токенов из промпта.
+# отдаёт «реклама»/«средняя» вместо английских токенов из промпта, а с
+# json_schema такое уже маловероятно, но пусть остаётся страховкой.
 CATEGORY_ALIASES = {
     "реклама": "spam", "спам": "spam", "спам/реклама": "spam",
     "оскорбление": "insult", "оскорбления": "insult", "унижение": "insult",
@@ -69,6 +78,41 @@ SEVERITY_ALIASES = {
     "высокая": "high", "высокий": "high", "критическая": "high",
     "критичная": "high", "критический": "high",
 }
+
+# Пол вердикта по категории: 0.6B путает severity (в бою minor получила
+# low), а цена промаха разная -- вердикт про несовершеннолетнего не должен
+# тонуть в «мелочи». Модель может поднять severity выше пола, но не ниже.
+SEVERITY_FLOOR = {
+    "minor": "high", "fraud": "high",
+    "adult": "medium", "spam": "medium",
+    "insult": "low", "other": "low",
+}
+SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2}
+
+# Схема жёстко фиксирует форму ответа: enum'ы и типы гарантируются
+# грамматикой llama-server, парсер уже не может увидеть кривой JSON.
+VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "category": {"type": "string", "enum": sorted(CATEGORIES)},
+        "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+        "summary": {"type": "string", "minLength": 8, "maxLength": 300},
+    },
+    "required": ["category", "severity", "summary"],
+    "additionalProperties": False,
+}
+RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {"name": "report_verdict", "strict": True, "schema": VERDICT_SCHEMA},
+}
+
+# Фразы, которые выдают копирование инструкции или шаблона промпта вместо
+# описания диалога: такой summary бесполезен модератору и идёт в ретрай.
+ECHO_FRAGMENTS = (
+    "фраз", "модератор", "предупредить", "отклонить", "нежелательн",
+    "рекомендую", "суть нарушения", "проверить или", "советов", "оценок",
+    "не выдумывай", "причина жалобы",
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("report-ai")
@@ -231,7 +275,58 @@ def _extract_json(text):
         return None
 
 
-def ask_model(reason, content):
+def parse_verdict(text):
+    """Ответ модели в канонический вердикт; None -- вне схемы."""
+    payload = _extract_json(text)
+    if not isinstance(payload, dict):
+        log.warning("в ответе нет JSON-объекта: %s", (text or "")[:200])
+        return None
+    category = str(payload.get("category", "")).lower()
+    severity = str(payload.get("severity", "")).lower()
+    summary = re.sub(r"\s+", " ", str(payload.get("summary", ""))).strip()
+    summary = summary.strip(" -—–:.")
+    for prefix in (
+        "Последние сообщения:",
+        "Причина жалобы:",
+        "Диалог:",
+        "Реплики:",
+        "Ответ:",
+        "Сводка:",
+    ):
+        if summary.startswith(prefix):
+            summary = summary[len(prefix):].strip()
+    category = CATEGORY_ALIASES.get(category, category)
+    severity = SEVERITY_ALIASES.get(severity, severity)
+    if category not in CATEGORIES or severity not in SEVERITIES or not summary:
+        log.warning("вердикт вне схемы: %s", str(payload)[:300])
+        return None
+    floor = SEVERITY_FLOOR[category]
+    if SEVERITY_RANK[severity] < SEVERITY_RANK[floor]:
+        log.info("severity %s поднята полом категории %s до %s", severity, category, floor)
+        severity = floor
+    return {"category": category, "severity": severity, "summary": summary[:500]}
+
+
+def looks_like_echo(summary):
+    """Эхо инструкции или шаблона промпта вместо описания диалога."""
+    return any(frag in summary for frag in ECHO_FRAGMENTS)
+
+
+def looks_degenerate(summary):
+    """Зацикливание (слово повторяется подряд 3+ раз): лечим ретраем."""
+    return bool(re.search(r"\b([\w\-]+)(?:\s+\1\b){2,}", summary, re.IGNORECASE))
+
+
+def passes_filters(summary):
+    """Гейт сводки: эхо инструкции или зацикливание -- в ретрай.
+
+    Копию причины жалобы гейт не трогает: на пустых репликах метка
+    категории -- лучшее, что есть, а «не разобрано» выглядит хуже.
+    """
+    return not looks_like_echo(summary) and not looks_degenerate(summary)
+
+
+def ask_model(reason, content, prompt=SYSTEM_PROMPT):
     """Один проход инференса; dict-вердикт или None (мусор/сбой)."""
     global _last_used
     body = json.dumps(
@@ -239,8 +334,10 @@ def ask_model(reason, content):
             "model": "qwen3-0.6b",
             "max_tokens": 350,
             "temperature": 0.1,
+            "repeat_penalty": 1.15,
+            "response_format": RESPONSE_FORMAT,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": prompt},
                 {
                     "role": "user",
                     "content": f"Причина жалобы: {reason}\n\nДиалог:\n"
@@ -267,26 +364,7 @@ def ask_model(reason, content):
     except (KeyError, IndexError, TypeError):
         log.error("неожиданный формат ответа: %s", str(data)[:300])
         return None
-    payload = _extract_json(text)
-    if not isinstance(payload, dict):
-        return None
-    category = str(payload.get("category", "")).lower()
-    severity = str(payload.get("severity", "")).lower()
-    summary = re.sub(r"\s+", " ", str(payload.get("summary", ""))).strip()
-    category = CATEGORY_ALIASES.get(category, category)
-    severity = SEVERITY_ALIASES.get(severity, severity)
-    if category not in CATEGORIES or severity not in SEVERITIES or not summary:
-        log.warning("вердикт вне схемы: %s", str(payload)[:300])
-        return None
-    # Эхо собственной инструкции вместо вердикта: считать успехом нельзя.
-    if any(
-        frag in summary
-        for frag in ("фразы по-русски", "две фразы по-русски",
-                     "что сделать модератору", "суть нарушения")
-    ):
-        log.warning("summary -- эхо инструкции: %s", summary[:120])
-        return None
-    return {"category": category, "severity": severity, "summary": summary[:500]}
+    return parse_verdict(text)
 
 
 def store(report_id, category, severity, summary, model):
@@ -307,27 +385,41 @@ def store(report_id, category, severity, summary, model):
 def classify(report):
     rid = int(report.get("id") or 0)
     verdict = ask_model(report.get("reason", ""), report.get("content", ""))
-    if verdict:
+    if verdict and passes_filters(verdict["summary"]):
         store(
             rid,
             verdict["category"],
             verdict["severity"],
             verdict["summary"],
-            "qwen3-0.6b-q4_k_m",
+            MODEL_TAG,
         )
         _failures.pop(rid, None)
         return
+    if verdict:
+        log.warning("summary не прошла фильтр: %s", verdict["summary"][:160])
     _failures[rid] = _failures.get(rid, 0) + 1
     log.warning("жалоба #%s: разбор не удался, попытка %s", rid, _failures[rid])
     if _failures[rid] >= MAX_ATTEMPTS:
-        store(
-            rid,
-            "other",
-            "unknown",
-            "модель не смогла разобрать ответ за "
-            f"{_failures[rid]} попытки -- открой текст жалобы вручную",
-            "qwen3-0.6b-q4_k_m/parse-fail",
-        )
+        if verdict:
+            # Категория и severity с полом достаточно надёжны; терять их
+            # из-за кривой формулировки сводки незачем -- модератор откроет
+            # реплики и разберётся по ним.
+            store(
+                rid,
+                verdict["category"],
+                verdict["severity"],
+                "не разобрано: сводка не прошла проверку -- смотрите реплики",
+                MODEL_TAG + "/summary-fail",
+            )
+        else:
+            store(
+                rid,
+                "other",
+                "unknown",
+                "модель не смогла разобрать ответ за "
+                f"{_failures[rid]} попытки -- открой текст жалобы вручную",
+                MODEL_TAG + "/parse-fail",
+            )
         _failures.pop(rid, None)
 
 
