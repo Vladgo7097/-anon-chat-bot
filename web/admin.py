@@ -24,6 +24,7 @@ import config
 from models.base import async_session
 from models.chat import Chat
 from models.operations import AdminAudit, AnalyticsEvent, Broadcast, Notification
+from models.report import ReportAI
 from models.user import User
 from services.admin import (AdminService, BROADCAST_SEGMENTS, SETTING_DEFAULTS,
                             SETTING_LIMITS, SETTING_TITLES, StatsService)
@@ -489,10 +490,24 @@ async def broadcast_cancel(job_id: int, _: None = Depends(_guard)):
 async def reports(offset: int = Query(0, ge=0, le=10**9), _: None = Depends(_guard)):
     """Жалобы, ожидающие решения."""
     rows = await AdminService().reports(_admin_id(), offset)
+    # Вердикт модели отдельным запросом: один JOIN на страницу очереди,
+    # а не N запросов по жалобе.
+    ids = [r.id for r in (rows or [])]
+    verdicts = {}
+    if ids:
+        async with async_session() as s:
+            found = await s.scalars(
+                select(ReportAI).where(ReportAI.report_id.in_(ids)))
+            for verdict in found:
+                verdicts[verdict.report_id] = {
+                    "severity": verdict.severity,
+                    "category": verdict.category,
+                    "summary": verdict.summary}
     return {"items": [{"id": r.id, "reporter_id": r.reporter_id,
                        "target_id": r.reported_id, "reason": r.reason,
                        "status": r.status, "created_at": _iso(r.created_at),
-                       "message": (r.message_content or "")[:200]}
+                       "message": (r.message_content or "")[:200],
+                       "ai": verdicts.get(r.id)}
                       for r in (rows or [])]}
 
 

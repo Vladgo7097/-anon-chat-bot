@@ -1107,6 +1107,32 @@ async function renderBroadcasts() {
 
 /* ============================== жалобы ============================== */
 
+const AI_SEVERITY = {
+  low: ["ok", "низкая"],
+  medium: ["warn", "средняя"],
+  high: ["bad", "высокая"],
+  unknown: ["bot", "не разобрано"],
+};
+const AI_CATEGORY = {
+  spam: "Спам", insult: "Оскорбления", minor: "Несовершеннолетние",
+  adult: "Контент 18+", fraud: "Мошенничество", other: "Прочее",
+  unknown: "Ошибка разбора",
+};
+
+function aiBlock(ai) {
+  if (!ai) {
+    return '<div class="dim" style="font-size:12px;margin-bottom:9px">'
+      + "Модель: ждёт вердикта</div>";
+  }
+  const sev = AI_SEVERITY[ai.severity] || AI_SEVERITY.unknown;
+  const cat = AI_CATEGORY[ai.category] || ai.category;
+  return `<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <span class="chip ${sev[0]}">Модель · ${sev[1]}</span>
+      <span class="dim" style="font-size:12px">${esc(cat)}</span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:9px">${esc(ai.summary)}</div>`;
+}
+
 async function renderReports() {
   const data = await api("/api/admin/reports");
   const items = data.items || [];
@@ -1119,6 +1145,7 @@ async function renderReports() {
           <span class="chip bad">${esc(r.reason)}</span>
           <span class="dim" style="font-size:12px">${fmtDate(r.created_at)}</span>
         </div>
+        ${aiBlock(r.ai)}
         <dl class="kv">
           <dt>Кто пожаловался</dt><dd class="mono">${esc(r.reporter_id)}</dd>
           <dt>На кого</dt><dd class="mono">${esc(r.target_id)}</dd>
