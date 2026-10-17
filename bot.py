@@ -85,10 +85,13 @@ async def main():
     await on_startup()
 
     def build_bot(token, default_lang, detect_client_lang):
-        from utils.telegram import RetryTelegramRequests
+        from utils.telegram import RetryTelegramRequests, TimeoutBoundedSession
+        # Канал до Telegram рвёт соединения посреди TLS: короткий потолок
+        # превращает зависание в быструю неудачу, а middleware -- в повтор.
         instance = Bot(
             token=token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            session=TimeoutBoundedSession(),
         )
         instance.session.middleware(RetryTelegramRequests())
         # Bot.id is read out of the token, so telling the two apart costs no

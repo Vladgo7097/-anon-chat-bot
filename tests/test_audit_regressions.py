@@ -5,8 +5,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy import select, event
 from redis.exceptions import ConnectionError
-from aiogram.exceptions import TelegramRetryAfter
-from aiogram.methods import CopyMessage
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+)
+from aiogram.methods import CopyMessage, GetUpdates
 from test_chat_duration import DatabaseCase
 from models.user import User
 from models.operations import Notification
@@ -234,3 +238,65 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await RetryTelegramRequests()(request, "bot", method), "ok")
             sleep.assert_awaited_once_with(1)
         self.assertEqual(request.await_count, 2)
+
+    async def test_network_reset_is_retried_and_then_succeeds(self):
+        from utils.telegram import RetryTelegramRequests
+        method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
+        reset = TelegramNetworkError(method=method, message="Connection reset by peer")
+        request = AsyncMock(side_effect=[reset, reset, "ok"])
+        with patch("utils.telegram.asyncio.sleep", AsyncMock()) as sleep:
+            self.assertEqual(await RetryTelegramRequests()(request, "bot", method), "ok")
+            self.assertEqual([call.args[0] for call in sleep.await_args_list], [0.5, 1.5])
+        self.assertEqual(request.await_count, 3)
+
+    async def test_network_stall_after_last_attempt_propagates_up(self):
+        from utils.telegram import RetryTelegramRequests
+        method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
+        timeout = TelegramNetworkError(method=method, message="Request timeout error")
+        request = AsyncMock(side_effect=timeout)
+        with patch("utils.telegram.asyncio.sleep", AsyncMock()) as sleep:
+            with self.assertRaises(TelegramNetworkError):
+                await RetryTelegramRequests()(request, "bot", method)
+        self.assertEqual(request.await_count, 3)
+        self.assertEqual(sleep.await_count, 2)
+
+    async def test_long_poll_failure_is_left_to_the_dispatcher(self):
+        from utils.telegram import RetryTelegramRequests
+        method = GetUpdates(offset=0)
+        request = AsyncMock(side_effect=TelegramNetworkError(method=method, message="Request timeout error"))
+        with patch("utils.telegram.asyncio.sleep", AsyncMock()) as sleep:
+            with self.assertRaises(TelegramNetworkError):
+                await RetryTelegramRequests()(request, "bot", method)
+        self.assertEqual(request.await_count, 1)
+        sleep.assert_not_awaited()
+
+    async def test_business_error_is_not_retried(self):
+        from utils.telegram import RetryTelegramRequests
+        method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
+        request = AsyncMock(side_effect=TelegramBadRequest(method=method, message="chat not found"))
+        with patch("utils.telegram.asyncio.sleep", AsyncMock()):
+            with self.assertRaises(TelegramBadRequest):
+                await RetryTelegramRequests()(request, "bot", method)
+        self.assertEqual(request.await_count, 1)
+
+    async def test_session_bounds_small_calls_and_spares_uploads_and_polling(self):
+        from aiogram.client.session.aiohttp import AiohttpSession
+        from aiogram.methods import SendMessage, SendPhoto
+        from aiogram.types import BufferedInputFile
+        from utils.telegram import REQUEST_TIMEOUT, TimeoutBoundedSession
+        session = TimeoutBoundedSession()
+        mock = AsyncMock()
+        photo = BufferedInputFile(b"x", filename="photo.jpg")
+        with patch.object(AiohttpSession, "make_request", mock):
+            await session.make_request("bot", SendMessage(chat_id=1, text="hi"))
+            await session.make_request("bot", SendPhoto(chat_id=1, photo=photo))
+            await session.make_request("bot", GetUpdates(offset=0))
+            await session.make_request("bot", GetUpdates(offset=0), timeout=70)
+        bounded = [(call.args[1].__class__.__name__, call.kwargs["timeout"])
+                   for call in mock.await_args_list]
+        self.assertEqual(bounded, [
+            ("SendMessage", REQUEST_TIMEOUT),
+            ("SendPhoto", None),
+            ("GetUpdates", None),
+            ("GetUpdates", 70),
+        ])
