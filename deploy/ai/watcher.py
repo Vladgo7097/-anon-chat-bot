@@ -8,7 +8,10 @@
 при MemAvailable < 500 МБ старт откладывается: бот в борьбе за RAM важнее.
 Классифицируются только
 pending-жалобы без строки в report_ai; после MAX_ATTEMPTS неудач пишется
-служебный вердикт «не разобрано», чтобы очередь не зависала навсегда.
+служебный вердикт «не разобрано», чтобы очередь не зависала навсегда. Если
+жалоба висит без вердикта дольше STUCK_SECONDS, владельцу уходит алерт
+(вебхук из ALERT_WEBHOOK_URL или телеграм от бота); главный цикл пингует
+systemd-watchdog, чтобы полное зависание процесса не осталось незамеченным.
 
 v5: вывод ограничен JSON-схемой (response_format -> json_schema), кривой
 JSON физически невозможен, а пример из промпта убран: 0.6B копировала его
@@ -21,8 +24,10 @@ summary ловит фильтр ECHO_FRAGMENTS; зацикливания (одн
 
 import json
 import logging
+import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -37,6 +42,9 @@ PORT = "18080"
 POLL_SECONDS = 15
 IDLE_SECONDS = 180
 HEALTH_TIMEOUT = 90
+STUCK_SECONDS = 45 * 60
+ALERT_REPEAT_SECONDS = 6 * 3600
+ALERT_RETRY_SECONDS = 10 * 60
 BATCH = 4
 MAX_ATTEMPTS = 3
 CONTENT_LIMIT = 1500
@@ -141,6 +149,8 @@ _llama = None
 _last_used = 0.0
 _failures: dict = {}
 _db_error_logged = False
+_last_alert_ts = 0.0
+_last_alert_try = 0.0
 
 
 def psql(sql, timeout=30):
@@ -161,6 +171,21 @@ def psql(sql, timeout=30):
 def q(value):
     """SQL-литерал: одинарные кавычки удваиваем -- текст жалоб чужой."""
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _sd_notify(message):
+    """READY/WATCHDOG для systemd; без NOTIFY_SOCKET -- тихо ничего."""
+    sock_path = os.environ.get("NOTIFY_SOCKET")
+    if not sock_path:
+        return
+    if sock_path.startswith("@"):
+        sock_path = "\0" + sock_path[1:]
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+            sock.connect(sock_path)
+            sock.sendall(message.encode("utf-8"))
+    except OSError as exc:
+        log.debug("sd_notify(%s): %s", message, exc)
 
 
 def fetch_pending():
@@ -193,6 +218,26 @@ def fetch_pending():
         except json.JSONDecodeError:
             log.warning("не-JSON строка из psql: %s", line[:120])
     return out
+
+
+def oldest_unprocessed_age():
+    """Возраст самой старой жалобы без вердикта, сек; None -- БД молчит.
+
+    Ноль -- очередь пуста; None -- запрос не прошёл: недоступность БД
+    тревогой здесь не дублируем, бот и без нас её заметит.
+    """
+    rows = psql(
+        "SELECT coalesce(EXTRACT(EPOCH FROM now() - min(r.created_at)), 0)"
+        "::int FROM reports r LEFT JOIN report_ai a ON a.report_id = r.id"
+        " WHERE r.status='pending' AND a.report_id IS NULL"
+    )
+    if rows is None:
+        return None
+    try:
+        return int(rows.strip())
+    except ValueError:
+        log.warning("возраст очереди не распознан: %s", rows[:80])
+        return None
 
 
 def mem_available_mb():
@@ -259,6 +304,7 @@ def ensure_llama():
 
     deadline = time.time() + HEALTH_TIMEOUT
     while time.time() < deadline:
+        _sd_notify("WATCHDOG=1")
         if _llama.poll() is not None:
             log.error("llama-server умер при старте, см. %s", LLAMA_LOG)
             return False
@@ -451,6 +497,96 @@ def classify(report):
         _failures.pop(rid, None)
 
 
+def alert_needed(age_seconds, last_alert_ts, last_try_ts, now):
+    """Пора ли бить тревогу -- чистая логика, без БД и сети (для тестов)."""
+    if age_seconds is None or age_seconds < STUCK_SECONDS:
+        return False
+    if now - last_try_ts < ALERT_RETRY_SECONDS:
+        return False
+    return now - last_alert_ts >= ALERT_REPEAT_SECONDS
+
+
+def build_alert_text(age_seconds):
+    return (
+        "⚠️ ИИ-разбор жалоб встал: жалоба без вердикта уже "
+        f"{age_seconds // 60} мин. Проверь вотчер: "
+        "systemctl status llm-report-watcher, "
+        "journalctl -u llm-report-watcher -n 50"
+    )
+
+
+def _container_env(name):
+    """Переменная окружения контейнера бота; значение наружу не логируем."""
+    try:
+        proc = subprocess.run(
+            ["docker", "exec", "anon-chat-bot-bot-1", "printenv", name],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warning("env контейнера недоступен: %s", exc)
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def _post_json(url, payload, channel):
+    """JSON-POST с жёстким таймаутом; True -- ответ 2xx."""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if 200 <= resp.status < 300:
+                return True
+            log.warning("%s алерта ответил %s", channel, resp.status)
+    except (urllib.error.URLError, OSError) as exc:
+        log.warning("%s алерта не ответил: %s", channel, exc)
+    return False
+
+
+def send_alert(text):
+    """Алерт владельцу: вебхук (если задан), иначе телеграм от бота.
+
+    Токен и id читаются из окружения контейнера в момент отправки -- на
+    диске хоста секретов не появляется. Нагрузка вебхука совпадает с
+    bot_health: content для Discord, text для Slack.
+    """
+    url = os.environ.get("ALERT_WEBHOOK_URL", "").strip()
+    if url and _post_json(url, {"content": text, "text": text}, "вебхук"):
+        log.info("алерт ушёл по вебхуку")
+        return True
+    token = _container_env("BOT_TOKEN") or _container_env("BOT2_TOKEN")
+    owner = _container_env("OWNER_ID") or _container_env("ADMIN_IDS").split(",")[0].strip()
+    if not token or not owner:
+        log.error("алерт не ушёл: нет ни вебхука, ни доступа к боту")
+        return False
+    api = f"https://api.telegram.org/bot{token}/sendMessage"
+    ok = _post_json(
+        api,
+        {"chat_id": owner, "text": text, "disable_web_page_preview": True},
+        "телеграм",
+    )
+    if ok:
+        log.info("алерт отправлен владельцу")
+    return ok
+
+
+def stuck_queue_alert():
+    """Жалоба без вердикта дольше STUCK_SECONDS -- тревога (с дедупом)."""
+    global _last_alert_ts, _last_alert_try
+    now = time.time()
+    age = oldest_unprocessed_age()
+    if not alert_needed(age, _last_alert_ts, _last_alert_try, now):
+        return
+    _last_alert_try = now
+    if send_alert(build_alert_text(age)):
+        _last_alert_ts = now
+
+
 def drain():
     """Пока есть жалобы без вердикта -- разбирать их пачками, пока модель жива."""
     while True:
@@ -458,6 +594,7 @@ def drain():
         if not rows:
             return
         for report in rows:
+            _sd_notify("WATCHDOG=1")
             if not ensure_llama():
                 log.error("модель не поднялась -- выходим до следующего цикла")
                 return
@@ -466,6 +603,7 @@ def drain():
 
 def main():
     log.info("вотчер жалоб запущен (модель: %s)", MODEL)
+    _sd_notify("READY=1")
 
     def _stop(signum, frame):
         log.info("сигнал %s -- выходим", signum)
@@ -476,8 +614,11 @@ def main():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     while True:
+        _sd_notify("WATCHDOG=1")
         maybe_stop()
         drain()
+        stuck_queue_alert()
+        _sd_notify("WATCHDOG=1")
         time.sleep(POLL_SECONDS)
 
 

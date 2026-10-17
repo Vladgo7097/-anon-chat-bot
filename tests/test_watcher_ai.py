@@ -6,8 +6,10 @@
 """
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 WATCHER_PATH = (
     Path(__file__).resolve().parent.parent / "deploy" / "ai" / "watcher.py"
@@ -147,12 +149,53 @@ class MemoryGuardTest(unittest.TestCase):
         self.assertGreater(avail, 0)
 
     def test_ensure_llama_skips_start_when_memory_is_low(self):
-        from unittest.mock import patch
-
         self.assertIsNone(watcher._llama)
         with patch.object(watcher, "MEM_MIN_MB", 10**9):
             self.assertFalse(watcher.ensure_llama())
         self.assertIsNone(watcher._llama)  # процесс даже не стартовал
+
+
+class AlertLogicTest(unittest.TestCase):
+    def test_no_alert_below_threshold(self):
+        now = 1_000_000.0
+        self.assertFalse(watcher.alert_needed(100, 0.0, 0.0, now))
+        self.assertFalse(watcher.alert_needed(None, 0.0, 0.0, now))
+
+    def test_alert_when_stuck_and_quiet(self):
+        now = 1_000_000.0
+        age = watcher.STUCK_SECONDS + 60
+        self.assertTrue(watcher.alert_needed(age, 0.0, 0.0, now))
+
+    def test_repeat_window_suppresses(self):
+        now = 1_000_000.0
+        age = watcher.STUCK_SECONDS + 60
+        self.assertFalse(watcher.alert_needed(age, now - 100.0, now - 100.0, now))
+
+    def test_failed_send_retries_after_backoff(self):
+        now = 1_000_000.0
+        age = watcher.STUCK_SECONDS + 60
+        # прошлая попытка только что не удалась -- ждём бэкофф
+        self.assertFalse(watcher.alert_needed(age, 0.0, now - 1.0, now))
+        # бэкофф истёк, алертов давно не было -- пора
+        self.assertTrue(
+            watcher.alert_needed(age, 0.0, now - watcher.ALERT_RETRY_SECONDS, now)
+        )
+
+    def test_alert_text_mentions_minutes_and_service(self):
+        text = watcher.build_alert_text(47 * 60)
+        self.assertIn("47 мин", text)
+        self.assertIn("llm-report-watcher", text)
+
+
+class WatchdogTest(unittest.TestCase):
+    def test_sd_notify_survives_bad_socket(self):
+        with patch.dict(os.environ, {"NOTIFY_SOCKET": "/nonexistent/watchdog.sock"}):
+            watcher._sd_notify("READY=1")  # не должно бросить
+
+    def test_sd_notify_without_socket_is_noop(self):
+        env = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}
+        with patch.dict(os.environ, env, clear=True):
+            watcher._sd_notify("WATCHDOG=1")  # тихо ничего
 
 
 if __name__ == "__main__":

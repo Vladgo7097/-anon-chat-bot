@@ -4,13 +4,17 @@
 # вернуться сам; OOMScoreAdjust=900 -- при нехватке RAM модель первая идёт
 # под нож (у llama-server внутри вотчер поднимает oom_score_adj до 1000),
 # а бот и веб живут дольше классификатора.
+#
+# Type=notify + WatchdogSec: вотчер сам пингует watchdog из главного цикла,
+# поэтому systemd добивает не только краш, но и полное зависание процесса.
 [Unit]
 Description=LLM-классификатор жалоб (Qwen3-0.6B по требованию)
 After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+WatchdogSec=240
 ExecStart=/usr/bin/python3 /opt/llm/watcher.py
 WorkingDirectory=/opt/llm
 Restart=always
