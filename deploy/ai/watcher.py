@@ -4,7 +4,9 @@
 Стоит на хосте, не в контейнере: ходит в Postgres через `docker exec psql`,
 чтобы не трогать стек бота, а llama-server поднимает по требованию -- модель
 стартует под первую жалобу в пачке и умирает через IDLE_SECONDS молчания,
-иначе ~900 МБ RSS висят в RAM постоянно. Классифицируются только
+иначе ~900 МБ RSS висят в RAM постоянно. Модель поднимается с nice 10, а
+при MemAvailable < 500 МБ старт откладывается: бот в борьбе за RAM важнее.
+Классифицируются только
 pending-жалобы без строки в report_ai; после MAX_ATTEMPTS неудач пишется
 служебный вердикт «не разобрано», чтобы очередь не зависала навсегда.
 
@@ -38,6 +40,8 @@ HEALTH_TIMEOUT = 90
 BATCH = 4
 MAX_ATTEMPTS = 3
 CONTENT_LIMIT = 1500
+MEM_MIN_MB = 500
+NICE_LEVEL = "10"
 MODEL_TAG = "qwen3-0.6b-q4_k_m/v5.2"
 
 CATEGORIES = {"spam", "insult", "adult", "minor", "fraud", "other"}
@@ -191,12 +195,33 @@ def fetch_pending():
     return out
 
 
+def mem_available_mb():
+    """MemAvailable в МБ; None -- /proc/meminfo недоступен (не блокируем)."""
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError) as exc:
+        log.warning("meminfo не прочитан: %s", exc)
+    return None
+
+
 def ensure_llama():
     """Поднять llama-server, если он мёртв; True -- можно слать запрос."""
     global _llama, _last_used
     if _llama is not None and _llama.poll() is None:
         _last_used = time.time()
         return True
+
+    avail = mem_available_mb()
+    if avail is not None and avail < MEM_MIN_MB:
+        log.warning(
+            "мало памяти: MemAvailable %s МБ < %s -- старт модели отложен",
+            avail,
+            MEM_MIN_MB,
+        )
+        return False
 
     def _oom_last():
         # Первым под нож при нехватке RAM: бот и веб важнее классификатора.
@@ -207,6 +232,9 @@ def ensure_llama():
             log.warning("oom_score_adj не выставлен: %s", exc)
 
     cmd = [
+        "nice",
+        "-n",
+        NICE_LEVEL,
         LLAMA,
         "-m",
         MODEL,
