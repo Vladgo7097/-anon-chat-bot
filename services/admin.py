@@ -228,7 +228,10 @@ class StatsService:
                     new=new, completed=completed, chats=chats)
 
     async def overview(self, days=1):
-        cutoff=utcnow().replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=days-1)
+        # Сутки -- по календарю Киева: «новых сегодня» в панели и в карточке
+        # первого запуска должны означать один и тот же день.
+        day_start, day_end = kyiv_day_bounds()
+        cutoff=day_start-timedelta(days=days-1)
         week_ago=utcnow()-timedelta(days=7)
         two_weeks_ago=utcnow()-timedelta(days=14)
         async with async_session() as s:
@@ -237,7 +240,6 @@ class StatsService:
             new_7d=await s.scalar(select(func.count(User.id)).where(User.created_at>=week_ago))
             new_prev_7d=await s.scalar(select(func.count(User.id)).where(
                 User.created_at>=two_weeks_ago,User.created_at<week_ago))
-            day_start, day_end = kyiv_day_bounds()
             starts=await s.scalar(select(func.count(StartEvent.id)))
             starts_today=await s.scalar(select(func.count(StartEvent.id)).where(
                 StartEvent.created_at>=day_start,StartEvent.created_at<day_end))

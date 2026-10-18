@@ -29,7 +29,7 @@ from services.admin import (AdminService, BROADCAST_SEGMENTS, SETTING_DEFAULTS,
                             SETTING_LIMITS, SETTING_TITLES, StatsService)
 from utils.bots import _configured_ids
 from utils.bots import label as bot_label
-from utils.time import utcnow
+from utils.time import kyiv_day_bounds, utcnow
 
 router = APIRouter(prefix="/api/admin")
 # Отдельный роутер под саму страницу: её нельзя вешать на /api/admin,
@@ -107,7 +107,9 @@ def _iso(value):
 
 
 def _start_of_day():
-    return utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    """Начало суток по Киеву: панель считает «сегодня» так же, как карточка
+    первого запуска и админ-обзор -- по календарю Europe/Kyiv."""
+    return kyiv_day_bounds()[0]
 
 
 def _user_row(user, *, detail: bool = False):
