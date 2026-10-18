@@ -105,9 +105,29 @@ async def cmd_start(message: Message, state: FSMContext, event_update: Update | 
         await register_start(user.id, message.bot.id, event_update.update_id,
                              username=user.username, first_name=user.first_name)
     payload = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
+    # ОП: пока требование не выполнено, онбординг ждёт. Регистрация запуска
+    # выше уже случилась -- ни один /start не теряется, даже если человек так
+    # и не подпишется.
+    from services.op import op_gate, op_screen_kb, op_screen_text
+    gate = await op_gate(message.bot, user.id)
+    if gate.blocked:
+        from repositories.users import UserRepository
+        from utils import bots
+        row = await UserRepository().get(user.id)
+        lang = getattr(row, "language", None) or bots.default_lang(message.bot, user)
+        await message.answer(op_screen_text(gate, lang), reply_markup=op_screen_kb(gate, lang))
+        return
+    await enter_bot(message, state, user, message.bot, payload)
+
+
+async def enter_bot(message, state, user, bot, payload=""):
+    """Общий вход после регистрации и проверки ОП: онбординг или меню.
+
+    Язык берётся из языка клиента (у второго бота -- украинский по
+    умолчанию), чтобы ru/uk/en-аудитория не видела экран выбора."""
     result = await OnboardingService().start(user.id, user.username, user.first_name, payload)
     from utils import bots
-    lang = (result.data or {}).get("language") or bots.default_lang(message.bot, user)
+    lang = (result.data or {}).get("language") or bots.default_lang(bot, user)
     if result.code == "LANGUAGE":
         # Telegram already knows what language its client runs on: a ru/uk/en
         # client lands straight on the welcome screen, anything else still gets
@@ -115,10 +135,10 @@ async def cmd_start(message: Message, state: FSMContext, event_update: Update | 
         # used to demand was one more place to stall, and it stalled 2600 people
         # for a week. Settings can change the language afterwards regardless.
         detected = (getattr(user, "language_code", None) or "").split("-", 1)[0].lower()
-        if not getattr(message.bot, "detect_client_lang", True):
+        if not getattr(bot, "detect_client_lang", True):
             # The second bot is Ukrainian on purpose: it exists for that
             # audience, so it opens in Ukrainian whatever its client runs in.
-            detected = bots.default_lang(message.bot)
+            detected = bots.default_lang(bot)
         if detected in T.LANGUAGE_NAMES:
             result = await OnboardingService().advance(user.id, "lang", detected)
             lang = detected

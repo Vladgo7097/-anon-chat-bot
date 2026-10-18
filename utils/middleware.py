@@ -70,6 +70,25 @@ class AccessMiddleware(BaseMiddleware):
             else:
                 await show_step(event, data["state"], ServiceResult(False, "BANNED", {"until": user.ban_expires}), lang=lang)
             return
+        # ОП: пока требование не выполнено, дальше гейта не проходит ничего,
+        # кроме /start (он покажет экран сам, уже после регистрации запуска),
+        # кнопки «Проверить подписку» и админских команд. Владельцы гейт не
+        # видят вовсе: они обязаны тестировать бота как обычные пользователи.
+        if (actor.id not in ADMIN_IDS and command != "/start"
+                and not (callback and action.startswith("op:"))):
+            from services.op import op_alert, op_gate, op_screen_kb, op_screen_text, op_warn_allowed
+            gate = await op_gate(bot, actor.id)
+            if gate.blocked:
+                text = op_screen_text(gate, lang)
+                markup = op_screen_kb(gate, lang)
+                if callback:
+                    await event.answer(op_alert(lang), show_alert=True)
+                    if await op_warn_allowed(getattr(bot, "id", None), actor.id):
+                        from handlers.start import callback_target
+                        await callback_target(event).answer(text, reply_markup=markup)
+                else:
+                    await event.answer(text, reply_markup=markup)
+                return
         await set_online(actor.id)
         step = step_for(user)
         # The registration's own taps must always reach their handlers: this
@@ -77,6 +96,7 @@ class AccessMiddleware(BaseMiddleware):
         # no text, so command stayed "") and re-sent the language screen on
         # every tap -- the flow dead-ended on its very first step.
         onboarding_tap = callback and (action.startswith("lang:")
+                                       or action.startswith("op:")
                                        or action in {"rules", "rules:ok", "back:start", "menu"})
         if step != "MENU" and command != "/start" and not onboarding_tap:
             if callback:

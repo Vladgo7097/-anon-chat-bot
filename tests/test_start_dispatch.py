@@ -13,6 +13,7 @@ from aiogram.enums import MessageEntityType
 from aiogram.types import Chat, Message, MessageEntity, Update, User
 
 from handlers import load_routers
+from services.op import OpGate
 from services.result import ServiceResult
 
 
@@ -41,6 +42,8 @@ class StartDispatchTests(unittest.TestCase):
                       new=AsyncMock(return_value=ServiceResult(True, "WELCOME"))),
                 patch("services.registration.register_start",
                       new=AsyncMock(return_value=ServiceResult(True, "FIRST"))),
+                patch("services.op.op_gate",
+                      new=AsyncMock(return_value=OpGate())),
                 patch.object(bot.session, "make_request", new=telegram),
             ):
                 for index, text in enumerate(("/start", "/start@offline_test_bot")):

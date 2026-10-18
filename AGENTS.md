@@ -48,6 +48,7 @@ Telegram-бот анонимного чата (аналог "Random Coffee" / om
 - `premium.py` — премиум-подписка: витрина, `pre_checkout`/`successful_payment` (Telegram Stars)
 - `ads.py` — отслеживание вступления в рекламный канал (`ChatMemberUpdated`)
 - `admin.py` — админ-панель: статистика, воронка, экспорт, жалобы, сезонные события
+- `op.py` — обязательная подписка: экран требования и кнопка «Проверить подписку» у пользователя, панель «📛 Подписка» в `/admin`
 - `stats.py`, `help.py` — вспомогательные
 
 ### services/ (по одному файлу на домен, часто класс `*Service` + модульные функции)
@@ -66,6 +67,7 @@ Telegram-бот анонимного чата (аналог "Random Coffee" / om
 - `settings.py::SettingsService`, `backup_alert.py` — уведомление о неудачном бэкапе
 - `funnel_alert.py::check()` — страж воронки: заходы без завершений регистрации или полное
   отсутствие заходов за 24 ч → одно сообщение владельцу в день (гоняется воркером раз в 10 мин)
+- `op.py` — гейт в `AccessMiddleware`, проверки `getChatMember`, срок по Киеву, автоотключение воркером, рассылка неподписанным (`op_notice` в общей очереди уведомлений)
 - `result.py::ServiceResult` — общий тип результата операций сервисов
 
 ### repositories/
@@ -77,10 +79,11 @@ Telegram-бот анонимного чата (аналог "Random Coffee" / om
 - `payment.py`: `Payment`, `PremiumSubscription`, `Product`, `Entitlement`
 - `operations.py`: `BotSetting`, `AdminAudit`, `AnalyticsEvent`, `Referral`, `Streak`, `Achievement`,
   `Offer`, `Notification`, `Broadcast`, `AdCampaign`, `AdImpression`, `AdJoin`
+- `op.py`: `OpSettings`, `OpChat` — конфигурация и ресурсы обязательной подписки
 - `report.py::Report`, `ban.py::Ban`
 
 ### workers/
-- `maintenance.py::run(bot)` — фоновый цикл: рассылка уведомлений из очереди, обслуживание (запускается из `bot.py`), раз в 10 мин `services.funnel_alert.check()`
+- `maintenance.py::run(bot)` — фоновый цикл: рассылка уведомлений из очереди, обслуживание (запускается из `bot.py`), раз в 10 мин `services.funnel_alert.check()`; ОП живёт тем же циклом: `services.op.tick()` раз в минуту и порции рассылки `op_notify`
 
 ### web/ — только статичная информационная страница (отдельный контейнер `web`, FastAPI + uvicorn)
 **Никакой логики бота на сайте нет и сознательно не будет** — ни аккаунтов, ни поиска/чата/
@@ -115,11 +118,11 @@ Telegram-бот анонимного чата (аналог "Random Coffee" / om
 - `inline.py`, `reply.py` — клавиатуры; `texts.py` — тексты кнопок/сообщений
 
 ### migrations/
-- Пронумерованные `.sql`-файлы (000…012), применяются `runner.py::migrate()` из `on_startup()`.
+- Пронумерованные `.sql`-файлы (000…023), применяются `runner.py::migrate()` из `on_startup()`.
   Alembic не используется. Новую миграцию — новым файлом с следующим номером.
 
 ### tests/
-- pytest, по одному файлу на область: онбординг, платежи, поиск, рассылки, приватность,
+- pytest, по одному файлу на область: онбординг, платежи, поиск, рассылки, приватность, ОП (test_op.py),
   callback-роутинг, миграции, стресс и др. Реальный Telegram не дёргается.
 
 ## Как гонять тесты быстро

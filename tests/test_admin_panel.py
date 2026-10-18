@@ -17,7 +17,7 @@ from services.notifications import NotificationService, enqueue
 from keyboards.inline import (admin_kb, admin_settings_kb, admin_setting_kb, admin_back_kb,
                               admin_growth_kb, admin_analytics_kb, admin_users_section_kb,
                               admin_moderation_kb, admin_broadcast_section_kb,
-                              admin_settings_section_kb, admin_system_kb)
+                              admin_settings_section_kb, admin_system_kb, admin_op_kb)
 from utils.time import utcnow
 
 
@@ -154,17 +154,17 @@ class AdminPanelKeyboardsTests(unittest.TestCase):
     def callbacks(markup):
         return [b.callback_data for row in markup.inline_keyboard for b in row]
 
-    def test_root_offers_seven_sections_that_all_fit_the_payload_limit(self):
+    def test_root_offers_eight_sections_that_all_fit_the_payload_limit(self):
         data = self.callbacks(admin_kb())
-        self.assertEqual(len(data), 7)
-        self.assertEqual(len(set(data)), 7)
+        self.assertEqual(len(data), 8)
+        self.assertEqual(len(set(data)), 8)
         for callback in data:
             self.assertTrue(callback.startswith("admin:sec:"), callback)
             self.assertLessEqual(len(callback.encode()), 64)
 
     def test_every_section_returns_to_the_root(self):
         for build in (admin_analytics_kb, admin_users_section_kb, admin_moderation_kb,
-                      admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb):
+                      admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb, admin_op_kb):
             with self.subTest(section=build.__name__):
                 self.assertEqual(build().inline_keyboard[-1][0].callback_data, "admin:back")
 

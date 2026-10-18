@@ -90,7 +90,7 @@ def help_kb(lang: str = "ru") -> InlineKeyboardMarkup:
 # ── Admin keyboards ──────────────────────────────────────────────
 
 def admin_kb() -> InlineKeyboardMarkup:
-    """Panel root: seven sections, two per row.
+    """Panel root: eight sections, two per row.
 
     One screen per section, every screen back to its section, every section
     back to this root -- the whole panel is two taps from anywhere."""
@@ -109,6 +109,7 @@ def admin_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="🧰 Система", callback_data="admin:sec:system"),
+            InlineKeyboardButton(text="📛 Подписка", callback_data="admin:sec:op"),
         ],
     ])
 
@@ -179,6 +180,15 @@ def admin_system_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Состояние системы", callback_data="admin:syshealth")],
         [InlineKeyboardButton(text="Журнал действий", callback_data="admin:audit:0")],
+        [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
+    ])
+
+
+def admin_op_kb() -> InlineKeyboardMarkup:
+    """Раздел ОП: управление и отдельный журнал проверок."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Управление", callback_data="admin:op:main")],
+        [InlineKeyboardButton(text="Проверки и журнал", callback_data="admin:op:log")],
         [InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:back")],
     ])
 

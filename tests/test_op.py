@@ -1,0 +1,554 @@
+"""ОП: обязательная подписка -- гейт, срок, ресурсы и рассылка (ТЗ §8).
+
+База -- SQLite-фабрика DatabaseCase; сеть не дёргается: вместо Telegram
+работает FakeBot со словарём статусов. Отдельно проверяются: гейт по
+апдейту, перепроверка в том же сообщении, срок по Киеву, автоотключение
+воркером, рассылка неподписанным и доступ панели только владельцу.
+"""
+
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import GetChatMember
+from sqlalchemy import select
+from test_chat_duration import DatabaseCase
+
+import models.op  # noqa: F401
+from models.op import OpChat, OpSettings
+from models.operations import AdminAudit, Notification
+from models.user import User
+from services import op as op_service
+from services.notifications import NotificationService, enqueue
+from utils.time import utcnow
+
+BOT = 501
+ADMIN = 99
+LINK_A = "https://t.me/kanal_a"
+LINK_B = "https://t.me/gruppa_b"
+
+
+def member(status, is_member=None):
+    stub = SimpleNamespace(status=status)
+    if is_member is not None:
+        stub.is_member = is_member
+    return stub
+
+
+class FakeBot:
+    """Мини-бот: id для конфига, get_chat_member/get_chat -- по словарю."""
+
+    def __init__(self, bot_id=BOT):
+        self.id = bot_id
+        self.members = {}
+        self.chats = {}
+        self.calls = []
+
+    def allow(self, chat_id, user_id, status="member", is_member=None):
+        self.members[(chat_id, user_id)] = member(status, is_member)
+
+    def fail(self, chat_id, user_id, error):
+        self.members[(chat_id, user_id)] = error
+
+    async def get_chat_member(self, chat_id, user_id):
+        self.calls.append((chat_id, user_id))
+        value = self.members.get((chat_id, user_id), member("left"))
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    async def get_chat(self, target):
+        chat = self.chats.get(target)
+        if chat is None:
+            raise RuntimeError("chat not found")
+        return chat
+
+    async def create_chat_invite_link(self, chat_id, name=None):
+        raise RuntimeError("invite links unavailable")
+
+
+class OpCase(DatabaseCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        for target in ("services.op._cache_get", "services.op._cache_set"):
+            p = patch(target, AsyncMock(return_value=None))
+            p.start()
+            self.addCleanup(p.stop)
+
+    async def op_on(
+        self,
+        *,
+        bot_id=BOT,
+        enabled=True,
+        starts_at=None,
+        ends_at=None,
+        text=None,
+        chats=(("Канал А", -101, LINK_A), ("Группа Б", -202, LINK_B)),
+    ):
+        async with self.factory.begin() as s:
+            s.add(
+                OpSettings(
+                    bot_id=bot_id,
+                    enabled=enabled,
+                    starts_at=starts_at if starts_at is not None else utcnow(),
+                    ends_at=ends_at,
+                    text=text,
+                )
+            )
+            for title, chat_id, link in chats:
+                s.add(
+                    OpChat(
+                        bot_id=bot_id,
+                        chat_id=chat_id,
+                        title=title,
+                        kind="channel",
+                        link=link,
+                        active=True,
+                        rights_ok=True,
+                    )
+                )
+
+    async def add_user(self, telegram_id, *, bot_id=BOT, lang="ru"):
+        async with self.factory.begin() as s:
+            s.add(
+                User(
+                    telegram_id=telegram_id,
+                    anon_id=f"#op{telegram_id}",
+                    bot_id=bot_id,
+                    language=lang,
+                )
+            )
+
+    async def settings(self, bot_id=BOT):
+        async with self.factory() as s:
+            return await s.scalar(select(OpSettings).where(OpSettings.bot_id == bot_id))
+
+
+class OpGateServiceTests(OpCase):
+    async def test_op_off_lets_everyone_through(self):
+        bot = FakeBot()
+        gate = await op_service.op_gate(bot, 7001)
+        self.assertFalse(gate.required)
+        self.assertFalse(gate.blocked)
+        self.assertEqual(bot.calls, [])
+
+    async def test_unsubscribed_sees_every_resource(self):
+        await self.op_on()
+        bot = FakeBot()
+        gate = await op_service.op_gate(bot, 7001)
+        self.assertTrue(gate.required)
+        self.assertTrue(gate.blocked)
+        self.assertEqual([c["title"] for c in gate.missing], ["Канал А", "Группа Б"])
+        text = op_service.op_screen_text(gate, "ru")
+        self.assertIn("Канал А", text)
+        self.assertIn("Группа Б", text)
+        kb = op_service.op_screen_kb(gate, "ru")
+        self.assertEqual(
+            [b.url for row in kb.inline_keyboard[:-1] for b in row], [LINK_A, LINK_B]
+        )
+        self.assertEqual(kb.inline_keyboard[-1][0].callback_data, "op:check")
+        settings = await self.settings()
+        self.assertEqual(settings.checks_total, 1)
+        self.assertEqual(settings.checks_blocked, 1)
+        self.assertEqual(settings.checks_error, 0)
+
+    async def test_partial_subscription_lists_only_the_missing_one(self):
+        await self.op_on()
+        bot = FakeBot()
+        bot.allow(-101, 7002)
+        gate = await op_service.op_gate(bot, 7002)
+        self.assertTrue(gate.blocked)
+        self.assertEqual([c["title"] for c in gate.missing], ["Группа Б"])
+        text = op_service.op_screen_text(gate, "ru")
+        self.assertIn("Группа Б", text)
+        self.assertNotIn("Канал А", text)
+        self.assertEqual(len(op_service.op_screen_kb(gate, "ru").inline_keyboard), 2)
+
+    async def test_a_user_who_unsubscribes_is_blocked_again(self):
+        await self.op_on()
+        bot = FakeBot()
+        bot.allow(-101, 7003)
+        bot.allow(-202, 7003)
+        self.assertTrue((await op_service.op_gate(bot, 7003)).subscribed)
+        bot.allow(-202, 7003, "left")
+        self.assertTrue((await op_service.op_gate(bot, 7003)).blocked)
+
+    async def test_every_subscribed_status_counts(self):
+        await self.op_on(
+            chats=(
+                ("К1", -101, LINK_A),
+                ("К2", -102, LINK_A),
+                ("К3", -103, LINK_A),
+                ("К4", -104, LINK_A),
+            )
+        )
+        bot = FakeBot()
+        bot.allow(-101, 7004, "creator")
+        bot.allow(-102, 7004, "administrator")
+        bot.allow(-103, 7004, "member")
+        bot.allow(-104, 7004, "restricted", is_member=True)
+        gate = await op_service.op_gate(bot, 7004)
+        self.assertTrue(gate.subscribed)
+        self.assertFalse(gate.blocked)
+
+    async def test_restricted_without_is_member_does_not_count(self):
+        await self.op_on(chats=(("К1", -101, LINK_A),))
+        bot = FakeBot()
+        bot.allow(-101, 7005, "restricted", is_member=False)
+        gate = await op_service.op_gate(bot, 7005)
+        self.assertTrue(gate.blocked)
+        self.assertEqual([c["title"] for c in gate.missing], ["К1"])
+        bot.allow(-101, 7005, "kicked")
+        self.assertTrue((await op_service.op_gate(bot, 7005)).blocked)
+
+    async def test_api_errors_never_open_access(self):
+        await self.op_on()
+        bot = FakeBot()
+        bot.fail(-101, 7006, RuntimeError("timeout"))
+        bot.fail(
+            -202,
+            7006,
+            TelegramBadRequest(
+                method=GetChatMember(chat_id=-202, user_id=7006),
+                message="chat not found",
+            ),
+        )
+        gate = await op_service.op_gate(bot, 7006)
+        self.assertTrue(gate.required)
+        self.assertTrue(gate.blocked)
+        self.assertEqual(gate.missing, [])
+        self.assertEqual(gate.errors, ["Канал А", "Группа Б"])
+        text = op_service.op_screen_text(gate, "ru")
+        self.assertIn(op_service.tr(op_service.ERROR_TEXT, "ru"), text)
+        settings = await self.settings()
+        self.assertEqual(settings.checks_error, 1)
+        self.assertEqual(settings.checks_blocked, 1)
+
+    async def test_manual_off_lifts_the_gate_immediately(self):
+        await self.op_on(enabled=False)
+        bot = FakeBot()
+        gate = await op_service.op_gate(bot, 7007)
+        self.assertFalse(gate.required)
+        self.assertFalse(gate.blocked)
+        self.assertEqual(bot.calls, [])
+
+    async def test_expiry_lifts_the_gate_and_tick_audits_the_shutdown(self):
+        await self.op_on(
+            enabled=True,
+            starts_at=utcnow() - timedelta(hours=2),
+            ends_at=utcnow() - timedelta(minutes=1),
+        )
+        bot = FakeBot()
+        self.assertFalse((await op_service.op_gate(bot, 7008)).required)
+        self.assertEqual(await op_service.tick(), 1)
+        settings = await self.settings()
+        self.assertFalse(settings.enabled)
+        async with self.factory() as s:
+            audits = list(
+                (
+                    await s.scalars(
+                        select(AdminAudit).where(AdminAudit.action == "op_auto_disable")
+                    )
+                ).all()
+            )
+        self.assertEqual(len(audits), 1)
+        self.assertEqual(await op_service.tick(), 0)
+
+    async def test_positive_cache_short_circuits_the_second_check(self):
+        await self.op_on()
+        bot = FakeBot()
+        bot.allow(-101, 7009)
+        bot.allow(-202, 7009)
+        store = {}
+
+        async def cache_get(key):
+            return store.get(key)
+
+        async def cache_set(key):
+            store[key] = "1"
+
+        with (
+            patch("services.op._cache_get", cache_get),
+            patch("services.op._cache_set", cache_set),
+        ):
+            first = await op_service.op_gate(bot, 7009)
+            calls = len(bot.calls)
+            second = await op_service.op_gate(bot, 7009)
+        self.assertTrue(first.subscribed)
+        self.assertTrue(second.subscribed)
+        self.assertEqual(len(bot.calls), calls)
+        settings = await self.settings()
+        self.assertEqual(settings.checks_total, 1)
+
+    async def test_deadline_parser_accepts_kyiv_forms(self):
+        self.assertEqual(
+            op_service.parse_deadline("18.10.2026 23:00"),
+            datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc),
+        )
+        now = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            op_service.parse_deadline("18.10 23:00", now=now),
+            datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc),
+        )
+        evening = datetime(2026, 10, 18, 10, 30, tzinfo=timezone.utc)
+        self.assertEqual(
+            op_service.parse_deadline("23:00", now=evening),
+            datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc),
+        )
+        for bad in ("послезавтра", "31.02.2026 10:00", ""):
+            with self.assertRaises(ValueError, msg=bad):
+                op_service.parse_deadline(bad)
+
+    async def test_resource_without_admin_rights_is_saved_but_not_activated(self):
+        bot = FakeBot()
+        bot.chats["@kanal"] = SimpleNamespace(
+            id=-301,
+            title="Канал",
+            username="kanal",
+            type=SimpleNamespace(value="channel"),
+        )
+        bot.allow(-301, BOT, "member")
+        ok, text = await op_service.add_chat(bot, BOT, "@kanal", ADMIN)
+        self.assertTrue(ok)
+        self.assertIn("прав администратора нет", text)
+        row = await op_service.chat_row(BOT, -301)
+        self.assertFalse(row.active)
+        self.assertFalse(row.rights_ok)
+        bot.chats[-301] = bot.chats["@kanal"]
+        bot.allow(-301, BOT, "administrator")
+        ok, _ = await op_service.verify_chat(bot, BOT, -301, ADMIN)
+        self.assertTrue(ok)
+        row = await op_service.chat_row(BOT, -301)
+        self.assertTrue(row.rights_ok)
+        self.assertFalse(row.active)
+        self.assertTrue(await op_service.set_chat_active(BOT, -301, True, ADMIN))
+        self.assertTrue((await op_service.chat_row(BOT, -301)).active)
+
+    async def test_parse_chat_ref_understands_links_and_ids(self):
+        self.assertEqual(op_service.parse_chat_ref("@kanal"), "@kanal")
+        self.assertEqual(op_service.parse_chat_ref("t.me/kanal"), "@kanal")
+        self.assertEqual(op_service.parse_chat_ref("https://t.me/kanal/"), "@kanal")
+        self.assertEqual(op_service.parse_chat_ref("-1001234567890"), -1001234567890)
+        self.assertIsNone(op_service.parse_chat_ref("https://t.me/+AbCdEf"))
+        self.assertIsNone(op_service.parse_chat_ref("joinchat/AbCdEf"))
+        self.assertIsNone(op_service.parse_chat_ref(""))
+
+
+class OpNotifyTests(OpCase):
+    async def test_sweep_notices_only_unsubscribed_and_never_duplicates(self):
+        await self.op_on()
+        await self.add_user(1001)
+        await self.add_user(1002, lang="uk")
+        bot = FakeBot()
+        bot.allow(-101, 1001)
+        bot.allow(-202, 1001)
+        bot.allow(-101, 1002)  # не подписан только на «Группу Б»
+        with patch("utils.bots.resolve", lambda bot_id: bot if bot_id == BOT else None):
+            self.assertEqual(await op_service.request_notify(BOT, ADMIN), 2)
+            self.assertTrue(await op_service.notify_tick())
+            async with self.factory() as s:
+                rows = list(
+                    (
+                        await s.scalars(
+                            select(Notification).where(Notification.type == "op_notice")
+                        )
+                    ).all()
+                )
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].user_id, 1002)
+            self.assertEqual(rows[0].bot_id, BOT)
+            self.assertIn("Группа Б", rows[0].text)
+            self.assertTrue(rows[0].dedupe_key.endswith(":1002:0"))
+            self.assertEqual((await self.settings()).notify_sent, 1)
+            # повторный запуск в той же кампании дублей не плодит
+            await op_service.request_notify(BOT, ADMIN)
+            await op_service.notify_tick()
+            await op_service.notify_tick()
+            async with self.factory() as s:
+                again = list(
+                    (
+                        await s.scalars(
+                            select(Notification).where(Notification.type == "op_notice")
+                        )
+                    ).all()
+                )
+        self.assertEqual(len(again), 1)
+        settings = await self.settings()
+        self.assertFalse(settings.notify_running)
+        async with self.factory() as s:
+            done = await s.scalar(
+                select(AdminAudit).where(AdminAudit.action == "op_notify_done")
+            )
+        self.assertIsNotNone(done)
+
+    async def test_queued_op_notice_is_skipped_when_op_is_off(self):
+        await self.op_on(enabled=False)
+        await self.add_user(1005)
+        key = f"op_notice:{BOT}:1005:0"
+        async with self.factory.begin() as s:
+            await enqueue(s, 1005, "op_notice", key, "бла", bot_id=BOT)
+        self.assertIsNone(await NotificationService().next())
+        async with self.factory() as s:
+            row = await s.scalar(
+                select(Notification).where(Notification.dedupe_key == key)
+            )
+        self.assertEqual(row.status, "skipped")
+
+
+class OpPanelTests(OpCase):
+    async def test_admin_gate_blocks_strangers_and_lets_the_owner_in(self):
+        from handlers.admin import AdminOnly
+
+        middleware = AdminOnly()
+        handler = AsyncMock()
+        stranger = SimpleNamespace(
+            from_user=SimpleNamespace(id=12345), answer=AsyncMock()
+        )
+        with patch("handlers.admin.authorize", side_effect=PermissionError):
+            await middleware(handler, stranger, {})
+        handler.assert_not_awaited()
+        stranger.answer.assert_awaited_once_with("⛔ Нет доступа.")
+        owner = SimpleNamespace(from_user=SimpleNamespace(id=ADMIN), answer=AsyncMock())
+        with patch("handlers.admin.authorize"):
+            await middleware(handler, owner, {})
+        handler.assert_awaited_once()
+
+    async def test_owner_toggle_turns_op_on_and_off_with_audit(self):
+        from handlers.op import cb_op_toggle
+
+        callback = SimpleNamespace(
+            bot=SimpleNamespace(id=BOT),
+            from_user=SimpleNamespace(id=ADMIN),
+            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
+            answer=AsyncMock(),
+        )
+        state = SimpleNamespace(clear=AsyncMock())
+        await cb_op_toggle(callback, state)
+        settings = await self.settings()
+        self.assertTrue(settings.enabled)
+        self.assertEqual(settings.campaign_id, 1)
+        self.assertIsNotNone(settings.starts_at)
+        async with self.factory() as s:
+            actions = list(
+                (
+                    await s.scalars(
+                        select(AdminAudit.action).where(
+                            AdminAudit.action.in_(["op_enable", "op_disable"])
+                        )
+                    )
+                ).all()
+            )
+        self.assertEqual(actions, ["op_enable"])
+        callback.message.edit_text.assert_awaited()
+        await cb_op_toggle(callback, state)
+        self.assertFalse((await self.settings()).enabled)
+        async with self.factory() as s:
+            actions = list(
+                (
+                    await s.scalars(
+                        select(AdminAudit.action).where(
+                            AdminAudit.action.in_(["op_enable", "op_disable"])
+                        )
+                    )
+                ).all()
+            )
+        self.assertEqual(actions, ["op_enable", "op_disable"])
+
+    async def test_check_button_edits_the_same_message_and_opens_the_bot(self):
+        from handlers.op import cb_op_check
+
+        await self.op_on()
+        bot = FakeBot()
+        bot.allow(-101, 8001)  # на «Группу Б» не подписан
+        callback = SimpleNamespace(
+            bot=bot,
+            from_user=SimpleNamespace(
+                id=8001, username=None, first_name="T", language_code="ru"
+            ),
+            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
+            answer=AsyncMock(),
+        )
+        state = SimpleNamespace(clear=AsyncMock(), update_data=AsyncMock())
+        entered = AsyncMock()
+        with patch("handlers.start.enter_bot", entered):
+            await cb_op_check(callback, state)
+            callback.message.edit_text.assert_awaited()
+            text = callback.message.edit_text.await_args.args[0]
+            markup = callback.message.edit_text.await_args.kwargs["reply_markup"]
+            self.assertIn("Группа Б", text)
+            self.assertEqual(markup.inline_keyboard[-1][0].callback_data, "op:check")
+            callback.message.answer.assert_not_awaited()
+            entered.assert_not_awaited()
+            bot.allow(-202, 8001)
+            await cb_op_check(callback, state)
+        entered.assert_awaited_once()
+        self.assertIn(
+            op_service.tr(op_service.OK_TEXT, "ru"),
+            callback.message.edit_text.await_args.args[0],
+        )
+
+
+class OpMiddlewareTests(OpCase):
+    async def test_middleware_stops_a_blocked_user_with_the_screen(self):
+        from aiogram import Bot, Dispatcher
+        from aiogram.types import Chat, Message, Update, User as TgUser
+
+        from handlers import load_routers
+        from utils.middleware import AccessMiddleware
+
+        bot = Bot(token="123456:TEST_TOKEN_FOR_OFFLINE_DISPATCH")
+        bot._me = TgUser(
+            id=1, is_bot=True, first_name="Test", username="offline_op_bot"
+        )
+        await self.op_on(bot_id=bot.id)
+        fake = FakeBot(bot_id=bot.id)
+        fake.allow(-101, 7100, "left")
+        fake.allow(-202, 7100, "left")
+        bot.get_chat_member = fake.get_chat_member
+        telegram = AsyncMock(return_value=True)
+        routers = load_routers()
+        for router in routers:
+            router._parent_router = None
+        dp = Dispatcher()
+        dp.include_routers(*routers)
+        dp.message.outer_middleware(AccessMiddleware())
+        try:
+            with patch.object(bot.session, "make_request", telegram):
+                await dp.feed_update(
+                    bot,
+                    Update(
+                        update_id=1,
+                        message=Message(
+                            message_id=1,
+                            date=datetime.now(timezone.utc),
+                            chat=Chat(id=7100, type="private"),
+                            from_user=TgUser(
+                                id=7100,
+                                is_bot=False,
+                                first_name="Blocked",
+                                language_code="ru",
+                            ),
+                            text="привет",
+                        ),
+                    ),
+                )
+        finally:
+            await dp.storage.close()
+            for router in routers:
+                router._parent_router = None
+        sent = [
+            call.args[1]
+            for call in telegram.await_args_list
+            if getattr(call.args[1], "__api_method__", None) == "sendMessage"
+        ]
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Канал А", sent[0].text)
+        self.assertIn("Группа Б", sent[0].text)
+        self.assertEqual(
+            sent[0].reply_markup.inline_keyboard[-1][0].callback_data, "op:check"
+        )
