@@ -35,7 +35,6 @@ import models.chat  # noqa: F401 -- registers metadata used by the routers
 import models.operations  # noqa: F401
 import models.payment  # noqa: F401
 import models.report  # noqa: F401
-import models.op  # noqa: F401
 
 from test_chat_duration import DatabaseCase
 
@@ -255,7 +254,7 @@ class SecondBotOnboardingTests(unittest.IsolatedAsyncioTestCase):
                        "services.notifications", "services.registration",
                        "services.growth", "services.payments",
                        "services.profile", "services.matching", "services.settings",
-                       "services.reveal", "services.reports", "services.admin", "services.ads", "services.op"):
+                       "services.reveal", "services.reports", "services.admin", "services.ads"):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)

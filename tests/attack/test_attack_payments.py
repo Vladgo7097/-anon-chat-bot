@@ -43,7 +43,6 @@ import models.ban  # noqa: F401
 import models.chat  # noqa: F401
 import models.operations  # noqa: F401
 import models.report  # noqa: F401
-import models.op  # noqa: F401
 
 ATTACKER = 1001
 VICTIM = 1002
@@ -86,7 +85,6 @@ class PaymentAttackCase(unittest.IsolatedAsyncioTestCase):
             "services.ads",
             "services.funnel_alert",
             "services.relay",
-            "services.op",
         ):
             module_obj = __import__(module, fromlist=["async_session"])
             if not hasattr(module_obj, "async_session"):

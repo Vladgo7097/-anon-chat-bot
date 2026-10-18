@@ -312,11 +312,6 @@ class NotificationService:
                 if n.type in {"chat_ended", "reconnect_prompt"} and await s.get(ActiveParticipant, n.user_id):
                     n.status = "skipped"
                     continue
-                if n.type == "op_notice":
-                    from services.op import op_required_now
-                    if not await op_required_now(s, n.bot_id):
-                        n.status = "skipped"
-                        continue
                 user = await s.scalar(select(User).where(User.telegram_id==n.user_id))
                 marketing_disabled = n.marketing and not json.loads(user.notification_settings or "{}").get("marketing", True) if user else True
                 if n.marketing:

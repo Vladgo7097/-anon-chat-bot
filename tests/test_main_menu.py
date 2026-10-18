@@ -13,7 +13,6 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
 from handlers import load_routers
-from services.op import OpGate
 from keyboards import texts as T
 from keyboards.reply import main_menu_kb
 from utils.middleware import AccessMiddleware, AntiFloodMiddleware
@@ -126,7 +125,6 @@ class MenuDispatchTests(unittest.IsolatedAsyncioTestCase):
             patch("services.chat_manager.set_online", AsyncMock()),
             patch("services.chat_manager.get_partner", AsyncMock(return_value=partner)),
             patch("utils.middleware.check_flood", AsyncMock(return_value=flood)),
-            patch("services.op.op_gate", AsyncMock(return_value=OpGate())),
             patch("services.growth.StreakService.checkin", AsyncMock()),
             patch("handlers.search.begin_search", screen),
             patch("handlers.profile.show_profile", screen),
@@ -227,7 +225,6 @@ class MenuDispatchTests(unittest.IsolatedAsyncioTestCase):
                     patch("services.chat_manager.set_online", AsyncMock()),
                     patch("services.chat_manager.get_partner", AsyncMock(return_value=None)),
                     patch("utils.middleware.check_flood", AsyncMock(return_value=False)),
-                    patch("services.op.op_gate", AsyncMock(return_value=OpGate())),
                 ):
                     await self.dp.feed_update(self.bot, Update(
                         update_id=31, message=message("/rules", "ru")))

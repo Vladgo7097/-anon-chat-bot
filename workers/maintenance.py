@@ -9,7 +9,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from services.notifications import NotificationService
 from services.chats import ChatService
 from services import funnel_alert
-from services import op as op_service
 from utils import bot_health
 from keyboards.reply import main_menu_kb, chat_kb_reply
 from utils import bots
@@ -82,7 +81,6 @@ async def run(bot):
             if time.monotonic()-last>60:
                 await ChatService().reconcile()
                 await service.schedule()
-                await op_service.tick()
                 last=time.monotonic()
             # The funnel watcher pages the owner on arrivals-without-completions;
             # ten minutes is fast enough to catch a step breaking the same day.
@@ -96,7 +94,6 @@ async def run(bot):
             await bot_health.probe()
             await bot_health.report()
             await service.expand_broadcast()
-            await op_service.notify_tick()
             await refresh_broadcast_progress(bot, service)
             notification=await service.next()
             if notification:
@@ -109,10 +106,6 @@ async def run(bot):
                     # the bot this recipient actually talks to. `bot` is only the
                     # fallback for a row that does not name one yet.
                     target = await bots.bot_for(notification.user_id, bot)
-                    # Рассылка ОП уходит тем ботом, чью админку настраивали:
-                    # права на getChatMember проверены именно у него.
-                    if notification.type == "op_notice" and notification.bot_id:
-                        target = bots.resolve(notification.bot_id) or target
                     lang = await user_lang(notification.user_id, bots.default_lang(target))
                     markup=None
                     if notification.type=="match":
@@ -129,8 +122,6 @@ async def run(bot):
                         markup=InlineKeyboardMarkup(inline_keyboard=[[
                             InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["similar"],
                                 callback_data="search:repeat", style="primary")]])
-                    elif notification.type == "op_notice":
-                        markup = await op_service.op_notice_kb(notification.bot_id, lang)
                     elif notification.callback_data:
                         markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["open"],callback_data=notification.callback_data,style="primary")]])
                     poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None

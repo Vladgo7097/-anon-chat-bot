@@ -39,7 +39,6 @@ from models.chat import Block
 from models.chat import Chat as ChatRow
 from models.operations import Notification
 from models.report import Report
-import models.op  # noqa: F401
 from models.user import User
 from repositories.chats import ChatRepository
 from services.admin import AdminService
@@ -72,7 +71,6 @@ SESSION_MODULES = (
     "services.profile",
     "services.settings",
     "services.ads",
-    "services.op",
 )
 
 
