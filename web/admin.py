@@ -37,9 +37,10 @@ router = APIRouter(prefix="/api/admin")
 page_router = APIRouter()
 PAGE = Path(__file__).parent / "static" / "admin" / "index.html"
 
-# Три вида, ради которых админка и смотрит в notification_log: приток,
-# качество притока и часовая сводка, уже разложенная по ботам.
-OWNER_NOTICE_TYPES = ("owner_new_user", "owner_activated", "owner_digest")
+# Виды, ради которых админка смотрит в notification_log: только то, что
+# требует внимания владельца. Сигналы «кто запустил бота» и часовые сводки
+# убраны из продукта -- они заливали чат владельца, не требуя решения.
+OWNER_NOTICE_TYPES = ("startup", "owner_first_payment", "owner_report", "backup_failed", "funnel_alert")
 
 
 def _admin_id() -> int:
@@ -184,8 +185,7 @@ async def _bots_split():
 
 @router.get("/overview")
 async def overview(days: int = Query(1, ge=1, le=90), _: None = Depends(_guard)):
-    """Обзор: цифры за период, воронка, живой статус, разбивка по ботам и
-    свежий приток -- ради последнего сюда и заходят чаще всего."""
+    """Обзор: цифры за период, воронка, живой статус и разбивка по ботам."""
     service, stats = AdminService(), StatsService()
     data = await stats.overview(days)
     # overview() отдаёт под ключом funnel счётчики событий аналитики, а панели
@@ -198,14 +198,6 @@ async def overview(days: int = Query(1, ge=1, le=90), _: None = Depends(_guard))
     async with async_session() as s:
         data["drafts"] = await s.scalar(select(func.count(Broadcast.id)).where(
             Broadcast.status == "draft")) or 0
-        recent = (await s.scalars(select(Notification).where(
-            Notification.type.in_(("owner_new_user", "owner_activated")))
-            .order_by(Notification.id.desc()).limit(8))).all()
-    data["recent"] = [
-        {"type": n.type, "bot_id": n.bot_id, "bot": bot_label(n.bot_id),
-         "status": n.status, "at": _iso(n.sent_at or n.scheduled_at),
-         "telegram_id": _notice_subject(n), "text": n.text}
-        for n in recent]
     return data
 
 
@@ -253,7 +245,7 @@ async def users_list(q: str = "", bot: int | None = None, banned: int = 0,
 
 @router.get("/users/{telegram_id}")
 async def user_detail(telegram_id: int, _: None = Depends(_guard)):
-    """Карточка человека: профиль, его уведомления владельцу, последние диалоги."""
+    """Карточка человека: профиль и последние диалоги."""
     if not 0 < telegram_id <= 2**63 - 1:
         # Шире int64: SQLite не принимает такое значение в WHERE (M1).
         raise HTTPException(status_code=404, detail="NOT_FOUND")
@@ -265,10 +257,6 @@ async def user_detail(telegram_id: int, _: None = Depends(_guard)):
         user = await s.scalar(select(User).where(User.telegram_id == telegram_id))
         if not user:
             raise HTTPException(status_code=404, detail="NOT_FOUND")
-        notices = (await s.scalars(select(Notification).where(
-            Notification.type.in_(OWNER_NOTICE_TYPES),
-            Notification.callback_data == f"admin:user_card:{telegram_id}"
-        ).order_by(Notification.id.desc()).limit(20))).all()
         chats = (await s.execute(
             select(Chat.session_id, Chat.started_at, Chat.ended_at, Chat.status,
                    Chat.duration_seconds, Chat.end_reason, Chat.user1_rating,
@@ -285,9 +273,6 @@ async def user_detail(telegram_id: int, _: None = Depends(_guard)):
     return {
         "source": source,
         "user": _user_row(user, detail=True),
-        "notices": [{"type": n.type, "bot_id": n.bot_id, "bot": bot_label(n.bot_id),
-                     "status": n.status, "scheduled_at": _iso(n.scheduled_at),
-                     "text": n.text} for n in notices],
         "chats": [{"session_id": c[0], "started_at": _iso(c[1]), "ended_at": _iso(c[2]),
                    "status": c[3], "duration_seconds": c[4], "end_reason": c[5],
                    "rating": c[6], "partner_anon_id": c[7], "partner_bot": bot_label(c[8]),
@@ -373,7 +358,8 @@ async def notifications(kind: str = "owner", bot: int | None = None,
                         status: str = "",
                         page: int = Query(1, ge=1, le=10**6), size: int = Query(30, ge=1, le=200),
                         _: None = Depends(_guard)):
-    """Уведомления владельцу: кто запустил, кто дошёл до меню, часовые сводки."""
+    """Уведомления владельцу: старт сервиса, первые оплаты, жалобы, бэкапы,
+    вставшая воронка -- всё, что требует внимания."""
     where = []
     if kind == "owner":
         where.append(Notification.type.in_(OWNER_NOTICE_TYPES))
@@ -403,15 +389,8 @@ async def notifications(kind: str = "owner", bot: int | None = None,
             "items": [{"id": n.id, "type": n.type, "bot_id": n.bot_id,
                        "bot": bot_label(n.bot_id), "status": n.status, "text": n.text,
                        "scheduled_at": _iso(n.scheduled_at), "sent_at": _iso(n.sent_at),
-                       "last_error": n.last_error, "user_id": n.user_id,
-                       "telegram_id": _notice_subject(n)} for n in rows]}
-
-
-def _notice_subject(note) -> int | None:
-    """telegram_id того, о ком уведомление: в callback_data он и хранится."""
-    data = note.callback_data or ""
-    tail = data.rsplit(":", 1)[-1]
-    return int(tail) if tail.isdigit() else None
+                       "last_error": n.last_error, "user_id": n.user_id}
+                      for n in rows]}
 
 
 @router.get("/audit")

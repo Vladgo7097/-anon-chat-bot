@@ -45,9 +45,7 @@ SETTING_LIMITS = {
     "chat_delay_next": (0, 60), "search_timeout": (30, 3600),
     "premium_search_timeout": (0, 3600), "inactive_chat_ttl": (60, 86400),
     "marketing_enabled": (0, 1), "seasonal_enabled": (0, 1),
-    "ad_cooldown_seconds": (0, 86400), "owner_notice_limit": (0, 1000),
-    "owner_activation_limit": (0, 1000),
-    "onboarding_nudge_hours": (1, 168), "stars_usd_cents_per_100": (0, 1000000),
+    "ad_cooldown_seconds": (0, 86400), "onboarding_nudge_hours": (1, 168), "stars_usd_cents_per_100": (0, 1000000),
     "funnel_min_step_pct": (0, 100),
 }
 
@@ -61,8 +59,6 @@ SETTING_TITLES = {
     "marketing_enabled": "Маркетинговые уведомления (0/1)",
     "seasonal_enabled": "Сезонное событие (0/1)",
     "ad_cooldown_seconds": "Частота показа рекламы, сек",
-    "owner_notice_limit": "Лимит «запустил бота» в день (на бота)",
-    "owner_activation_limit": "Лимит «дошёл до меню» в день (на бота)",
     "onboarding_nudge_hours": "Напоминание о брошенной регистрации, ч",
     "stars_usd_cents_per_100": "Курс $ за 100 звёзд, центы (0 — не показывать)",
     "funnel_min_step_pct": "Порог просадки шага воронки, % (0 — off)",
@@ -73,9 +69,7 @@ SETTING_DEFAULTS = {
     "chat_delay_next": 7, "search_timeout": 180, "premium_search_timeout": 180,
     "inactive_chat_ttl": 300, "search_slow_offer_seconds": 20,
     "upsell_chat_count": 3, "marketing_enabled": 1, "seasonal_enabled": 0,
-    "ad_cooldown_seconds": 1800, "owner_notice_limit": 30,
-    "owner_activation_limit": 25,
-    "onboarding_nudge_hours": 3, "stars_usd_cents_per_100": 0,
+    "ad_cooldown_seconds": 1800, "onboarding_nudge_hours": 3, "stars_usd_cents_per_100": 0,
     "funnel_min_step_pct": 0,
 }
 
@@ -89,8 +83,6 @@ SETTING_PRESETS = {
     "marketing_enabled": (0, 1),
     "seasonal_enabled": (0, 1),
     "ad_cooldown_seconds": (600, 1800, 3600),
-    "owner_notice_limit": (0, 5, 20, 100),
-    "owner_activation_limit": (0, 5, 15, 25, 100),
     "onboarding_nudge_hours": (1, 3, 6, 12, 24),
     "stars_usd_cents_per_100": (0, 110, 130, 150),
     "funnel_min_step_pct": (0, 30, 50, 70),

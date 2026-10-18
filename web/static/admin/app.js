@@ -511,17 +511,6 @@ function paintOverview(data) {
       <div><span class="chip ${ok ? "ok" : "bad"}">${ok ? "✓" : "✕"}</span> ${esc(v)}</div>
     </div>`).join("");
 
-  const launches = (data.recent || []).map((r) => {
-    const active = r.type === "owner_activated";
-    return `<div class="launch">
-      <span class="when">${fmtAgo(r.at)}</span>
-      ${botChip(r.bot, r.bot_id)}
-      <span class="chip ${active ? "acc" : "ok"}">${active ? "дошёл до меню" : "запуск"}</span>
-      ${r.telegram_id ? `<span class="mono">${esc(r.telegram_id)}</span>` : ""}
-      <span class="muted">${tg(clip(r.text, 150))}</span>
-    </div>`;
-  }).join("") || '<div class="empty">Сегодня пусто</div>';
-
   main(`
     <div class="sec-head">
       <h1>Обзор</h1>
@@ -534,12 +523,6 @@ function paintOverview(data) {
     </div>
 
     <div class="cards">${cards}</div>
-
-    <div class="panel">
-      <div class="panel-head">Последние запуски<span class="spacer"></span>
-        <span class="hint">кто открыл бота · последние 8</span></div>
-      <div class="panel-body flush"><div class="launches">${launches}</div></div>
-    </div>
 
     <div class="grid2">
       <div class="panel">
@@ -765,13 +748,6 @@ async function openUserCard(id) {
     ["Активность", fmtAgo(u.last_online)],
   ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 
-  const notices = (data.notices || []).map((n) => `
-    <div class="notice">
-      <div class="meta">${fmtDate(n.scheduled_at)} · ${esc(n.type)} · ${botChip(n.bot, n.bot_id)}
-        · <span class="chip ${n.status === "sent" ? "ok" : n.status === "failed" ? "bad" : "warn"}">${esc(n.status)}</span></div>
-      <pre>${tg(n.text)}</pre>
-    </div>`).join("") || '<div class="dim">Уведомлений владельцу нет</div>';
-
   const chats = (data.chats || []).map((c) => `
     <tr>
       <td class="mono dim">${esc((c.session_id || "").slice(0, 10))}</td>
@@ -798,8 +774,6 @@ async function openUserCard(id) {
     </div>
 
     <div id="u-form"></div>
-
-    <h4>Уведомления владельцу</h4>${notices}
 
     <h4>Последние диалоги</h4>
     ${chats ? `<div class="tw"><table><thead><tr>
@@ -896,9 +870,11 @@ R.notices = { kind: "owner", bot: "", status: "", page: 1, size: 30 };
 
 const NOTICE_KINDS = [
   ["owner", "Владельцу"],
-  ["owner_new_user", "Запустил"],
-  ["owner_activated", "Дошёл до меню"],
-  ["owner_digest", "Сводки"],
+  ["startup", "Старт сервиса"],
+  ["owner_first_payment", "Оплаты"],
+  ["owner_report", "Жалобы"],
+  ["backup_failed", "Бэкапы"],
+  ["funnel_alert", "Воронка"],
   ["all", "Всё"],
 ];
 
@@ -934,7 +910,6 @@ async function renderNotices() {
       <td>${esc(n.type)}</td>
       <td>${botChip(n.bot, n.bot_id)}</td>
       <td><span class="chip ${n.status === "sent" ? "ok" : n.status === "failed" ? "bad" : "warn"}">${esc(n.status)}</span></td>
-      <td class="mono">${n.telegram_id ? esc(n.telegram_id) : '<span class="dim">—</span>'}</td>
       <td class="muted">${tg(clip(n.text, 150))}</td>
     </tr>`).join("");
 
@@ -964,7 +939,7 @@ async function renderNotices() {
     <div class="panel">
       <div class="panel-body flush tw">
         ${rows ? `<table><thead><tr>
-          <th>Время</th><th>Тип</th><th>Бот</th><th>Статус</th><th>О ком</th><th>Текст</th>
+          <th>Время</th><th>Тип</th><th>Бот</th><th>Статус</th><th>Текст</th>
         </tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Пусто</div>'}
       </div>
       ${pagerHTML(f)}
@@ -990,7 +965,6 @@ async function renderNotices() {
         <div class="chips" style="margin-bottom:12px">
           ${botChip(n.bot, n.bot_id)}
           <span class="chip ${n.status === "sent" ? "ok" : n.status === "failed" ? "bad" : "warn"}">${esc(n.status)}</span>
-          ${n.telegram_id ? `<span class="chip acc">${esc(n.telegram_id)}</span>` : ""}
         </div>
         <pre style="white-space:pre-wrap;font:inherit;background:var(--panel2);padding:11px;border-radius:8px;margin:0">${tg(n.text)}</pre>
         ${n.last_error ? `<div class="notice" style="border-color:var(--danger);margin-top:10px"><span class="chip bad">${esc(n.last_error)}</span></div>` : ""}

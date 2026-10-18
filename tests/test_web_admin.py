@@ -22,7 +22,7 @@ from models.operations import AnalyticsEvent, Notification  # noqa: E402
 from models.user import User  # noqa: E402
 import models.payment, models.report, models.ban  # noqa: E402,F401
 from utils.time import utcnow  # noqa: E402
-from web.admin import (_bots_split, _iso, _notice_subject, notifications,  # noqa: E402
+from web.admin import (_bots_split, _iso, notifications,  # noqa: E402
                        overview, reports, user_detail, users_list)
 
 BOT1, BOT2 = 8873771495, 7828301604
@@ -83,11 +83,6 @@ class GateTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
-    def test_subject_is_read_out_of_callback_data(self):
-        self.assertEqual(_notice_subject(type("N", (), {"callback_data": "admin:user_card:42"})()), 42)
-        self.assertIsNone(_notice_subject(type("N", (), {"callback_data": None})()))
-        self.assertIsNone(_notice_subject(type("N", (), {"callback_data": "menu:back"})()))
-
     def test_naive_timestamps_are_read_as_utc(self):
         self.assertEqual(_iso(None), None)
         self.assertEqual(_iso(utcnow().replace(microsecond=0)).count("+00:00"), 1)
@@ -132,15 +127,15 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
                  bot_id=None, last_online=utcnow() - timedelta(days=2)),
         ]
         self.notices = [
-            Notification(user_id=OWNER, type="owner_new_user",
-                         dedupe_key="owner_new_user:101:1:777", text="Запуск",
-                         callback_data="admin:user_card:101", bot_id=BOT1,
+            Notification(user_id=OWNER, type="startup",
+                         dedupe_key="startup:777:2026-10-18", text="Бот запущен",
+                         callback_data=None, bot_id=BOT1,
                          status="sent", sent_at=utcnow()),
-            Notification(user_id=OWNER, type="owner_activated",
-                         dedupe_key="owner_activated:102:2:777", text="Дошёл до меню",
-                         callback_data="admin:user_card:102", bot_id=BOT2, status="queued"),
-            Notification(user_id=OWNER, type="owner_digest",
-                         dedupe_key="owner_digest:777:1:x", text="Сводка",
+            Notification(user_id=OWNER, type="owner_first_payment",
+                         dedupe_key="owner_first_payment:102:1", text="Первая оплата",
+                         callback_data=None, bot_id=BOT2, status="queued"),
+            Notification(user_id=OWNER, type="backup_failed",
+                         dedupe_key="backup_failed:2026-10-18:3", text="Бэкап не удался",
                          callback_data=None, bot_id=None, status="failed"),
             Notification(user_id=OWNER, type="admin_message",
                          dedupe_key="admin_message:1", text="Ответ админа",
@@ -216,31 +211,32 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
         data = await notifications(kind="owner", bot=BOT2, status="",
                                    page=1, size=30, _=None)
         self.assertEqual(data["total"], 1)
-        self.assertEqual(data["items"][0]["type"], "owner_activated")
+        self.assertEqual(data["items"][0]["type"], "owner_first_payment")
 
-    async def test_status_filter_and_subject_extraction(self):
+    async def test_status_filter_narrows_the_stream(self):
         data = await notifications(kind="owner", bot=None, status="failed",
                                    page=1, size=30, _=None)
         self.assertEqual(data["total"], 1)
-        self.assertEqual(data["items"][0]["telegram_id"], None)
+        self.assertEqual(data["items"][0]["type"], "backup_failed")
         sent = await notifications(kind="owner", bot=None, status="sent",
                                    page=1, size=30, _=None)
-        self.assertEqual(sent["items"][0]["telegram_id"], 101)
+        self.assertEqual(sent["total"], 1)
+        self.assertEqual(sent["items"][0]["type"], "startup")
         self.assertEqual(sent["items"][0]["bot"], "Бот 1")
 
-    async def test_counts_cover_all_three_owner_kinds(self):
+    async def test_counts_cover_all_owner_kinds(self):
         data = await notifications(kind="owner", bot=None, status="",
                                    page=1, size=30, _=None)
         self.assertEqual(data["counts"],
-                         {"owner_new_user": 1, "owner_activated": 1, "owner_digest": 1})
+                         {"startup": 1, "owner_first_payment": 1, "backup_failed": 1})
 
     # ---------- карточка человека ----------
 
-    async def test_card_pulls_profile_notices_and_chats(self):
+    async def test_card_pulls_profile_and_chats(self):
         data = await user_detail(101, _=None)
         self.assertEqual(data["user"]["anon_id"], "#AAA")
         self.assertEqual(data["user"]["bot"], "Бот 1")
-        self.assertEqual([n["type"] for n in data["notices"]], ["owner_new_user"])
+        self.assertNotIn("notices", data)
         self.assertEqual(len(data["chats"]), 1)
         chat = data["chats"][0]
         self.assertEqual(chat["duration_seconds"], 125)
@@ -278,8 +274,7 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
 
     # ---------- обзор ----------
 
-    async def test_overview_feeds_the_recent_launch_panel(self):
-        """Свежий приток вынесен на обзор: ради него туда и заходят."""
+    async def test_overview_keeps_funnel_and_drops_the_launch_feed(self):
         with patch.object(config, "OWNER_ID", OWNER), \
              patch.object(config, "ADMIN_IDS", {OWNER}):
             data = await overview(1)
@@ -290,11 +285,8 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("stages", data["funnel"])
         self.assertEqual(data["funnel"]["stages"][0][0], "Запустили /start")
         self.assertIn("start_source", data["events"])
-        # Свежее сверху: активация 102 новее, чем запуск 101.
-        self.assertEqual([r["type"] for r in data["recent"]],
-                         ["owner_activated", "owner_new_user"])
-        self.assertEqual([r["telegram_id"] for r in data["recent"]], [102, 101])
-        self.assertEqual(data["recent"][1]["bot"], "Бот 1")
+        # Лента «кто запустил бота» убрана вместе с самими уведомлениями.
+        self.assertNotIn("recent", data)
         self.assertEqual({b["label"] for b in data["bots"]},
                          {"Бот 1", "Бот 2", "Бот не определён"})
 

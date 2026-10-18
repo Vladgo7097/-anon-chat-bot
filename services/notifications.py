@@ -124,10 +124,6 @@ def broadcast_segment(query, segment, now=None):
     return query
 
 
-# Оба сигнала о новом пользователе: «запустил бота» и «дошёл до меню». Это
-# две разные корзины лимита, но одна очередь владельца -- темпятся вместе,
-# иначе второй вид выдавал бы первому флуд в ответ на флуд.
-OWNER_SIGNUP_TYPES = ("owner_new_user", "owner_activated")
 CRITICAL_OWNER_TYPES = {"backup_failed", "owner_first_payment", "funnel_alert"}
 
 
@@ -275,7 +271,6 @@ class NotificationService:
                     else:
                         from sqlalchemy.dialects.sqlite import insert
                     await s.execute(insert(Notification).values(notices).on_conflict_do_nothing(index_elements=["dedupe_key"]))
-        await self.owner_digest(now)
         async with async_session.begin() as s:
             if s.bind.dialect.name == "postgresql":
                 await s.execute(text("SELECT pg_advisory_xact_lock(8873771497)"))
@@ -291,57 +286,6 @@ class NotificationService:
                         payment.status = "failed"
                     offer.status = "active" if offer.ends_at > now else "expired"
                     offer.reserved_payment_id = None
-
-    async def owner_digest(self, now):
-        """Report the signups the per-user notice deliberately skipped.
-
-        Covers the last completed hour and counts only what was not already
-        sent one by one, so a quiet hour produces nothing and a spike produces
-        exactly one line instead of hundreds of messages.
-
-        Считается отдельно по каждому боту: два бота держат разные аудитории,
-        и сводка вперемешку скрывает, какой из них растёт. Лимит и так шёл
-        раздельно, поэтому и остаток ложится обратно по тем же корзинам.
-        """
-        import config
-        from utils.bots import label
-        if not config.OWNER_ID:
-            return
-        hour_end = now.replace(minute=0, second=0, microsecond=0)
-        hour_start = hour_end - timedelta(hours=1)
-        async with async_session.begin() as s:
-            per_bot = (await s.execute(
-                select(User.bot_id, func.count(User.id)).where(
-                    User.created_at >= hour_start, User.created_at < hour_end
-                ).group_by(User.bot_id))).all()
-            if not per_bot:
-                return
-            day_start = hour_end.replace(hour=0)
-            for bot_id, joined in per_bot:
-                # NULL -- пользователь, чей бот ещё не записан. Отдельная
-                # корзина, а не подмесь к первому: иначе «запустили 37»
-                # прятало бы часть потока в чужой счётчик.
-                own_notice = (Notification.bot_id == bot_id if bot_id is not None
-                              else Notification.bot_id.is_(None))
-                reported = await s.scalar(select(func.count(Notification.id)).where(
-                    Notification.type == "owner_new_user", own_notice,
-                    Notification.scheduled_at >= hour_start,
-                    Notification.scheduled_at < hour_end)) or 0
-                if joined - reported <= 0:
-                    continue
-                own_user = (User.bot_id == bot_id if bot_id is not None
-                            else User.bot_id.is_(None))
-                today = await s.scalar(select(func.count(User.id)).where(
-                    User.created_at >= day_start, own_user)) or 0
-                reached_menu = await s.scalar(select(func.count(User.id)).where(
-                    User.created_at >= day_start,
-                    User.onboarding_completed.is_(True), own_user)) or 0
-                await enqueue(s, config.OWNER_ID, "owner_digest",
-                              f"owner_digest:{config.OWNER_ID}:{bot_id}:{hour_start.isoformat()}",
-                              f"Сводка {label(bot_id)} за {hour_start:%H:%M}–{hour_end:%H:%M} UTC\n"
-                              f"Запустили: {joined} (поштучно показано {reported})\n\n"
-                              f"За сегодня: {today} запусков, дошли до меню {reached_menu}.",
-                              bot_id=bot_id)
 
     async def next(self):
         while True:
@@ -374,7 +318,7 @@ class NotificationService:
                     from models.operations import BotSetting
                     flag=await s.get(BotSetting,"marketing_enabled")
                     marketing_disabled=marketing_disabled or bool(flag and not flag.value_json.get("value",1))
-                owner_types = {"owner_new_user", "owner_activated", "startup", "backup_failed", "owner_report", "owner_first_payment", "funnel_alert"}
+                owner_types = {"startup", "backup_failed", "owner_report", "owner_first_payment", "funnel_alert"}
                 owner_notice = n.type in owner_types and n.user_id == config.OWNER_ID
                 if (n.type in owner_types and not owner_notice) or (not owner_notice and (
                         not user or (banned(user) and n.type != "ban") or user.deleted_at
@@ -385,13 +329,6 @@ class NotificationService:
                     Notification.user_id == n.user_id, Notification.id != n.id,
                     Notification.status.in_(["queued", "sending"]),
                     Notification.last_error == "rate_limit"))
-                if owner_notice:
-                    sent = await s.scalar(select(func.max(Notification.sent_at)).where(
-                        Notification.user_id == n.user_id,
-                        Notification.type.in_(OWNER_SIGNUP_TYPES),
-                        Notification.status == "sent"))
-                    if sent:
-                        cooldown = max(cooldown or sent, sent+timedelta(seconds=3))
                 # Критические алерты владельца идут в обход чужого rate-limit:
                 # cooldown считался на всего получателя целиком, и одна 429 на
                 # жалобе удерживала backup_failed в очереди до её снятия.
@@ -430,8 +367,7 @@ class NotificationService:
                 n.scheduled_at=utcnow()+timedelta(seconds=retry_after)
             # Share the recipient cooldown with queued messages, not only the
             # rejected item; otherwise every pending notice hits the same limit.
-            delay = retry_after if error == "rate_limit" else (
-                3 if status == "sent" and n.type in OWNER_SIGNUP_TYPES else None)
+            delay = retry_after if error == "rate_limit" else None
             if delay is not None:
                 deadline = utcnow()+timedelta(seconds=delay)
                 await s.execute(update(Notification).where(

@@ -1,4 +1,4 @@
-"""Owner notice capping with an hourly digest, onboarding nudges, icebreakers."""
+"""Onboarding nudges, queue priority, icebreakers."""
 import sys
 import unittest
 from datetime import timedelta
@@ -6,84 +6,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sqlalchemy import select, func
+from sqlalchemy import select
 from test_chat_duration import DatabaseCase
 from models.user import User
-from models.operations import BotSetting, Notification
-from repositories.users import UserRepository
+from models.operations import Notification
 from repositories.chats import icebreaker, ICEBREAKERS
 from services.notifications import NotificationService
 from utils.time import utcnow
-
-
-class OwnerNoticeCapTests(DatabaseCase):
-    async def asyncSetUp(self):
-        await super().asyncSetUp()
-        p = patch("config.OWNER_ID", 99)
-        p.start()
-        self.addCleanup(p.stop)
-
-    async def signups(self, count, first_id=5000):
-        for offset in range(count):
-            await UserRepository().get_or_create(first_id+offset, f"u{offset}", "N")
-
-    async def owner_notices(self):
-        async with self.factory() as s:
-            return await s.scalar(select(func.count(Notification.id)).where(
-                Notification.type == "owner_new_user"))
-
-    async def test_each_signup_is_reported_while_the_day_is_quiet(self):
-        await self.signups(3)
-        self.assertEqual(await self.owner_notices(), 3)
-
-    async def test_the_flood_stops_at_the_daily_cap(self):
-        async with self.factory.begin() as s:
-            s.add(BotSetting(key="owner_notice_limit", value_json={"value": 5}))
-        await self.signups(12)
-        self.assertEqual(await self.owner_notices(), 5)
-        async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(User.id)).where(User.telegram_id >= 5000)), 12)
-
-    async def test_digest_reports_only_what_was_not_sent_one_by_one(self):
-        async with self.factory.begin() as s:
-            s.add(BotSetting(key="owner_notice_limit", value_json={"value": 2}))
-        await self.signups(9)
-        # Move everything into the previous, completed hour.
-        now = utcnow()
-        hour_end = now.replace(minute=0, second=0, microsecond=0)
-        stamp = hour_end - timedelta(minutes=30)
-        async with self.factory.begin() as s:
-            await s.execute(User.__table__.update().where(User.telegram_id >= 5000).values(created_at=stamp))
-            await s.execute(Notification.__table__.update().where(
-                Notification.type == "owner_new_user").values(scheduled_at=stamp))
-        await NotificationService().owner_digest(now)
-        async with self.factory() as s:
-            digest = await s.scalar(select(Notification).where(Notification.type == "owner_digest"))
-        self.assertIsNotNone(digest)
-        self.assertEqual(digest.user_id, 99)
-        self.assertIn("Запустили: 9", digest.text)
-        self.assertIn("поштучно показано 2", digest.text)
-
-    async def test_a_quiet_hour_produces_no_digest(self):
-        await NotificationService().owner_digest(utcnow())
-        async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(Notification.id)).where(
-                Notification.type == "owner_digest")), 0)
-
-    async def test_digest_is_written_once_per_hour(self):
-        async with self.factory.begin() as s:
-            s.add(BotSetting(key="owner_notice_limit", value_json={"value": 0}))
-        await self.signups(4)
-        now = utcnow()
-        stamp = now.replace(minute=0, second=0, microsecond=0) - timedelta(minutes=30)
-        async with self.factory.begin() as s:
-            await s.execute(User.__table__.update().where(User.telegram_id >= 5000).values(created_at=stamp))
-        service = NotificationService()
-        await service.owner_digest(now)
-        await service.owner_digest(now)
-        async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(Notification.id)).where(
-                Notification.type == "owner_digest")), 1)
 
 
 class OnboardingNudgeTests(DatabaseCase):

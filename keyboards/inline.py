@@ -365,23 +365,6 @@ def admin_user_card_kb(telegram_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-def owner_signup_kb(telegram_id: int) -> InlineKeyboardMarkup:
-    """Два действия прямо из уведомления о новом пользователе.
-
-    «Открыть» показывает карточку, «Написать» уводит в FSM-состояние
-    AdminMessage без промежуточного тапа -- владелец чаще всего хочет именно
-    второе, и раньше это стоило двух нажатий.
-    """
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="Открыть", callback_data=f"admin:user_card:{telegram_id}", style="primary"),
-        ],
-        [
-            InlineKeyboardButton(text="Написать", callback_data=f"admin:message:{telegram_id}"),
-        ],
-    ])
-
-
 def admin_broadcast_status_kb(jobs) -> InlineKeyboardMarkup:
     rows = []
     for job in jobs:

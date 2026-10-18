@@ -20,21 +20,18 @@ async def notify_owner_on_startup():
     if not config.OWNER_ID:
         return
     from models.base import async_session
-    from models.user import User
     from models.operations import Notification
     from services.notifications import enqueue
     from utils.time import utcnow
-    from sqlalchemy import func, select, delete
+    from sqlalchemy import delete
     now = utcnow()
     # Keep the displayed date and the dedupe window on the same UTC day the
     # rest of the app uses (UTCDateTime columns, utcnow() elsewhere) rather
     # than the host's local timezone, which could disagree near midnight.
     today = now.date().isoformat()
     async with async_session.begin() as s:
-        total_users = await s.scalar(select(func.count(User.id))) or 0
         text = (
             f"<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Бот запущен\n\n"
-            f"Пользователей: <b>{total_users}</b>\n"
             f"Дата: {today}\n"
             f"Время: {now:%H:%M} UTC"
         )
