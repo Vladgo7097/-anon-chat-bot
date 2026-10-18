@@ -10,10 +10,11 @@ from utils.time import utcnow
 class OpSettings(Base):
     """Конфигурация ОП: одна строка на бота.
 
-    Это единственное место, где живёт состояние требования: enabled -- это
-    тумблер владельца, starts_at/ends_at -- окно. Что ОП реально включена,
-    решает is_active() в services/op.py на каждом запросе, поэтому рестарт
-    не может оставить просроченную ОП блокирующей.
+    enabled -- тумблер владельца; сроки живут на ресурсах (op_chats.ends_at),
+    а starts_at/ends_at остались от окна требования целиком и на гейт больше
+    не влияют. Что ОП реально действует, решают is_active() и живой ресурс
+    на каждом запросе, поэтому рестарт не может оставить просроченную ОП
+    блокирующей.
     """
 
     __tablename__ = "op_settings"
@@ -62,4 +63,7 @@ class OpChat(Base):
     rights_ok: Mapped[bool] = mapped_column(Boolean, default=False)
     rights_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    # Срок ресурса: None -- бессрочно. Пока есть живой ресурс, требование
+    # действует; после срока ресурс гасит tick(), и гейт его не видит.
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)

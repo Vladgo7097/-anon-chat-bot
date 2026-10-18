@@ -6,7 +6,8 @@
 проверяются отдельно для каждого бота.
 
 Инварианты:
-- Активность вычисляется (enabled + окно), а не хранится. Просроченная ОП
+- Активность вычисляется, а не хранится: требование действует, пока
+  тумблер включён и есть хотя бы один живой ресурс. Просроченный ресурс
   не блокирует даже сразу после рестарта, до всякого планировщика.
 - Ошибка Telegram/прав никогда не считается подтверждением подписки:
   пользователь видит «повтори проверку», доступ не открывается.
@@ -20,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from aiogram.exceptions import (
     TelegramBadRequest,
@@ -28,11 +29,10 @@ from aiogram.exceptions import (
     TelegramRetryAfter,
 )
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from models.base import async_session
 from models.op import OpChat, OpSettings
-from models.operations import AdminAudit
 from models.user import User
 from utils.time import KYIV, utcnow
 
@@ -82,9 +82,8 @@ ALERT = {
 OK_STATUSES = {"creator", "administrator", "member"}
 
 CHAT_REF = re.compile(r"^[A-Za-z0-9_]{4,64}$")
-FULL_DATE = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$")
-SHORT_DATE = re.compile(r"^(\d{2})\.(\d{2}) (\d{2}):(\d{2})$")
-TIME_ONLY = re.compile(r"^(\d{2}):(\d{2})$")
+LIMIT = re.compile(r"^(\d+)([smhd])$")
+LIMIT_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
 
 
 def tr(table, lang):
@@ -123,13 +122,10 @@ class OpGate:
 
 
 def is_active(settings: OpSettings | None, now: datetime | None = None) -> bool:
-    """Требование действует сейчас: тумблер включён и окно наступило."""
-    if settings is None or not settings.enabled:
-        return False
-    now = now or utcnow()
-    if settings.starts_at is not None and settings.starts_at > now:
-        return False
-    return not (settings.ends_at is not None and settings.ends_at <= now)
+    """Тумблер требования. Действует ли ОП прямо сейчас, решает пара
+    enabled + живой ресурс (op_gate, op_required_now): сроки живут на
+    ресурсах, поэтому просрочка не блокирует даже до планировщика."""
+    return settings is not None and bool(settings.enabled)
 
 
 async def settings_for(s, bot_id):
@@ -151,51 +147,17 @@ async def settings_or_create(s, bot_id) -> OpSettings:
 
 async def op_required_now(s, bot_id) -> bool:
     """Для очереди уведомлений: требование ещё действует?"""
-    return is_active(await settings_for(s, bot_id))
+    if not is_active(await settings_for(s, bot_id)):
+        return False
+    return bool(await _active_chats(s, bot_id))
 
 
-def apply_duration(settings: OpSettings, hours: int) -> None:
-    now = utcnow()
-    settings.starts_at = now
-    settings.ends_at = now + timedelta(hours=hours)
-
-
-def parse_deadline(raw: str, now: datetime | None = None) -> datetime:
-    """'18.10.2026 23:00' по Киеву -> aware UTC.
-
-    Пустая строка -- ошибка вызывающего; ValueError на неформат или
-    несуществующую дату (31.02 и т.п.) пробрасывается наверх."""
-    text = (raw or "").strip()
-    local = (now or utcnow()).astimezone(KYIV)
-    match = FULL_DATE.match(text)
-    if match:
-        moment = datetime(
-            int(match[3]),
-            int(match[2]),
-            int(match[1]),
-            int(match[4]),
-            int(match[5]),
-            tzinfo=KYIV,
-        )
-    else:
-        match = SHORT_DATE.match(text)
-        if match:
-            moment = datetime(
-                local.year,
-                int(match[2]),
-                int(match[1]),
-                int(match[3]),
-                int(match[4]),
-                tzinfo=KYIV,
-            )
-        else:
-            match = TIME_ONLY.match(text)
-            if not match:
-                raise ValueError("формат")
-            moment = local.replace(
-                hour=int(match[1]), minute=int(match[2]), second=0, microsecond=0
-            )
-    return moment.astimezone(timezone.utc)
+def parse_limit(raw: str) -> timedelta:
+    """'30s' / '15m' / '2h' / '1d' -> timedelta. ValueError на всё прочее."""
+    match = LIMIT.fullmatch((raw or "").strip().lower())
+    if match is None or int(match[1]) <= 0:
+        raise ValueError("формат")
+    return timedelta(**{LIMIT_UNITS[match[2]]: int(match[1])})
 
 
 def _reason(error: Exception) -> str:
@@ -331,11 +293,18 @@ async def _mark_rights(bot_id, chat_id, ok: bool, detail: str | None) -> None:
 
 
 async def _active_chats(s, bot_id) -> list[OpChat]:
+    """Живые ресурсы: включённые и не просроченные. Просрочка отсекается
+    прямо здесь, поэтому гейт не ждёт планировщика."""
+    now = utcnow()
     return list(
         (
             await s.scalars(
                 select(OpChat)
-                .where(OpChat.bot_id == bot_id, OpChat.active.is_(True))
+                .where(
+                    OpChat.bot_id == bot_id,
+                    OpChat.active.is_(True),
+                    or_(OpChat.ends_at.is_(None), OpChat.ends_at > now),
+                )
                 .order_by(OpChat.id)
             )
         ).all()
@@ -360,7 +329,9 @@ async def op_gate(bot, user_id, *, force: bool = False) -> OpGate:
         logger.warning("event=op_settings_unavailable bot_id=%s", bot_id, exc_info=True)
         return OpGate(bot_id=bot_id)
     if not chats:
-        return OpGate(required=True, subscribed=True, bot_id=bot_id)
+        # Ресурсы без срока кончились: требование не действует и никого
+        # не запирает -- ни пользователя, ни очередь уведомлений.
+        return OpGate(bot_id=bot_id)
     if not force and await _cache_get(_cache_key(bot_id, user_id)):
         return OpGate(required=True, subscribed=True, bot_id=bot_id)
     gate = OpGate(required=True, bot_id=bot_id, text=custom)
@@ -432,8 +403,87 @@ async def op_notice_kb(bot_id, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def panel_state(bot_id):
-    """(settings, chats, журнал op_*) для экранов панели."""
+DIGITS = ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣")
+
+
+def live_chats(chats, now: datetime | None = None) -> list[OpChat]:
+    """Живые ресурсы среди строк: включён и не просрочен."""
+    now = now or utcnow()
+    return [c for c in chats if c.active and (c.ends_at is None or c.ends_at > now)]
+
+
+def owner_list_text(settings, chats) -> str:
+    """Меню «Активные ОП»: по ресурсу в строку, как в команде /setup."""
+    live = live_chats(chats)
+    if not live:
+        return (
+            "📭 Активных ОП нет.\n\n"
+            "Запуск: /setup <@username или ID> [лимит]\n"
+            "Формат времени: 30s · 15m · 2h · 1d"
+        )
+    lines = [f"✅ Ваши активные ОП: {len(live)}", ""]
+    for index, chat in enumerate(live):
+        mark = DIGITS[index] if index < len(DIGITS) else f"{index + 1}."
+        lines.append(f"{mark} {chat.title or chat.chat_id}")
+        lines.append(f"┣ 🆔 {chat.chat_id}")
+        lines.append(f"┣ 🅰️ {chat.link or '—'}")
+        if chat.ends_at is None:
+            lines.append("┗ 🕒 Без ограничений")
+        else:
+            lines.append(f"┗ 🕒 Активна до: {fmt_when(chat.ends_at)} (Киев)")
+        lines.append("")
+    if settings is not None and settings.notify_running:
+        lines.append(
+            f"📣 Рассылка: {settings.notify_done}/{settings.notify_total}, "
+            f"отправлено {settings.notify_sent}"
+        )
+    return "\n".join(lines).strip()
+
+
+def owner_list_kb(settings, chats) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"⛔ {chat.title or chat.chat_id}"[:60],
+                callback_data=f"op_owner:off:{chat.chat_id}",
+            )
+        ]
+        for chat in live_chats(chats)
+    ]
+    if rows:
+        if settings is not None and settings.notify_running:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="⏹ Остановить рассылку",
+                        callback_data="op_owner:notify_stop",
+                    )
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="📣 Напомнить неподписанным",
+                        callback_data="op_owner:notify",
+                    )
+                ]
+            )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🗑 Отключить всё", callback_data="op_owner:off_all"
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="op_owner:list")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def op_state(bot_id):
+    """(settings, все ресурсы) для меню «Активные ОП»."""
     async with async_session() as s:
         settings = await settings_for(s, bot_id)
         chats = list(
@@ -443,17 +493,7 @@ async def panel_state(bot_id):
                 )
             ).all()
         )
-        log = list(
-            (
-                await s.scalars(
-                    select(AdminAudit)
-                    .where(AdminAudit.action.like("op_%"))
-                    .order_by(AdminAudit.id.desc())
-                    .limit(12)
-                )
-            ).all()
-        )
-    return settings, chats, log
+    return settings, chats
 
 
 async def chat_row(bot_id, chat_id) -> OpChat | None:
@@ -485,16 +525,16 @@ def parse_chat_ref(ref: str):
     return None
 
 
-async def add_chat(bot, bot_id, ref: str, admin_id: int) -> tuple[bool, str]:
-    """Проверяет права и заводит ресурс. Без прав -- сохраняет, но не активирует."""
+async def setup_chat(
+    bot, bot_id, target, admin_id: int, *, link: str | None = None, limit=None
+) -> tuple[bool, str]:
+    """Запускает ОП на чате: проверяет права, активирует ресурс, включает
+    требование (новое включение открывает кампанию для рассылки).
+
+    Без прав администратора ресурс не активируется: Telegram не отдаёт
+    чужие подписки, и такой ресурс только запирал бы вход ошибками."""
     from services.admin import audit
 
-    target = parse_chat_ref(ref)
-    if target is None:
-        return False, (
-            "Не понял ссылку. Пришли @username, t.me/username или ID чата "
-            "(пригласительные ссылки Telegram не отдаёт боту)."
-        )
     try:
         chat = await bot.get_chat(target)
     except Exception as error:
@@ -502,137 +542,140 @@ async def add_chat(bot, bot_id, ref: str, admin_id: int) -> tuple[bool, str]:
             False,
             f"Telegram не отдал этот чат ({_reason(error)}). Проверь, что бот там есть и имя верное.",
         )
+    ok, detail = await bot_admin_here(bot, chat.id)
     kind = getattr(chat.type, "value", chat.type) or ""
     title = (
         getattr(chat, "title", None) or getattr(chat, "full_name", None) or str(chat.id)
     )[:255]
-    ok, detail = await bot_admin_here(bot, chat.id)
-    link = chat_link(chat)
-    if ok and not link:
-        link = await _try_invite(bot, chat.id)
+    if not ok:
+        return (
+            False,
+            f"«{title}»: бот не администратор ({detail}). Выдай права и повтори /setup.",
+        )
+    stored_link = link or chat_link(chat) or await _try_invite(bot, chat.id)
+    now = utcnow()
     async with async_session.begin() as s:
+        settings = await settings_or_create(s, bot_id)
+        if not settings.enabled:
+            settings.enabled = True
+            settings.campaign_id += 1
+            settings.starts_at = now
+            audit(s, admin_id, "op_enable", "op", bot_id, after={"chat_id": chat.id})
+        settings.updated_at = now
         row = await s.scalar(
             select(OpChat).where(OpChat.bot_id == bot_id, OpChat.chat_id == chat.id)
         )
         if row is None:
-            row = OpChat(
-                bot_id=bot_id, chat_id=chat.id, title=title, kind=kind, link=link
-            )
+            row = OpChat(bot_id=bot_id, chat_id=chat.id)
             s.add(row)
-        row.title, row.kind, row.link = title, kind, link
-        row.active = ok
-        row.rights_ok = ok
-        row.rights_error = None if ok else detail
-        row.verified_at = utcnow()
+        row.title, row.kind, row.link = title, kind, stored_link
+        row.active = True
+        row.rights_ok = True
+        row.rights_error = None
+        row.ends_at = now + limit if limit else None
+        row.verified_at = now
+        ends_at = row.ends_at
         audit(
             s,
             admin_id,
             "op_chat_add",
             "op",
             bot_id,
-            after={"chat_id": chat.id, "title": title, "rights": ok},
+            after={
+                "chat_id": chat.id,
+                "title": title,
+                "limit": str(limit) if limit else None,
+            },
         )
-    if not ok:
-        return True, (
-            f"«{title}» сохранён, но прав администратора нет ({detail}). "
-            "Выдай права и нажми «Проверить права» — тогда его можно включить."
-        )
-    if not link:
-        return (
-            True,
-            f"«{title}» добавлен и включён. Ссылки нет — пользователи увидят только название, укажи @username.",
-        )
-    return True, f"«{title}» добавлен и включён."
+    when = f"до {fmt_when(ends_at)} (Киев)" if ends_at else "без ограничений"
+    return True, f"✅ ОП запущена: «{title}» — {when}."
 
 
-async def verify_chat(bot, bot_id, chat_id, admin_id: int = 0) -> tuple[bool, str]:
-    from services.admin import audit
-
-    row = await chat_row(bot_id, chat_id)
-    if row is None:
-        return False, "Ресурс не найден"
-    try:
-        chat = await bot.get_chat(chat_id)
-    except Exception as error:
-        title, link, ok, reason = (
-            row.title or str(chat_id),
-            row.link,
-            False,
-            _reason(error),
-        )
-    else:
-        title = (getattr(chat, "title", None) or row.title or str(chat_id))[:255]
-        link = row.link or chat_link(chat)
-        ok, reason = await bot_admin_here(bot, chat_id)
-        if ok and not link:
-            link = await _try_invite(bot, chat_id)
-    async with async_session.begin() as s:
-        row = await s.scalar(
-            select(OpChat).where(OpChat.bot_id == bot_id, OpChat.chat_id == chat_id)
-        )
-        row.title, row.link = title, link
-        row.rights_ok = ok
-        row.rights_error = None if ok else reason
-        row.verified_at = utcnow()
-        audit(
-            s,
-            admin_id,
-            "op_chat_verify",
-            "op",
-            bot_id,
-            after={"chat_id": chat_id, "ok": ok, "reason": reason},
-        )
-    return ok, ("Права есть." if ok else f"Прав нет ({reason}).")
-
-
-async def delete_chat(bot_id, chat_id, admin_id: int) -> bool:
+async def unsetup_chat(bot_id, chat_id, admin_id: int) -> tuple[bool, str]:
+    """Снимает ресурс с требования. Когда живых ресурсов не остаётся,
+    требование гасится целиком -- гейту больше нечего проверять."""
     from services.admin import audit
 
     async with async_session.begin() as s:
         row = await s.scalar(
             select(OpChat).where(OpChat.bot_id == bot_id, OpChat.chat_id == chat_id)
         )
-        if row is None:
-            return False
-        title = row.title
-        await s.delete(row)
-        audit(
-            s,
-            admin_id,
-            "op_chat_del",
-            "op",
-            bot_id,
-            before={"chat_id": chat_id, "title": title},
-        )
-    return True
+        if row is None or not row.active:
+            return False, "Этот ресурс уже отключён."
+        title = row.title or str(chat_id)
+        row.active = False
+        row.ends_at = None
+        audit(s, admin_id, "op_chat_off", "op_chat", chat_id, after={"title": title})
+        settings = await settings_for(s, bot_id)
+        if settings is not None and settings.enabled:
+            if not await _active_chats(s, bot_id):
+                settings.enabled = False
+                audit(
+                    s,
+                    admin_id,
+                    "op_disable",
+                    "op",
+                    bot_id,
+                    after={"reason": "no_live_chats"},
+                )
+    return True, f"⛔ ОП отключена: «{title}»."
 
 
-async def set_chat_active(bot_id, chat_id, active: bool, admin_id: int) -> bool:
+async def unsetup_target(bot, bot_id, target, admin_id: int) -> tuple[bool, str]:
+    """Снятие по цели из команды: @username/ссылка резолвятся в chat_id."""
+    chat_id = target if isinstance(target, int) else None
+    if chat_id is None:
+        try:
+            chat = await bot.get_chat(target)
+            chat_id = chat.id
+        except Exception as error:
+            return False, f"Telegram не отдал этот чат ({_reason(error)})."
+    return await unsetup_chat(bot_id, chat_id, admin_id)
+
+
+async def unsetup_all(bot_id, admin_id: int) -> int:
+    """Гасит все ресурсы и требование. Возвращает число снятых ресурсов."""
     from services.admin import audit
 
     async with async_session.begin() as s:
-        row = await s.scalar(
-            select(OpChat).where(OpChat.bot_id == bot_id, OpChat.chat_id == chat_id)
+        settings = await settings_or_create(s, bot_id)
+        rows = list(
+            (
+                await s.scalars(
+                    select(OpChat).where(
+                        OpChat.bot_id == bot_id, OpChat.active.is_(True)
+                    )
+                )
+            ).all()
         )
-        if row is None:
-            return False
-        row.active = active
+        for row in rows:
+            row.active = False
+            row.ends_at = None
+        settings.enabled = False
+        settings.updated_at = utcnow()
         audit(
             s,
             admin_id,
-            "op_chat_toggle",
+            "op_disable",
             "op",
             bot_id,
-            after={"chat_id": chat_id, "active": active},
+            after={"reason": "unsetup_all", "chats": len(rows)},
         )
-    return True
+    return len(rows)
+
+
+async def requirement_active(bot_id) -> bool:
+    """Действует ли требование сейчас -- одной строкой для кнопок меню."""
+    async with async_session() as s:
+        return await op_required_now(s, bot_id)
 
 
 async def tick() -> int:
-    """Планировщик: гасит просроченную ОП и пишет это в журнал.
+    """Планировщик: гасит просроченные ресурсы и требования без живых.
 
-    Для гейта это не обязательно -- is_active() уже посчитал бы её
-    выключенной, -- но журнал обязан показать, что отключение случилось."""
+    Для гейта это не обязательно -- _active_chats() уже отсекает просрочку
+    на каждом запросе, -- но состояние в базе обязано показывать правду,
+    не дожидаясь действий владельца."""
     from services.admin import audit
 
     changed = 0
@@ -642,15 +685,37 @@ async def tick() -> int:
             expired = list(
                 (
                     await s.scalars(
-                        select(OpSettings).where(
-                            OpSettings.enabled.is_(True),
-                            OpSettings.ends_at.is_not(None),
-                            OpSettings.ends_at <= now,
+                        select(OpChat).where(
+                            OpChat.active.is_(True),
+                            OpChat.ends_at.is_not(None),
+                            OpChat.ends_at <= now,
                         )
                     )
                 ).all()
             )
-            for settings in expired:
+            for chat in expired:
+                chat.active = False
+                changed += 1
+                audit(
+                    s,
+                    0,
+                    "op_chat_expired",
+                    "op_chat",
+                    chat.chat_id,
+                    before={"ends_at": chat.ends_at.isoformat()},
+                    after={"active": False},
+                )
+                logger.info(
+                    "event=op_chat_expired bot_id=%s chat_id=%s",
+                    chat.bot_id,
+                    chat.chat_id,
+                )
+            for bot_id in {chat.bot_id for chat in expired}:
+                settings = await settings_for(s, bot_id)
+                if settings is None or not settings.enabled:
+                    continue
+                if await _active_chats(s, bot_id):
+                    continue
                 settings.enabled = False
                 changed += 1
                 audit(
@@ -658,11 +723,11 @@ async def tick() -> int:
                     0,
                     "op_auto_disable",
                     "op",
-                    settings.bot_id,
-                    before={"enabled": True, "ends_at": settings.ends_at.isoformat()},
-                    after={"enabled": False},
+                    bot_id,
+                    before={"enabled": True},
+                    after={"enabled": False, "reason": "no_live_chats"},
                 )
-                logger.info("event=op_auto_disabled bot_id=%s", settings.bot_id)
+                logger.info("event=op_auto_disabled bot_id=%s", bot_id)
     except Exception:
         logger.warning("event=op_tick_failed", exc_info=True)
     return changed
@@ -751,14 +816,14 @@ async def _notify_batch(bot_id) -> None:
         settings = await settings_for(s, bot_id)
         if settings is None or not settings.notify_running:
             return
-        if not is_active(settings) or bot is None:
+        chats = await _active_chats(s, bot_id)
+        if not is_active(settings) or bot is None or not chats:
             settings.notify_running = False
             await s.commit()
             return
         cursor = settings.notify_cursor
         campaign = settings.campaign_id
         custom = settings.text
-        chats = await _active_chats(s, bot_id)
         users = list(
             (
                 await s.scalars(

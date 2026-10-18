@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import admin_router
 from keyboards import texts as T
-from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb, admin_confirm_mute_kb, admin_back_kb, admin_analytics_kb, admin_users_section_kb, admin_moderation_kb, admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb, admin_op_kb, admin_growth_kb, admin_settings_kb, admin_setting_kb, admin_prices_kb, admin_audit_kb, admin_user_list_kb
+from keyboards.inline import admin_kb, admin_report_kb, admin_broadcast_audience_kb, admin_user_card_kb, admin_broadcast_status_kb, admin_ads_kb, admin_ad_card_kb, admin_ads_settings_kb, admin_ads_settings_cancel_kb, SEGMENT_TITLES, back_kb, admin_confirm_ban_kb, admin_confirm_grant_kb, admin_confirm_mute_kb, admin_back_kb, admin_analytics_kb, admin_users_section_kb, admin_moderation_kb, admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb, admin_growth_kb, admin_settings_kb, admin_setting_kb, admin_prices_kb, admin_audit_kb, admin_user_list_kb
 from services.admin import AdminService, StatsService, authorize, BROADCAST_SEGMENTS, SETTING_LIMITS, SETTING_TITLES, SETTING_DEFAULTS, SETTING_PRESETS, SETTING_KEYS, SETTING_PAGE_SIZE
 from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
@@ -1100,8 +1100,6 @@ ADMIN_SECTIONS = {
         "Цены на продукты, параметры бота и частота показа рекламы."),
     "admin:sec:system": ("🧰 Система", admin_system_kb,
         "Сердцебиение воркера, база, Redis, очередь и журнал действий администраторов."),
-    "admin:sec:op": ("📛 Обязательная подписка", admin_op_kb,
-        "Условие подписки на каналы и группы: срок, текст требования, рассылка неподписанным и журнал проверок."),
 }
 
 

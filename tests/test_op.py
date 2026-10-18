@@ -1,9 +1,9 @@
-"""ОП: обязательная подписка -- гейт, срок, ресурсы и рассылка (ТЗ §8).
+"""ОП: обязательная подписка -- гейт, сроки ресурсов, рассылка и команды.
 
 База -- SQLite-фабрика DatabaseCase; сеть не дёргается: вместо Telegram
 работает FakeBot со словарём статусов. Отдельно проверяются: гейт по
-апдейту, перепроверка в том же сообщении, срок по Киеву, автоотключение
-воркером, рассылка неподписанным и доступ панели только владельцу.
+апдейту, перепроверка в том же сообщении, срок ресурса, автоотключение
+воркером, рассылка неподписанным и owner-команды /setup, /unsetup, /op.
 """
 
 import sys
@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import GetChatMember
 from sqlalchemy import select
@@ -38,6 +39,27 @@ def member(status, is_member=None):
     if is_member is not None:
         stub.is_member = is_member
     return stub
+
+
+def channel_stub(chat_id, title, username=None):
+    fields = {
+        "id": chat_id,
+        "title": title,
+        "type": SimpleNamespace(value="channel"),
+    }
+    if username:
+        fields["username"] = username
+    return SimpleNamespace(**fields)
+
+
+def owner_message(text, bot):
+    return SimpleNamespace(
+        chat=SimpleNamespace(type="private"),
+        bot=bot,
+        from_user=SimpleNamespace(id=ADMIN, username="owner", language_code="ru"),
+        text=text,
+        answer=AsyncMock(),
+    )
 
 
 class FakeBot:
@@ -100,7 +122,9 @@ class OpCase(DatabaseCase):
                     text=text,
                 )
             )
-            for title, chat_id, link in chats:
+            for entry in chats:
+                title, chat_id, link = entry[:3]
+                chat_ends = entry[3] if len(entry) > 3 else None
                 s.add(
                     OpChat(
                         bot_id=bot_id,
@@ -110,6 +134,7 @@ class OpCase(DatabaseCase):
                         link=link,
                         active=True,
                         rights_ok=True,
+                        ends_at=chat_ends,
                     )
                 )
 
@@ -127,6 +152,23 @@ class OpCase(DatabaseCase):
     async def settings(self, bot_id=BOT):
         async with self.factory() as s:
             return await s.scalar(select(OpSettings).where(OpSettings.bot_id == bot_id))
+
+    async def audits(self, actions):
+        async with self.factory() as s:
+            return list(
+                (
+                    await s.scalars(
+                        select(AdminAudit.action)
+                        .where(AdminAudit.action.in_(actions))
+                        .order_by(AdminAudit.id)
+                    )
+                ).all()
+            )
+
+    async def expire_chat(self, chat_id, *, minutes=1):
+        async with self.factory.begin() as s:
+            row = await s.scalar(select(OpChat).where(OpChat.chat_id == chat_id))
+            row.ends_at = utcnow() - timedelta(minutes=minutes)
 
 
 class OpGateServiceTests(OpCase):
@@ -237,27 +279,32 @@ class OpGateServiceTests(OpCase):
         self.assertFalse(gate.blocked)
         self.assertEqual(bot.calls, [])
 
-    async def test_expiry_lifts_the_gate_and_tick_audits_the_shutdown(self):
-        await self.op_on(
-            enabled=True,
-            starts_at=utcnow() - timedelta(hours=2),
-            ends_at=utcnow() - timedelta(minutes=1),
-        )
+    async def test_expired_resource_lifts_the_gate_and_tick_greens_it_out(self):
+        await self.op_on(chats=(("Канал А", -101, LINK_A),))
+        await self.expire_chat(-101)
         bot = FakeBot()
         self.assertFalse((await op_service.op_gate(bot, 7008)).required)
-        self.assertEqual(await op_service.tick(), 1)
+        self.assertEqual(bot.calls, [])
+        self.assertEqual(await op_service.tick(), 2)
         settings = await self.settings()
         self.assertFalse(settings.enabled)
-        async with self.factory() as s:
-            audits = list(
-                (
-                    await s.scalars(
-                        select(AdminAudit).where(AdminAudit.action == "op_auto_disable")
-                    )
-                ).all()
-            )
-        self.assertEqual(len(audits), 1)
+        row = await op_service.chat_row(BOT, -101)
+        self.assertFalse(row.active)
+        self.assertEqual(
+            await self.audits(["op_chat_expired", "op_auto_disable"]),
+            ["op_chat_expired", "op_auto_disable"],
+        )
         self.assertEqual(await op_service.tick(), 0)
+
+    async def test_tick_keeps_the_requirement_while_a_second_resource_lives(self):
+        await self.op_on()
+        await self.expire_chat(-101)
+        self.assertEqual(await op_service.tick(), 1)
+        self.assertTrue((await self.settings()).enabled)
+        bot = FakeBot()
+        gate = await op_service.op_gate(bot, 7010)
+        self.assertTrue(gate.required)
+        self.assertEqual([c["title"] for c in gate.missing], ["Группа Б"])
 
     async def test_positive_cache_short_circuits_the_second_check(self):
         await self.op_on()
@@ -285,49 +332,35 @@ class OpGateServiceTests(OpCase):
         settings = await self.settings()
         self.assertEqual(settings.checks_total, 1)
 
-    async def test_deadline_parser_accepts_kyiv_forms(self):
-        self.assertEqual(
-            op_service.parse_deadline("18.10.2026 23:00"),
-            datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc),
-        )
-        now = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
-        self.assertEqual(
-            op_service.parse_deadline("18.10 23:00", now=now),
-            datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc),
-        )
-        evening = datetime(2026, 10, 18, 10, 30, tzinfo=timezone.utc)
-        self.assertEqual(
-            op_service.parse_deadline("23:00", now=evening),
-            datetime(2026, 10, 18, 20, 0, tzinfo=timezone.utc),
-        )
-        for bad in ("послезавтра", "31.02.2026 10:00", ""):
+    async def test_limit_parser_understands_seconds_to_days(self):
+        self.assertEqual(op_service.parse_limit("30s"), timedelta(seconds=30))
+        self.assertEqual(op_service.parse_limit("15m"), timedelta(minutes=15))
+        self.assertEqual(op_service.parse_limit("2h"), timedelta(hours=2))
+        self.assertEqual(op_service.parse_limit("1d"), timedelta(days=1))
+        for bad in ("1w", "0d", "d", "", "10", "1 d"):
             with self.assertRaises(ValueError, msg=bad):
-                op_service.parse_deadline(bad)
+                op_service.parse_limit(bad)
 
-    async def test_resource_without_admin_rights_is_saved_but_not_activated(self):
+    async def test_setup_chat_activates_only_with_admin_rights(self):
         bot = FakeBot()
-        bot.chats["@kanal"] = SimpleNamespace(
-            id=-301,
-            title="Канал",
-            username="kanal",
-            type=SimpleNamespace(value="channel"),
-        )
+        bot.chats["@kanal"] = channel_stub(-301, "Канал", "kanal")
         bot.allow(-301, BOT, "member")
-        ok, text = await op_service.add_chat(bot, BOT, "@kanal", ADMIN)
-        self.assertTrue(ok)
-        self.assertIn("прав администратора нет", text)
-        row = await op_service.chat_row(BOT, -301)
-        self.assertFalse(row.active)
-        self.assertFalse(row.rights_ok)
-        bot.chats[-301] = bot.chats["@kanal"]
+        ok, note = await op_service.setup_chat(bot, BOT, "@kanal", ADMIN)
+        self.assertFalse(ok)
+        self.assertIn("не администратор", note)
+        self.assertIsNone(await op_service.chat_row(BOT, -301))
+        self.assertIsNone(await self.settings())
         bot.allow(-301, BOT, "administrator")
-        ok, _ = await op_service.verify_chat(bot, BOT, -301, ADMIN)
+        ok, note = await op_service.setup_chat(bot, BOT, "@kanal", ADMIN)
         self.assertTrue(ok)
+        self.assertIn("без ограничений", note)
         row = await op_service.chat_row(BOT, -301)
+        self.assertTrue(row.active)
         self.assertTrue(row.rights_ok)
-        self.assertFalse(row.active)
-        self.assertTrue(await op_service.set_chat_active(BOT, -301, True, ADMIN))
-        self.assertTrue((await op_service.chat_row(BOT, -301)).active)
+        self.assertEqual(row.link, "https://t.me/kanal")
+        settings = await self.settings()
+        self.assertTrue(settings.enabled)
+        self.assertEqual(settings.campaign_id, 1)
 
     async def test_parse_chat_ref_understands_links_and_ids(self):
         self.assertEqual(op_service.parse_chat_ref("@kanal"), "@kanal")
@@ -400,7 +433,187 @@ class OpNotifyTests(OpCase):
         self.assertEqual(row.status, "skipped")
 
 
-class OpPanelTests(OpCase):
+class OpOwnerCommandsTests(OpCase):
+    async def test_setup_command_starts_op_with_limit_and_audit(self):
+        from handlers.op import cmd_setup
+
+        bot = FakeBot()
+        bot.chats["@kanal"] = channel_stub(-301, "Канал", "kanal")
+        bot.allow(-301, BOT, "administrator")
+        message = owner_message("/setup @kanal 2h", bot)
+        await cmd_setup(message)
+        settings = await self.settings()
+        self.assertTrue(settings.enabled)
+        self.assertEqual(settings.campaign_id, 1)
+        row = await op_service.chat_row(BOT, -301)
+        self.assertTrue(row.active)
+        self.assertTrue(row.rights_ok)
+        self.assertEqual(row.link, "https://t.me/kanal")
+        left = row.ends_at - utcnow()
+        self.assertGreater(left, timedelta(hours=1, minutes=55))
+        self.assertLess(left, timedelta(hours=2, minutes=5))
+        self.assertIn("ОП запущена", message.answer.await_args.args[0])
+        self.assertEqual(
+            await self.audits(["op_enable", "op_chat_add"]),
+            ["op_enable", "op_chat_add"],
+        )
+
+    async def test_setup_command_takes_an_explicit_invite_link(self):
+        from handlers.op import cmd_setup
+
+        bot = FakeBot()
+        bot.chats[-301] = channel_stub(-301, "Канал")
+        bot.allow(-301, BOT, "administrator")
+        message = owner_message("/setup -301 https://t.me/+secret 30m", bot)
+        await cmd_setup(message)
+        row = await op_service.chat_row(BOT, -301)
+        self.assertEqual(row.link, "https://t.me/+secret")
+        left = row.ends_at - utcnow()
+        self.assertLess(left, timedelta(minutes=31))
+
+    async def test_setup_without_rights_is_refused_and_changes_nothing(self):
+        from handlers.op import cmd_setup
+
+        bot = FakeBot()
+        bot.chats["@kanal"] = channel_stub(-301, "Канал", "kanal")
+        bot.allow(-301, BOT, "member")
+        message = owner_message("/setup @kanal", bot)
+        await cmd_setup(message)
+        self.assertIn("не администратор", message.answer.await_args.args[0])
+        self.assertIsNone(await op_service.chat_row(BOT, -301))
+        self.assertIsNone(await self.settings())
+
+    async def test_setup_rejects_a_bad_limit(self):
+        from handlers.op import cmd_setup
+
+        bot = FakeBot()
+        bot.chats["@kanal"] = channel_stub(-301, "Канал", "kanal")
+        bot.allow(-301, BOT, "administrator")
+        message = owner_message("/setup @kanal 5w", bot)
+        await cmd_setup(message)
+        self.assertIn("Не понял лимит", message.answer.await_args.args[0])
+        self.assertIsNone(await self.settings())
+
+    async def test_setup_without_args_shows_the_help(self):
+        from handlers.op import cmd_setup
+
+        message = owner_message("/setup", FakeBot())
+        await cmd_setup(message)
+        text = message.answer.await_args.args[0]
+        self.assertIn("Запуск ОП", text)
+        self.assertIn("/unsetup", text)
+
+    async def test_unsetup_one_then_all(self):
+        from handlers.op import cmd_unsetup
+
+        await self.op_on()
+        message = owner_message("/unsetup -101", FakeBot())
+        await cmd_unsetup(message)
+        async with self.factory() as s:
+            row = await s.scalar(select(OpChat).where(OpChat.chat_id == -101))
+        self.assertFalse(row.active)
+        self.assertIsNone(row.ends_at)
+        self.assertTrue((await self.settings()).enabled)
+        self.assertIn("ОП отключена", message.answer.await_args.args[0])
+        message = owner_message("/unsetup", FakeBot())
+        await cmd_unsetup(message)
+        self.assertFalse((await self.settings()).enabled)
+        async with self.factory() as s:
+            rows = list((await s.scalars(select(OpChat))).all())
+        self.assertTrue(all(not r.active for r in rows))
+        self.assertIn("Все ОП отключены", message.answer.await_args.args[0])
+
+    async def test_unsetup_of_the_last_live_resource_disables_the_requirement(self):
+        from handlers.op import cmd_unsetup
+
+        await self.op_on(chats=(("Канал А", -101, LINK_A),))
+        message = owner_message("/unsetup -101", FakeBot())
+        await cmd_unsetup(message)
+        self.assertFalse((await self.settings()).enabled)
+        self.assertEqual(await self.audits(["op_disable"]), ["op_disable"])
+
+    async def test_op_menu_lists_live_chats_with_controls(self):
+        from handlers.op import cmd_op
+
+        await self.op_on(chats=(("Канал А", -101, LINK_A),))
+        message = owner_message("/op", FakeBot())
+        await cmd_op(message)
+        text = message.answer.await_args.args[0]
+        markup = message.answer.await_args.kwargs["reply_markup"]
+        self.assertIn("активные ОП: 1", text)
+        self.assertIn("Канал А", text)
+        self.assertIn("-101", text)
+        data = [b.callback_data for row in markup.inline_keyboard for b in row]
+        self.assertIn("op_owner:off:-101", data)
+        self.assertIn("op_owner:off_all", data)
+        self.assertIn("op_owner:notify", data)
+
+    async def test_op_menu_with_nothing_active_keeps_only_refresh(self):
+        from handlers.op import cmd_op
+
+        message = owner_message("/op", FakeBot())
+        await cmd_op(message)
+        self.assertIn("Активных ОП нет", message.answer.await_args.args[0])
+        markup = message.answer.await_args.kwargs["reply_markup"]
+        data = [b.callback_data for row in markup.inline_keyboard for b in row]
+        self.assertEqual(data, ["op_owner:list"])
+
+    async def test_row_button_off_disables_and_rerenders(self):
+        from handlers.op import cb_owner_off
+
+        await self.op_on(chats=(("Канал А", -101, LINK_A),))
+        callback = SimpleNamespace(
+            bot=SimpleNamespace(id=BOT),
+            from_user=SimpleNamespace(id=ADMIN),
+            data="op_owner:off:-101",
+            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
+            answer=AsyncMock(),
+        )
+        await cb_owner_off(callback)
+        self.assertFalse((await op_service.chat_row(BOT, -101)).active)
+        self.assertFalse((await self.settings()).enabled)
+        shown = callback.message.edit_text.await_args.args[0]
+        self.assertIn("Активных ОП нет", shown)
+
+    async def test_notify_button_refuses_when_nothing_is_active(self):
+        from handlers.op import cb_owner_notify
+
+        callback = SimpleNamespace(
+            bot=SimpleNamespace(id=BOT),
+            from_user=SimpleNamespace(id=ADMIN),
+            answer=AsyncMock(),
+        )
+        await cb_owner_notify(callback)
+        callback.answer.assert_awaited_once()
+        self.assertTrue(callback.answer.await_args.kwargs.get("show_alert"))
+        self.assertIsNone(await self.settings())
+
+    async def test_forwarded_channel_message_gives_id_only_to_the_owner(self):
+        from handlers.op import forwarded_id
+
+        origin = SimpleNamespace(chat=channel_stub(-100500, "Канал", "kanal"))
+        message = SimpleNamespace(
+            chat=SimpleNamespace(type="private"),
+            from_user=SimpleNamespace(id=ADMIN),
+            forward_origin=origin,
+            answer=AsyncMock(),
+        )
+        with patch("handlers.op.authorize"):
+            await forwarded_id(message)
+        text = message.answer.await_args.args[0]
+        self.assertIn("-100500", text)
+        self.assertIn("/setup @kanal", text)
+        stranger = SimpleNamespace(
+            chat=SimpleNamespace(type="private"),
+            from_user=SimpleNamespace(id=12345),
+            forward_origin=origin,
+            answer=AsyncMock(),
+        )
+        with patch("handlers.op.authorize", side_effect=PermissionError):
+            with self.assertRaises(SkipHandler):
+                await forwarded_id(stranger)
+        stranger.answer.assert_not_awaited()
+
     async def test_admin_gate_blocks_strangers_and_lets_the_owner_in(self):
         from handlers.admin import AdminOnly
 
@@ -417,47 +630,6 @@ class OpPanelTests(OpCase):
         with patch("handlers.admin.authorize"):
             await middleware(handler, owner, {})
         handler.assert_awaited_once()
-
-    async def test_owner_toggle_turns_op_on_and_off_with_audit(self):
-        from handlers.op import cb_op_toggle
-
-        callback = SimpleNamespace(
-            bot=SimpleNamespace(id=BOT),
-            from_user=SimpleNamespace(id=ADMIN),
-            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
-            answer=AsyncMock(),
-        )
-        state = SimpleNamespace(clear=AsyncMock())
-        await cb_op_toggle(callback, state)
-        settings = await self.settings()
-        self.assertTrue(settings.enabled)
-        self.assertEqual(settings.campaign_id, 1)
-        self.assertIsNotNone(settings.starts_at)
-        async with self.factory() as s:
-            actions = list(
-                (
-                    await s.scalars(
-                        select(AdminAudit.action).where(
-                            AdminAudit.action.in_(["op_enable", "op_disable"])
-                        )
-                    )
-                ).all()
-            )
-        self.assertEqual(actions, ["op_enable"])
-        callback.message.edit_text.assert_awaited()
-        await cb_op_toggle(callback, state)
-        self.assertFalse((await self.settings()).enabled)
-        async with self.factory() as s:
-            actions = list(
-                (
-                    await s.scalars(
-                        select(AdminAudit.action).where(
-                            AdminAudit.action.in_(["op_enable", "op_disable"])
-                        )
-                    )
-                ).all()
-            )
-        self.assertEqual(actions, ["op_enable", "op_disable"])
 
     async def test_check_button_edits_the_same_message_and_opens_the_bot(self):
         from handlers.op import cb_op_check
