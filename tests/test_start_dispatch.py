@@ -39,6 +39,8 @@ class StartDispatchTests(unittest.TestCase):
             with (
                 patch("services.onboarding.OnboardingService.start",
                       new=AsyncMock(return_value=ServiceResult(True, "WELCOME"))),
+                patch("services.registration.register_start",
+                      new=AsyncMock(return_value=ServiceResult(True, "FIRST"))),
                 patch.object(bot.session, "make_request", new=telegram),
             ):
                 for index, text in enumerate(("/start", "/start@offline_test_bot")):

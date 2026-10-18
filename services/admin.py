@@ -10,10 +10,11 @@ from models.ban import Ban
 from models.mute import Mute
 from models.payment import Payment, Product, PremiumSubscription
 from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Notification
+from models.start import StartEvent
 from services.result import ServiceResult
 from services.chats import ChatService
 from services.matching import MatchingService
-from utils.time import utcnow
+from utils.time import kyiv_day_bounds, utcnow
 import config
 
 # ban и unban сериализуются в пределах процесса: на Postgres их держит
@@ -236,6 +237,10 @@ class StatsService:
             new_7d=await s.scalar(select(func.count(User.id)).where(User.created_at>=week_ago))
             new_prev_7d=await s.scalar(select(func.count(User.id)).where(
                 User.created_at>=two_weeks_ago,User.created_at<week_ago))
+            day_start, day_end = kyiv_day_bounds()
+            starts=await s.scalar(select(func.count(StartEvent.id)))
+            starts_today=await s.scalar(select(func.count(StartEvent.id)).where(
+                StartEvent.created_at>=day_start,StartEvent.created_at<day_end))
             chats=await s.scalar(select(func.count(Chat.id)).where(Chat.status=="ended",Chat.ended_at>=cutoff))
             duration=await s.scalar(select(func.avg(Chat.duration_seconds)).where(Chat.status=="ended",Chat.ended_at>=cutoff))
             stars=await s.scalar(select(func.coalesce(func.sum(Payment.stars_amount),0)).where(Payment.status=="paid",Payment.paid_at>=cutoff))
@@ -264,7 +269,8 @@ class StatsService:
         # kind of fake monetization data rule 13 forbids.
         usd_rate=await bot_value("stars_usd_cents_per_100",0)
         stars_usd=round(stars*usd_rate/10000,2) if usd_rate else None
-        return dict(users=users,new=new,chats=chats,avg_seconds=round(duration or 0),stars=stars,
+        return dict(users=users,new=new,starts=starts,starts_today=starts_today,
+            chats=chats,avg_seconds=round(duration or 0),stars=stars,
             stars_usd=stars_usd,premium=premium,products=dict(products),product_orders=orders,
             product_shares=product_shares,new_7d=new_7d,growth_7d_pct=growth_7d_pct,
             funnel=funnel,rating=round(rating,1) if rating is not None else None,
@@ -375,6 +381,14 @@ class AdminService:
         from services.notifications import enqueue
         until=f"до {expires:%d.%m.%Y %H:%M} UTC" if expires else "бессрочно"
         await enqueue(s,uid,"mute",f"mute:{record.id}",f"🔇 Мут {until}: писать и искать собеседника нельзя. Причина: {reason[:500]}")
+
+    async def start_events_count(self, telegram_id):
+        """Сколько событий запуска реально записано -- для сверки со
+        start_count в карточке человека: расхождение значит, что счётчик
+        правили мимо регистрации."""
+        async with async_session() as s:
+            return await s.scalar(select(func.count(StartEvent.id)).where(
+                StartEvent.telegram_user_id == telegram_id)) or 0
 
     async def find_user(self,admin,value):
         authorize(admin)

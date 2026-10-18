@@ -251,7 +251,8 @@ class SecondBotOnboardingTests(unittest.IsolatedAsyncioTestCase):
             "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "second.db"))
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
         for module in ("models.base", "repositories.chats", "repositories.users",
-                       "services.notifications", "services.growth", "services.payments",
+                       "services.notifications", "services.registration",
+                       "services.growth", "services.payments",
                        "services.profile", "services.matching", "services.settings",
                        "services.reveal", "services.reports", "services.admin", "services.ads"):
             p = patch(module + ".async_session", self.factory)

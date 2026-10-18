@@ -400,6 +400,7 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             "repositories.chats",
             "repositories.users",
             "services.notifications",
+            "services.registration",
             "services.growth",
             "services.payments",
             "services.profile",

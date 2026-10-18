@@ -2,7 +2,7 @@ from aiogram import F
 from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, Update
 from handlers import start_router
 from keyboards import texts as T
 from keyboards.reply import onboarding_kb, main_menu_kb
@@ -95,8 +95,15 @@ async def show_step(message, state, result, page=0, lang="ru"):
 
 
 @start_router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, event_update: Update | None = None):
     user = message.from_user
+    # Регистрация запуска -- отдельной транзакцией до онбординга: повторная
+    # доставка апдейта не считается второй раз, первый запуск заводит
+    # событие и единственное уведомление владельцу (services.registration).
+    if event_update is not None:
+        from services.registration import register_start
+        await register_start(user.id, message.bot.id, event_update.update_id,
+                             username=user.username, first_name=user.first_name)
     payload = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
     result = await OnboardingService().start(user.id, user.username, user.first_name, payload)
     from utils import bots

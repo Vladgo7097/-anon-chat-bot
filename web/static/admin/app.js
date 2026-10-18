@@ -738,6 +738,7 @@ async function openUserCard(id) {
       `${num(u.referrals_count)} / ${num(u.referrals_activated)}`],
     ["Пришёл откуда", esc(data.source) || "—"],
     ["Диалогов", num(u.chats_count) + ` · всего ${dur(u.total_chat_seconds)}`],
+    ["Запусков", num(u.start_count)],
     ["Рейтинг", `${pct(u.positive_rating_pct)} · ♥ ${num(u.likes_received)} / ${num(u.dislikes_received)}`],
     ["Потрачено звёзд", num(u.total_stars_spent)],
     ["Premium до", u.premium_expires ? fmtFull(u.premium_expires) : "—"],
@@ -871,6 +872,7 @@ R.notices = { kind: "owner", bot: "", status: "", page: 1, size: 30 };
 const NOTICE_KINDS = [
   ["owner", "Владельцу"],
   ["startup", "Старт сервиса"],
+  ["owner_first_start", "Новые люди"],
   ["owner_first_payment", "Оплаты"],
   ["owner_report", "Жалобы"],
   ["backup_failed", "Бэкапы"],

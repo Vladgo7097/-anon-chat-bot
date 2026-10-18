@@ -43,6 +43,10 @@ class User(Base):
     likes_received: Mapped[int] = mapped_column(Integer, default=0)
     dislikes_received: Mapped[int] = mapped_column(Integer, default=0)
     total_chat_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    # Полный счётчик уникальных /start (см. services.registration): растёт
+    # на каждый запуск, дубли апдейтов не считаются. Для старых строк
+    # бэкфил миграции 022 ставит 1 -- они уже запускали бота хотя бы раз.
+    start_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
     # Premium
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False)

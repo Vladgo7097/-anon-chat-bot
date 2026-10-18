@@ -38,9 +38,11 @@ page_router = APIRouter()
 PAGE = Path(__file__).parent / "static" / "admin" / "index.html"
 
 # Виды, ради которых админка смотрит в notification_log: только то, что
-# требует внимания владельца. Сигналы «кто запустил бота» и часовые сводки
-# убраны из продукта -- они заливали чат владельца, не требуя решения.
-OWNER_NOTICE_TYPES = ("startup", "owner_first_payment", "owner_report", "backup_failed", "funnel_alert")
+# требует внимания владельца. Про запуски здесь один сигнал -- карточка
+# первого запуска нового человека (owner_first_start); потока «зашёл снова»
+# и часовых сводок в продукте нет.
+OWNER_NOTICE_TYPES = ("startup", "owner_first_payment", "owner_report", "backup_failed",
+                      "funnel_alert", "owner_first_start")
 
 
 def _admin_id() -> int:
@@ -121,6 +123,7 @@ def _user_row(user, *, detail: bool = False):
         "gender": user.gender,
         "age": user.age,
         "chats_count": user.chats_count,
+        "start_count": user.start_count,
         "is_banned": user.is_banned,
         "ban_expires": _iso(user.ban_expires),
         "is_muted": user.is_muted,

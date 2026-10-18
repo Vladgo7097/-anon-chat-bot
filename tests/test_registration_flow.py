@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from handlers import load_routers
@@ -28,6 +28,7 @@ import models.chat  # noqa: F401 -- registers metadata used by the routers
 import models.operations  # noqa: F401
 import models.payment  # noqa: F401
 import models.report  # noqa: F401
+import models.start  # noqa: F401
 
 from utils.middleware import AccessMiddleware, AntiFloodMiddleware
 
@@ -53,7 +54,8 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         # a consumer imported while another test's patch is active would keep
         # that test's factory (and its deleted temp file) forever.
         for module in ("models.base", "repositories.chats", "repositories.users",
-                       "services.notifications", "services.growth", "services.payments",
+                       "services.notifications", "services.registration",
+                       "services.growth", "services.payments",
                        "services.profile", "services.matching",
                        "services.settings", "services.reveal", "services.reports",
                        "services.admin", "services.ads"):
@@ -370,6 +372,17 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._send_text("просто текст")
         self.assertIn("Выберите язык", self.sent[-1].text)
         self.assertIsNone((await self._user()).language)
+
+    async def test_every_unique_start_is_counted_once(self):
+        from models.start import StartEvent
+        await self._send_text("/start", update_id=901)
+        self.assertEqual((await self._user()).start_count, 1)
+        await self._send_text("/start", update_id=902)
+        self.assertEqual((await self._user()).start_count, 2)
+        async with self.factory() as s:
+            self.assertEqual(await s.scalar(select(func.count(StartEvent.id))), 2)
+            self.assertEqual(await s.scalar(select(func.count(StartEvent.id)).where(
+                StartEvent.event_type == "first_start")), 1)
 
 
 if __name__ == "__main__":
