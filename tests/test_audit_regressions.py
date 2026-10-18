@@ -283,7 +283,7 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
         from aiogram.client.session.aiohttp import AiohttpSession
         from aiogram.methods import SendMessage, SendPhoto
         from aiogram.types import BufferedInputFile
-        from utils.telegram import REQUEST_TIMEOUT, TimeoutBoundedSession
+        from utils.telegram import GET_UPDATES_TIMEOUT, REQUEST_TIMEOUT, TimeoutBoundedSession
         session = TimeoutBoundedSession()
         mock = AsyncMock()
         photo = BufferedInputFile(b"x", filename="photo.jpg")
@@ -297,6 +297,6 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bounded, [
             ("SendMessage", REQUEST_TIMEOUT),
             ("SendPhoto", None),
-            ("GetUpdates", None),
-            ("GetUpdates", 70),
+            ("GetUpdates", GET_UPDATES_TIMEOUT),
+            ("GetUpdates", GET_UPDATES_TIMEOUT),
         ])

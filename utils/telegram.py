@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 # секунд немоты, и повтора не было. Короткий потолок превращает зависание
 # в быструю неудачу, а RetryTelegramRequests повторяет запрос сразу после неё.
 REQUEST_TIMEOUT = 12.0
+# aiogram считает HTTP-таймаут GetUpdates как session.timeout (60 с) плюс
+# polling_timeout (10 с) -- 70 с. Если соединение умерло молча, бот минуту
+# не получает апдейты, а потом обрабатывает их устаревшей пачкой. Сам опрос
+# Telegram держит 10 с, поэтому 15 с хватает на штатный ответ и обрывает
+# мёртвое соединение до того, как очередь успевает состариться.
+GET_UPDATES_TIMEOUT = 15.0
 
 
 class TimeoutBoundedSession(AiohttpSession):
@@ -26,7 +32,10 @@ class TimeoutBoundedSession(AiohttpSession):
     """
 
     async def make_request(self, bot, method, timeout=None):
-        bounded = not isinstance(method, GetUpdates) and not _carries_files(method)
+        if isinstance(method, GetUpdates):
+            # Не 70 с от aiogram: мёртвый сокет не должен держать очередь.
+            return await super().make_request(bot, method, timeout=GET_UPDATES_TIMEOUT)
+        bounded = not _carries_files(method)
         if timeout is None and bounded:
             timeout = REQUEST_TIMEOUT
         return await super().make_request(bot, method, timeout=timeout)
