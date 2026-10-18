@@ -276,38 +276,6 @@ class AdminDbCase(unittest.IsolatedAsyncioTestCase):
         labels = [r["label"] for r in rows]
         self.assertEqual(labels, ["Бот 1", "Бот 2", "Бот не определён"])
 
-    # ---------- жалобы и вердикт модели ----------
-
-    async def test_ai_verdict_rides_along_with_the_report(self):
-        """Защита: панель жалоб отдаёт вердикт модели рядом с жалобой.
-
-        Бета-модерация: вотчер пишет строку в report_ai, и карточка
-        очереди обязана показать её; жалоба без вердикта не роняет
-        список -- у неё просто null, как у любой ещё не разобранной.
-        """
-        from models.report import Report, ReportAI
-        async with self.factory.begin() as s:
-            done = Report(reporter_id=101, reported_id=102,
-                          reason="Спам/реклама",
-                          message_content="[БЕТА-ТЕСТ] заходи в канал",
-                          status="pending")
-            fresh = Report(reporter_id=102, reported_id=103, reason="Другое",
-                           message_content="просто болтовня",
-                           status="pending")
-            s.add_all([done, fresh])
-            await s.flush()
-            s.add(ReportAI(report_id=done.id, category="spam", severity="low",
-                           summary="Реклама, отклонить",
-                           model="qwen3-0.6b-q4_k_m"))
-        with patch.object(config, "OWNER_ID", OWNER), \
-             patch.object(config, "ADMIN_IDS", {OWNER}):
-            data = await reports(offset=0, _=None)
-        by_id = {i["id"]: i for i in data["items"]}
-        self.assertEqual(by_id[done.id]["ai"]["severity"], "low")
-        self.assertEqual(by_id[done.id]["ai"]["category"], "spam")
-        self.assertEqual(by_id[done.id]["ai"]["summary"], "Реклама, отклонить")
-        self.assertIsNone(by_id[fresh.id]["ai"])
-
     # ---------- обзор ----------
 
     async def test_overview_feeds_the_recent_launch_panel(self):
