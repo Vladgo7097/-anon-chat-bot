@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
 from html import escape
 
 from aiogram import BaseMiddleware, F
@@ -28,9 +29,16 @@ from keyboards.inline import (
     op_confirm_delete_kb,
     op_confirm_reset_kb,
     op_diag_kb,
+    op_exemptions_kb,
+    op_group_kb,
     op_message_editor_kb,
     op_messages_kb,
+    op_policy_kb,
     op_resources_kb,
+    op_rule_confirm_kb,
+    op_rule_features_kb,
+    op_rules_kb,
+    op_schedule_kb,
     op_single_kb,
     op_target_kb,
 )
@@ -50,6 +58,14 @@ class OpAdminTarget(StatesGroup):
 class OpAdminMessage(StatesGroup):
     TEXT = State()
     BUTTON = State()
+
+
+class OpAdminSchedule(StatesGroup):
+    WINDOW = State()
+
+
+class OpAdminExempt(StatesGroup):
+    USER = State()
 
 
 class ClearOnTap(BaseMiddleware):
@@ -459,6 +475,8 @@ async def op_target_link_input(message: Message, state: FSMContext):
         OpAdminTarget.LINK,
         OpAdminMessage.TEXT,
         OpAdminMessage.BUTTON,
+        OpAdminSchedule.WINDOW,
+        OpAdminExempt.USER,
     ),
 )
 async def op_admin_cancel(message: Message, state: FSMContext):
@@ -486,6 +504,491 @@ async def cb_op_audit(callback: CallbackQuery):
     rows = await panel.audit_page(callback.bot.id)
     await callback.answer()
     await _render(callback, _audit_text(rows), op_audit_kb())
+
+
+# ── Правила: политики, группы, состав ──────────────────────────
+
+def _policy_title(policy) -> str:
+    if policy.feature_key == "*":
+        return "🌐 Глобальное"
+    return f"⚙️ {core.feature_name(policy.feature_key, 'ru')} ({policy.feature_key})"
+
+
+def _rules_text(policies, counts) -> str:
+    if not policies:
+        return (
+            "🧮 Правила ОП\n\n"
+            "Правил нет. Глобальное правило действует на все защищённые функции; "
+            "правило функции добавляется поверх глобального.\n\n"
+            "Создай правило и добавь в него группы ресурсов."
+        )
+    lines = ["🧮 Правила ОП", ""]
+    for policy in policies:
+        groups = counts.get(policy.id, [])
+        modes = " · ".join(
+            f"{'И' if group.mode == 'and' else 'ИЛИ'} {count}" for group, count in groups
+        ) or "групп нет"
+        window = _window_line(policy.starts_at, policy.ends_at)
+        lines.append(
+            f"{'🟢' if policy.enabled else '⚪'} {_policy_title(policy)} — {modes}; окно: {window}"
+        )
+    lines += [
+        "",
+        "Правило выполнено, когда выполнены все его группы. В группе «И» нужны "
+        "все отмеченные ресурсы, в «ИЛИ» — любой один.",
+    ]
+    return "\n".join(lines)
+
+
+def _policy_text(policy, groups, counts) -> str:
+    lines = [
+        f"🧮 {_policy_title(policy)}",
+        "",
+        f"Состояние: {'🟢 включено' if policy.enabled else '⚪ выключено'}",
+        f"Окно: {_window_line(policy.starts_at, policy.ends_at)} · Europe/Kyiv",
+        f"Групп: {len(groups)}",
+        "",
+    ]
+    if not groups:
+        lines.append("Групп нет — правило пока ничего не требует.")
+    else:
+        for index, group in enumerate(groups, 1):
+            mode = "И" if group.mode == "and" else "ИЛИ"
+            lines.append(f"Группа {index}: {mode} · ресурсов {counts.get(group.id, 0)}")
+        lines.append("")
+        lines.append("Правило выполнено, когда выполнены все группы.")
+    lines += [
+        "",
+        "Окно правила действует поверх общего окна: вне своего окна правило не требует подписки.",
+    ]
+    return "\n".join(lines)
+
+
+def _group_text(group, policy, targets, selected) -> str:
+    mode = "И — нужны все отмеченные" if group.mode == "and" else "ИЛИ — достаточно одного"
+    lines = [
+        f"🧩 Группа · {mode}",
+        f"Правило: {_policy_title(policy)}",
+        "",
+    ]
+    if not targets:
+        lines.append("Ресурсов нет. Сначала добавь канал или группу в разделе «Ресурсы».")
+    else:
+        lines.append(f"Отмечено: {len(selected)} из {len(targets)}. Нажми на ресурс, чтобы включить или убрать.")
+        lines.append("")
+        for target in targets:
+            lines.append(
+                f"{'✅' if target.id in selected else '○'} {escape(target.title or str(target.chat_id))}"
+            )
+    return "\n".join(lines)
+
+
+def _rules_kb(policies, counts):
+    labels = {
+        policy.feature_key: core.feature_name(policy.feature_key, "ru")
+        for policy in policies
+        if policy.feature_key != "*"
+    }
+    return op_rules_kb(
+        policies,
+        {policy.id: len(counts.get(policy.id, [])) for policy in policies},
+        labels,
+    )
+
+
+async def _policy_counts(policies):
+    counts = {}
+    for policy in policies:
+        groups = await panel.list_groups(policy.id)
+        group_counts = await panel.group_counts(policy.id)
+        counts[policy.id] = [(group, group_counts.get(group.id, 0)) for group in groups]
+    return counts
+
+
+@op_admin_router.callback_query(F.data == "admin:op:rule")
+async def cb_op_rules(callback: CallbackQuery):
+    policies = await panel.list_policies(callback.bot.id)
+    counts = await _policy_counts(policies)
+    await callback.answer()
+    await _render(callback, _rules_text(policies, counts), _rules_kb(policies, counts))
+
+
+@op_admin_router.callback_query(F.data == "admin:op:rule:new")
+async def cb_op_rule_new(callback: CallbackQuery):
+    keys = await panel.feature_keys(callback.bot.id)
+    entries = [(key, core.feature_name(key, "ru")) for key in keys]
+    await callback.answer()
+    await _render(
+        callback,
+        "➕ Новое правило\n\n"
+        "Глобальное действует на все защищённые функции. Правило функции "
+        "добавляется к глобальному и работает только для неё.",
+        op_rule_features_kb(entries),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:new:.+$"))
+async def cb_op_rule_create(callback: CallbackQuery):
+    key = callback.data.split(":", 4)[4]
+    keys = await panel.feature_keys(callback.bot.id)
+    if key != "*" and key not in keys:
+        await callback.answer("Неизвестная функция", show_alert=True)
+        return
+    policy = await panel.create_policy(callback.bot.id, callback.from_user.id, key)
+    await callback.answer("Правило создано")
+    await _show_policy(callback, policy.id, answered=True)
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:\d+$"))
+async def cb_op_rule(callback: CallbackQuery):
+    policy_id = int(callback.data.rsplit(":", 1)[1])
+    await _show_policy(callback, policy_id)
+
+
+async def _show_policy(
+    callback: CallbackQuery, policy_id: int, answered: bool = False
+) -> None:
+    policy = await panel.get_policy(callback.bot.id, policy_id)
+    if policy is None:
+        if not answered:
+            await callback.answer("Правило не найдено", show_alert=True)
+        return
+    if not answered:
+        await callback.answer()
+    groups = await panel.list_groups(policy_id)
+    counts = await panel.group_counts(policy_id)
+    await _render(
+        callback,
+        _policy_text(policy, groups, counts),
+        op_policy_kb(policy, groups, counts),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:on:\d+$"))
+async def cb_op_rule_toggle(callback: CallbackQuery):
+    policy_id = int(callback.data.rsplit(":", 1)[1])
+    policy = await panel.get_policy(callback.bot.id, policy_id)
+    if policy is None:
+        await callback.answer("Правило не найдено", show_alert=True)
+        return
+    updated = await panel.set_policy_enabled(
+        callback.bot.id, callback.from_user.id, policy_id, not policy.enabled
+    )
+    await callback.answer("Правило включено" if updated.enabled else "Правило выключено")
+    await _show_policy(callback, policy_id, answered=True)
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:gadd:\d+:(and|or)$"))
+async def cb_op_rule_group_add(callback: CallbackQuery):
+    _, _, _, _, policy_id, mode = callback.data.split(":")
+    group = await panel.add_group(
+        callback.bot.id, callback.from_user.id, int(policy_id), mode
+    )
+    if group is None:
+        await callback.answer("Правило не найдено", show_alert=True)
+        return
+    await callback.answer("Группа добавлена")
+    await _show_policy(callback, int(policy_id), answered=True)
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:g:\d+$"))
+async def cb_op_rule_group(callback: CallbackQuery):
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    found = await panel.get_group(callback.bot.id, group_id)
+    if found is None:
+        await callback.answer("Группа не найдена", show_alert=True)
+        return
+    group, policy = found
+    targets = await panel.list_targets(callback.bot.id)
+    selected = await panel.group_target_ids(group_id)
+    await callback.answer()
+    await _render(
+        callback,
+        _group_text(group, policy, targets, selected),
+        op_group_kb(group, policy, targets, selected),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:gt:\d+:\d+$"))
+async def cb_op_rule_group_target(callback: CallbackQuery):
+    _, _, _, _, group_id, target_id = callback.data.split(":")
+    linked = await panel.toggle_group_target(
+        callback.bot.id, callback.from_user.id, int(group_id), int(target_id)
+    )
+    if linked is None:
+        await callback.answer("Группа или ресурс не найдены", show_alert=True)
+        return
+    await callback.answer("Ресурс добавлен в группу" if linked else "Ресурс убран из группы")
+    found = await panel.get_group(callback.bot.id, int(group_id))
+    if found is None:
+        return
+    group, policy = found
+    targets = await panel.list_targets(callback.bot.id)
+    selected = await panel.group_target_ids(group.id)
+    await _render(
+        callback,
+        _group_text(group, policy, targets, selected),
+        op_group_kb(group, policy, targets, selected),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:gdel:\d+$"))
+async def cb_op_rule_group_delete(callback: CallbackQuery):
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    found = await panel.get_group(callback.bot.id, group_id)
+    if found is None:
+        await callback.answer("Группа не найдена", show_alert=True)
+        return
+    _, policy = found
+    removed = await panel.delete_group(
+        callback.bot.id, callback.from_user.id, group_id
+    )
+    await callback.answer("Группа удалена" if removed else "Группа не найдена")
+    if removed:
+        await _show_policy(callback, policy.id, answered=True)
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:del:\d+$"))
+async def cb_op_rule_delete_ask(callback: CallbackQuery):
+    policy_id = int(callback.data.rsplit(":", 1)[1])
+    policy = await panel.get_policy(callback.bot.id, policy_id)
+    if policy is None:
+        await callback.answer("Правило не найдено", show_alert=True)
+        return
+    await callback.answer()
+    await _render(
+        callback,
+        f"Удалить правило «{_policy_title(policy)}»?\n\n"
+        "Вместе с ним удалятся все группы и связи с ресурсами. Действие необратимо.",
+        op_rule_confirm_kb(policy_id),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:del2:\d+$"))
+async def cb_op_rule_delete(callback: CallbackQuery):
+    policy_id = int(callback.data.rsplit(":", 1)[1])
+    removed = await panel.delete_policy(
+        callback.bot.id, callback.from_user.id, policy_id
+    )
+    await callback.answer("Правило удалено" if removed else "Правило не найдено")
+    policies = await panel.list_policies(callback.bot.id)
+    counts = await _policy_counts(policies)
+    await _render(callback, _rules_text(policies, counts), _rules_kb(policies, counts))
+
+
+# ── Расписание ─────────────────────────────────────────────────
+
+WINDOW_PROMPT = (
+    "🗓 Окно требования (Europe/Kyiv)\n\n"
+    "Отправь одним сообщением:\n"
+    "• 01.11.2026 09:00 — 07.11.2026 23:00 — обе границы\n"
+    "• 01.11.2026 09:00 — — с этого момента\n"
+    "• — 07.11.2026 23:00 — до этого момента\n"
+    "• сброс — снять ограничение\n\n"
+    "Время местное, Europe/Kyiv; в базу уходит UTC. Отмена — /cancel."
+)
+
+
+def _schedule_text(settings) -> str:
+    return "\n".join(
+        [
+            "🗓 Расписание ОП",
+            "",
+            f"Общее окно: {_window_line(settings.starts_at, settings.ends_at)}",
+            f"Часовой пояс ввода: {settings.timezone}",
+            "",
+            "Внутри окна требование действует, вне — гейт открыт. Просроченное окно "
+            "не блокирует и после рестарта.",
+            "",
+            "Окна отдельных правил и ресурсов задаются в их карточках.",
+        ]
+    )
+
+
+@op_admin_router.callback_query(F.data == "admin:op:time")
+async def cb_op_time(callback: CallbackQuery):
+    settings = await panel.get_settings(callback.bot.id)
+    await callback.answer()
+    await _render(callback, _schedule_text(settings), op_schedule_kb())
+
+
+@op_admin_router.callback_query(F.data == "admin:op:time:edit")
+async def cb_op_time_edit(callback: CallbackQuery, state: FSMContext):
+    settings = await panel.get_settings(callback.bot.id)
+    await state.set_state(OpAdminSchedule.WINDOW)
+    await state.update_data(op_window_kind="settings", op_window_id=None)
+    await callback.answer()
+    await safe_send(
+        callback.message,
+        WINDOW_PROMPT + f"\n\nСейчас: {_window_line(settings.starts_at, settings.ends_at)}",
+        reply_markup=op_cancel_kb("admin:op:time"),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rule:win:\d+$"))
+async def cb_op_rule_window(callback: CallbackQuery, state: FSMContext):
+    policy_id = int(callback.data.rsplit(":", 1)[1])
+    policy = await panel.get_policy(callback.bot.id, policy_id)
+    if policy is None:
+        await callback.answer("Правило не найдено", show_alert=True)
+        return
+    await state.set_state(OpAdminSchedule.WINDOW)
+    await state.update_data(op_window_kind="policy", op_window_id=policy_id)
+    await callback.answer()
+    await safe_send(
+        callback.message,
+        WINDOW_PROMPT + f"\n\nПравило: {_policy_title(policy)}\n"
+        f"Сейчас: {_window_line(policy.starts_at, policy.ends_at)}",
+        reply_markup=op_cancel_kb(f"admin:op:rule:{policy_id}"),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:rtime:\d+$"))
+async def cb_op_target_window(callback: CallbackQuery, state: FSMContext):
+    target_id = int(callback.data.rsplit(":", 1)[1])
+    target = await panel.get_target(callback.bot.id, target_id)
+    if target is None:
+        await callback.answer("Ресурс не найден", show_alert=True)
+        return
+    await state.set_state(OpAdminSchedule.WINDOW)
+    await state.update_data(op_window_kind="target", op_window_id=target_id)
+    await callback.answer()
+    await safe_send(
+        callback.message,
+        WINDOW_PROMPT + f"\n\nРесурс: {escape(target.title or str(target.chat_id))}\n"
+        f"Сейчас: {_window_line(target.starts_at, target.ends_at)}",
+        reply_markup=op_cancel_kb(f"admin:op:r:{target_id}"),
+    )
+
+
+@op_admin_router.message(StateFilter(OpAdminSchedule.WINDOW), F.text)
+async def op_window_input(message: Message, state: FSMContext):
+    data = await state.get_data()
+    kind = data.get("op_window_kind")
+    ident = data.get("op_window_id")
+    try:
+        starts_at, ends_at = panel.parse_window(message.text)
+    except ValueError as problem:
+        await message.answer(
+            f"Окно не сохранено: {escape(str(problem))}\n\nОтправь другой интервал или /cancel."
+        )
+        return
+    if kind == "policy" and ident is not None:
+        policy = await panel.schedule_policy(
+            message.bot.id, message.from_user.id, int(ident), starts_at, ends_at
+        )
+        if policy is None:
+            await state.clear()
+            await message.answer("Правило не найдено.", reply_markup=op_single_kb("admin:op:rule", "← К правилам"))
+            return
+        await state.clear()
+        groups = await panel.list_groups(policy.id)
+        counts = await panel.group_counts(policy.id)
+        await message.answer(
+            "✅ Окно правила сохранено.\n\n" + _policy_text(policy, groups, counts),
+            reply_markup=op_policy_kb(policy, groups, counts),
+        )
+        return
+    if kind == "target" and ident is not None:
+        target = await panel.set_target_window(
+            message.bot.id, message.from_user.id, int(ident), starts_at, ends_at
+        )
+        if target is None:
+            await state.clear()
+            await message.answer("Ресурс не найден.", reply_markup=op_single_kb("admin:op:res", "← К ресурсам"))
+            return
+        await state.clear()
+        await message.answer(
+            "✅ Окно ресурса сохранено.\n\n" + _target_text(target),
+            reply_markup=op_target_kb(target),
+        )
+        return
+    settings = await panel.schedule_settings(
+        message.bot.id, message.from_user.id, starts_at, ends_at
+    )
+    await state.clear()
+    await message.answer(
+        "✅ Окно ОП сохранено.\n\n" + _schedule_text(settings),
+        reply_markup=op_schedule_kb(),
+    )
+
+
+# ── Исключения ─────────────────────────────────────────────────
+
+def _exemptions_text(rows) -> str:
+    lines = [
+        "🎫 Исключения из ОП",
+        "",
+        "Эти пользователи проходят гейт без подписки. Владельцы из ADMIN_IDS "
+        "обходят ОП всегда; управление панелью — отдельное право.",
+        "",
+    ]
+    if not rows:
+        lines.append("Список пуст.")
+        return "\n".join(lines)
+    for row in rows:
+        until = core.fmt_when(row.until) if row.until else "бессрочно"
+        lines.append(f"• {row.user_id} — до {until}")
+    return "\n".join(lines)
+
+
+@op_admin_router.callback_query(F.data == "admin:op:exempt")
+async def cb_op_exemptions(callback: CallbackQuery):
+    rows = await panel.list_exemptions(callback.bot.id)
+    await callback.answer()
+    await _render(callback, _exemptions_text(rows), op_exemptions_kb(rows))
+
+
+@op_admin_router.callback_query(F.data == "admin:op:exempt:add")
+async def cb_op_exemptions_add(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(OpAdminExempt.USER)
+    await callback.answer()
+    await safe_send(
+        callback.message,
+        "➕ Исключение\n\n"
+        "Отправь Telegram ID и срок в днях: 123456789 30\n"
+        "Без срока — бессрочно: 123456789 0\n\n"
+        "Отмена — /cancel.",
+        reply_markup=op_cancel_kb("admin:op:exempt"),
+    )
+
+
+@op_admin_router.message(StateFilter(OpAdminExempt.USER), F.text)
+async def op_exemption_input(message: Message, state: FSMContext):
+    parts = message.text.split()
+    if not parts or not parts[0].isdigit():
+        await message.answer(
+            "Нужен числовой Telegram ID, например: 123456789 30"
+        )
+        return
+    user_id = int(parts[0])
+    days = 0
+    if len(parts) > 1:
+        if not parts[1].isdigit():
+            await message.answer("Срок — число дней или 0 для бессрочного.")
+            return
+        days = int(parts[1])
+    until = utcnow() + timedelta(days=days) if days > 0 else None
+    await panel.add_exemption(
+        message.bot.id, message.from_user.id, user_id, until
+    )
+    await state.clear()
+    rows = await panel.list_exemptions(message.bot.id)
+    await message.answer(
+        "✅ Исключение сохранено.\n\n" + _exemptions_text(rows),
+        reply_markup=op_exemptions_kb(rows),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:exempt:del:\d+$"))
+async def cb_op_exemptions_delete(callback: CallbackQuery):
+    user_id = int(callback.data.rsplit(":", 1)[1])
+    removed = await panel.delete_exemption(
+        callback.bot.id, callback.from_user.id, user_id
+    )
+    await callback.answer("Исключение снято" if removed else "Не найдено")
+    rows = await panel.list_exemptions(callback.bot.id)
+    await _render(callback, _exemptions_text(rows), op_exemptions_kb(rows))
 
 
 # ── Сообщения: шаблоны и подписи кнопок ─────────────────────────

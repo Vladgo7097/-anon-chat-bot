@@ -8,7 +8,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, Teleg
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from services.notifications import NotificationService
 from services.chats import ChatService
-from services import funnel_alert
+from services import funnel_alert, op_schedule
 from utils import bot_health
 from keyboards.reply import main_menu_kb, chat_kb_reply
 from utils import bots
@@ -63,6 +63,7 @@ async def run(bot):
     service=NotificationService()
     last=0
     last_funnel=time.monotonic()
+    last_op=0
     last_beat=0.0
     while True:
         try:
@@ -87,6 +88,11 @@ async def run(bot):
             if time.monotonic()-last_funnel>600:
                 await funnel_alert.check()
                 last_funnel=time.monotonic()
+            # Границы окон ОП: уведомление владельцу о начале/конце.
+            # Раз в минуту достаточно, дедупликация в очереди.
+            if time.monotonic()-last_op>60:
+                await op_schedule.check()
+                last_op=time.monotonic()
             # Telegram never announces a dead token or one someone else is
             # polling -- the bot just goes quiet and keeps retrying forever.
             # probe() asks each token directly, report() turns repeated

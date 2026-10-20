@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from sqlalchemy import func, select
@@ -18,6 +19,7 @@ from models.base import async_session
 from models.op import (
     OpAuditLog,
     OpErrorLog,
+    OpExemption,
     OpMessageTemplate,
     OpPolicy,
     OpRuleGroup,
@@ -25,7 +27,7 @@ from models.op import (
     OpTarget,
 )
 from services import op as core
-from utils.time import utcnow
+from utils.time import KYIV, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +324,15 @@ async def delete_target(bot_id: int, actor_id: int, target_id: int) -> bool:
                 payload={"target_id": target_id, "title": target.title},
             )
         )
+        links = list(
+            (
+                await s.scalars(
+                    select(OpRuleTarget).where(OpRuleTarget.target_id == target_id)
+                )
+            ).all()
+        )
+        for link in links:
+            await s.delete(link)
         await s.delete(target)
     return True
 
@@ -550,3 +561,388 @@ async def set_button_label(bot_id: int, actor_id: int, field: str, value: str | 
             {"field": field, "value": value},
         )
     return settings
+
+
+# ── Правила: политики, группы, состав ──────────────────────────
+
+async def list_policies(bot_id: int) -> list[OpPolicy]:
+    async with async_session() as s:
+        return list(
+            (
+                await s.scalars(
+                    select(OpPolicy)
+                    .where(OpPolicy.bot_id == bot_id)
+                    .order_by(OpPolicy.position, OpPolicy.id)
+                )
+            ).all()
+        )
+
+
+async def get_policy(bot_id: int, policy_id: int) -> OpPolicy | None:
+    async with async_session() as s:
+        policy = await s.get(OpPolicy, policy_id)
+    if policy is None or policy.bot_id != bot_id:
+        return None
+    return policy
+
+
+async def create_policy(bot_id: int, actor_id: int, feature_key: str) -> OpPolicy:
+    async with async_session.begin() as s:
+        position = await s.scalar(
+            select(func.coalesce(func.max(OpPolicy.position), 0)).where(
+                OpPolicy.bot_id == bot_id
+            )
+        )
+        policy = OpPolicy(
+            bot_id=bot_id,
+            feature_key=feature_key or "*",
+            position=(position or 0) + 1,
+        )
+        s.add(policy)
+        await s.flush()
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "policy_create",
+            {"policy_id": policy.id, "feature_key": policy.feature_key},
+        )
+    return policy
+
+
+async def set_policy_enabled(
+    bot_id: int, actor_id: int, policy_id: int, value: bool
+) -> OpPolicy | None:
+    async with async_session.begin() as s:
+        policy = await s.get(OpPolicy, policy_id)
+        if policy is None or policy.bot_id != bot_id:
+            return None
+        policy.enabled = value
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            f"policy_enabled:{int(value)}",
+            {"policy_id": policy_id},
+        )
+    return policy
+
+
+async def delete_policy(bot_id: int, actor_id: int, policy_id: int) -> bool:
+    async with async_session.begin() as s:
+        policy = await s.get(OpPolicy, policy_id)
+        if policy is None or policy.bot_id != bot_id:
+            return False
+        groups = list(
+            (
+                await s.scalars(
+                    select(OpRuleGroup).where(OpRuleGroup.policy_id == policy_id)
+                )
+            ).all()
+        )
+        for group in groups:
+            links = list(
+                (
+                    await s.scalars(
+                        select(OpRuleTarget).where(OpRuleTarget.group_id == group.id)
+                    )
+                ).all()
+            )
+            for link in links:
+                await s.delete(link)
+            await s.delete(group)
+        await s.delete(policy)
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "policy_delete",
+            {"policy_id": policy_id, "feature_key": policy.feature_key},
+        )
+    return True
+
+
+async def list_groups(policy_id: int) -> list[OpRuleGroup]:
+    async with async_session() as s:
+        return list(
+            (
+                await s.scalars(
+                    select(OpRuleGroup)
+                    .where(OpRuleGroup.policy_id == policy_id)
+                    .order_by(OpRuleGroup.position, OpRuleGroup.id)
+                )
+            ).all()
+        )
+
+
+async def group_counts(policy_id: int) -> dict[int, int]:
+    async with async_session() as s:
+        rows = (
+            await s.execute(
+                select(OpRuleTarget.group_id, func.count(OpRuleTarget.id))
+                .join(OpRuleGroup, OpRuleGroup.id == OpRuleTarget.group_id)
+                .where(OpRuleGroup.policy_id == policy_id)
+                .group_by(OpRuleTarget.group_id)
+            )
+        ).all()
+    return {group_id: count for group_id, count in rows}
+
+
+async def get_group(bot_id: int, group_id: int):
+    async with async_session() as s:
+        group = await s.get(OpRuleGroup, group_id)
+        if group is None:
+            return None
+        policy = await s.get(OpPolicy, group.policy_id)
+        if policy is None or policy.bot_id != bot_id:
+            return None
+    return group, policy
+
+
+async def add_group(
+    bot_id: int, actor_id: int, policy_id: int, mode: str
+) -> OpRuleGroup | None:
+    if mode not in {"and", "or"}:
+        raise ValueError("Режим группы — and или or.")
+    async with async_session.begin() as s:
+        policy = await s.get(OpPolicy, policy_id)
+        if policy is None or policy.bot_id != bot_id:
+            return None
+        position = await s.scalar(
+            select(func.coalesce(func.max(OpRuleGroup.position), 0)).where(
+                OpRuleGroup.policy_id == policy_id
+            )
+        )
+        group = OpRuleGroup(
+            policy_id=policy_id, mode=mode, position=(position or 0) + 1
+        )
+        s.add(group)
+        await s.flush()
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "group_create",
+            {"policy_id": policy_id, "group_id": group.id, "mode": mode},
+        )
+    return group
+
+
+async def delete_group(bot_id: int, actor_id: int, group_id: int) -> bool:
+    async with async_session.begin() as s:
+        group = await s.get(OpRuleGroup, group_id)
+        if group is None:
+            return False
+        policy = await s.get(OpPolicy, group.policy_id)
+        if policy is None or policy.bot_id != bot_id:
+            return False
+        links = list(
+            (
+                await s.scalars(
+                    select(OpRuleTarget).where(OpRuleTarget.group_id == group_id)
+                )
+            ).all()
+        )
+        for link in links:
+            await s.delete(link)
+        await s.delete(group)
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "group_delete",
+            {"policy_id": policy.id, "group_id": group_id},
+        )
+    return True
+
+
+async def group_target_ids(group_id: int) -> set[int]:
+    async with async_session() as s:
+        return set(
+            (
+                await s.scalars(
+                    select(OpRuleTarget.target_id).where(
+                        OpRuleTarget.group_id == group_id
+                    )
+                )
+            ).all()
+        )
+
+
+async def toggle_group_target(
+    bot_id: int, actor_id: int, group_id: int, target_id: int
+) -> bool | None:
+    """Добавляет ресурс в группу или убирает его; возвращает новое состояние."""
+    async with async_session.begin() as s:
+        group = await s.get(OpRuleGroup, group_id)
+        if group is None:
+            return None
+        policy = await s.get(OpPolicy, group.policy_id)
+        target = await s.get(OpTarget, target_id)
+        if (
+            policy is None
+            or policy.bot_id != bot_id
+            or target is None
+            or target.bot_id != bot_id
+        ):
+            return None
+        link = await s.scalar(
+            select(OpRuleTarget).where(
+                OpRuleTarget.group_id == group_id,
+                OpRuleTarget.target_id == target_id,
+            )
+        )
+        if link is None:
+            s.add(OpRuleTarget(group_id=group_id, target_id=target_id))
+            linked = True
+        else:
+            await s.delete(link)
+            linked = False
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            f"group_target:{int(linked)}",
+            {"group_id": group_id, "target_id": target_id},
+        )
+    return linked
+
+
+# ── Расписание: разбор окна и запись ───────────────────────────
+
+def _moment(value: str):
+    value = value.strip()
+    if not value:
+        return None
+    for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y"):
+        try:
+            naive = datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+        return naive.replace(tzinfo=KYIV).astimezone(timezone.utc)
+    raise ValueError(f"Не понял дату «{value}». Формат: ДД.ММ.ГГГГ ЧЧ:ММ.")
+
+
+def parse_window(raw: str):
+    """'01.11.2026 09:00 — 07.11.2026 23:00', открытые концы или 'сброс'."""
+    value = (raw or "").strip()
+    if value.lower() in {"сброс", "reset", "-", "—", "–", "нет"}:
+        return None, None
+    parts = re.split(r"\s*(?:—|–|\s-\s|\bдо\b)\s*", value, maxsplit=1)
+    if len(parts) != 2:
+        raise ValueError(
+            "Нужны две даты через «—», например: 01.11.2026 09:00 — 07.11.2026 23:00."
+        )
+    starts_at = _moment(parts[0])
+    ends_at = _moment(parts[1])
+    if starts_at is None and ends_at is None:
+        raise ValueError("Обе границы пустые. Для снятия окна отправь «сброс».")
+    if starts_at is not None and ends_at is not None and ends_at <= starts_at:
+        raise ValueError("Конец окна должен быть позже начала.")
+    return starts_at, ends_at
+
+
+async def schedule_settings(bot_id: int, actor_id: int, starts_at, ends_at):
+    async with async_session.begin() as s:
+        settings = await core.settings_or_create(s, bot_id)
+        settings.starts_at = starts_at
+        settings.ends_at = ends_at
+        settings.updated_at = utcnow()
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "settings_window",
+            {"starts": str(starts_at), "ends": str(ends_at)},
+        )
+    return settings
+
+
+async def schedule_policy(bot_id: int, actor_id: int, policy_id: int, starts_at, ends_at):
+    async with async_session.begin() as s:
+        policy = await s.get(OpPolicy, policy_id)
+        if policy is None or policy.bot_id != bot_id:
+            return None
+        policy.starts_at = starts_at
+        policy.ends_at = ends_at
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "policy_window",
+            {"policy_id": policy_id, "starts": str(starts_at), "ends": str(ends_at)},
+        )
+    return policy
+
+
+async def set_target_window(
+    bot_id: int, actor_id: int, target_id: int, starts_at, ends_at
+):
+    async with async_session.begin() as s:
+        target = await s.get(OpTarget, target_id)
+        if target is None or target.bot_id != bot_id:
+            return None
+        target.starts_at = starts_at
+        target.ends_at = ends_at
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "target_window",
+            {"target_id": target_id, "starts": str(starts_at), "ends": str(ends_at)},
+        )
+    return target
+
+
+# ── Исключения ─────────────────────────────────────────────────
+
+async def list_exemptions(bot_id: int) -> list[OpExemption]:
+    async with async_session() as s:
+        return list(
+            (
+                await s.scalars(
+                    select(OpExemption)
+                    .where(OpExemption.bot_id == bot_id)
+                    .order_by(OpExemption.id)
+                )
+            ).all()
+        )
+
+
+async def add_exemption(
+    bot_id: int, actor_id: int, user_id: int, until, note: str = ""
+):
+    async with async_session.begin() as s:
+        row = await s.scalar(
+            select(OpExemption).where(
+                OpExemption.bot_id == bot_id, OpExemption.user_id == user_id
+            )
+        )
+        if row is None:
+            row = OpExemption(bot_id=bot_id, user_id=user_id)
+            s.add(row)
+        row.until = until
+        row.note = note
+        row.created_by = actor_id
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "exemption_add",
+            {"user_id": user_id, "until": str(until)},
+        )
+    return row
+
+
+async def delete_exemption(bot_id: int, actor_id: int, user_id: int) -> bool:
+    async with async_session.begin() as s:
+        row = await s.scalar(
+            select(OpExemption).where(
+                OpExemption.bot_id == bot_id, OpExemption.user_id == user_id
+            )
+        )
+        if row is None:
+            return False
+        await s.delete(row)
+        await audit(s, bot_id, actor_id, "exemption_delete", {"user_id": user_id})
+    return True

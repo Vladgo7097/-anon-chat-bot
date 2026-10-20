@@ -170,6 +170,10 @@ def fmt_when(moment) -> str:
 
     if moment is None:
         return "—"
+    if moment.tzinfo is None:
+        from datetime import timezone
+
+        moment = moment.replace(tzinfo=timezone.utc)
     return moment.astimezone(KYIV).strftime("%d.%m.%Y %H:%M")
 
 
@@ -189,6 +193,12 @@ def _reason(error: Exception) -> str:
 
 
 def _window_live(starts_at, ends_at, now: datetime) -> bool:
+    # SQLite отдаёт naive datetime; прод-Postgres -- aware. Считаем naive UTC,
+    # иначе сравнение падает с TypeError в тестах и на sqlite-стендах.
+    if starts_at is not None and starts_at.tzinfo is None:
+        starts_at = starts_at.replace(tzinfo=now.tzinfo)
+    if ends_at is not None and ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=now.tzinfo)
     if starts_at is not None and starts_at > now:
         return False
     if ends_at is not None and ends_at <= now:

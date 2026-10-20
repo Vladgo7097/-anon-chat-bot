@@ -12,7 +12,7 @@ from sqlalchemy import select
 from test_op import BOT, USER, OpCase as _OpCase
 
 import models.op  # noqa: F401
-from models.op import OpAuditLog, OpErrorLog
+from models.op import OpAuditLog, OpErrorLog, OpPolicy, OpRuleGroup, OpRuleTarget, OpSettings
 from services import op_admin as panel
 from utils.time import utcnow
 
@@ -195,3 +195,151 @@ class MessageTemplateTests(_OpCase):
         self.assertIn("premium", keys)
         self.assertIn("search", keys)
         self.assertNotIn("*", keys)
+
+
+class RuleEditorTests(_OpCase):
+    async def test_create_policy_and_audit(self):
+        policy = await panel.create_policy(BOT, USER, "premium")
+        self.assertEqual(policy.feature_key, "premium")
+        policies = await panel.list_policies(BOT)
+        self.assertEqual([row.id for row in policies], [policy.id])
+        async with self.factory() as s:
+            actions = list(await s.scalars(select(OpAuditLog.action)))
+        self.assertIn("policy_create", actions)
+
+    async def test_toggle_policy(self):
+        policy = await panel.create_policy(BOT, USER, "*")
+        updated = await panel.set_policy_enabled(BOT, USER, policy.id, False)
+        self.assertFalse(updated.enabled)
+        self.assertFalse((await panel.get_policy(BOT, policy.id)).enabled)
+
+    async def test_foreign_policy_invisible(self):
+        policy = await panel.create_policy(BOT, USER, "*")
+        self.assertIsNone(await panel.get_policy(BOT + 1, policy.id))
+        self.assertFalse(await panel.delete_policy(BOT + 1, USER, policy.id))
+
+    async def test_groups_counts_and_membership(self):
+        first = await self.add_target(chat_id=-201, title="А")
+        second = await self.add_target(chat_id=-202, title="Б")
+        policy = await panel.create_policy(BOT, USER, "*")
+        group = await panel.add_group(BOT, USER, policy.id, "and")
+        self.assertIsNotNone(group)
+        self.assertTrue(await panel.toggle_group_target(BOT, USER, group.id, first))
+        self.assertTrue(await panel.toggle_group_target(BOT, USER, group.id, second))
+        self.assertEqual(
+            await panel.group_target_ids(group.id), {first, second}
+        )
+        self.assertEqual(await panel.group_counts(policy.id), {group.id: 2})
+        self.assertFalse(await panel.toggle_group_target(BOT, USER, group.id, first))
+        self.assertEqual(await panel.group_target_ids(group.id), {second})
+
+    async def test_group_mode_validated(self):
+        policy = await panel.create_policy(BOT, USER, "*")
+        with self.assertRaises(ValueError):
+            await panel.add_group(BOT, USER, policy.id, "xor")
+
+    async def test_delete_group_keeps_policy_and_targets(self):
+        target_id = await self.add_target()
+        policy = await panel.create_policy(BOT, USER, "*")
+        group = await panel.add_group(BOT, USER, policy.id, "or")
+        await panel.toggle_group_target(BOT, USER, group.id, target_id)
+        self.assertTrue(await panel.delete_group(BOT, USER, group.id))
+        self.assertEqual(await panel.list_groups(policy.id), [])
+        self.assertIsNotNone(await panel.get_target(BOT, target_id))
+
+    async def test_delete_policy_cascades_links(self):
+        target_id = await self.add_target()
+        policy = await panel.create_policy(BOT, USER, "*")
+        group = await panel.add_group(BOT, USER, policy.id, "and")
+        await panel.toggle_group_target(BOT, USER, group.id, target_id)
+        self.assertTrue(await panel.delete_policy(BOT, USER, policy.id))
+        self.assertIsNone(await panel.get_policy(BOT, policy.id))
+        async with self.factory() as s:
+            links = list(await s.scalars(select(OpRuleTarget)))
+            groups = list(await s.scalars(select(OpRuleGroup)))
+        self.assertEqual(links, [])
+        self.assertEqual(groups, [])
+
+    async def test_delete_target_removes_group_link(self):
+        target_id = await self.add_target()
+        policy = await self.add_policy(groups=[("and", [target_id])])
+        await panel.delete_target(BOT, USER, target_id)
+        groups = await panel.list_groups(policy)
+        self.assertEqual(await panel.group_target_ids(groups[0].id), set())
+
+
+class ScheduleEditorTests(_OpCase):
+    def test_parse_full_window(self):
+        starts_at, ends_at = panel.parse_window(
+            "01.11.2026 09:00 — 07.11.2026 23:00"
+        )
+        # Ноябрь — зимнее время Киева, UTC+2.
+        self.assertEqual(starts_at.hour, 7)
+        self.assertEqual(starts_at.tzinfo is not None, True)
+        self.assertEqual(ends_at.hour, 21)
+
+    def test_parse_open_ends(self):
+        starts_at, ends_at = panel.parse_window("01.11.2026 09:00 —")
+        self.assertIsNotNone(starts_at)
+        self.assertIsNone(ends_at)
+        starts_at, ends_at = panel.parse_window("— 07.11.2026 23:00")
+        self.assertIsNone(starts_at)
+        self.assertIsNotNone(ends_at)
+
+    def test_parse_reset(self):
+        self.assertEqual(panel.parse_window("сброс"), (None, None))
+        self.assertEqual(panel.parse_window(" — "), (None, None))
+
+    def test_parse_rejects_bad_input(self):
+        with self.assertRaises(ValueError):
+            panel.parse_window("01.11.2026 09:00")
+        with self.assertRaises(ValueError):
+            panel.parse_window("завтра")
+        with self.assertRaises(ValueError):
+            panel.parse_window("07.11.2026 23:00 — 01.11.2026 09:00")
+
+    async def test_schedule_settings_policy_target(self):
+        starts_at, ends_at = panel.parse_window(
+            "01.11.2026 09:00 — 07.11.2026 23:00"
+        )
+        policy = await panel.create_policy(BOT, USER, "*")
+        target_id = await self.add_target()
+        await panel.schedule_settings(BOT, USER, starts_at, ends_at)
+        await panel.schedule_policy(BOT, USER, policy.id, starts_at, ends_at)
+        target = await panel.set_target_window(
+            BOT, USER, target_id, starts_at, ends_at
+        )
+        self.assertEqual(target.starts_at, starts_at)
+        async with self.factory() as s:
+            stored = await s.get(OpSettings, BOT)
+            stored_policy = await s.get(OpPolicy, policy.id)
+        self.assertEqual(stored.starts_at, starts_at)
+        self.assertEqual(stored_policy.ends_at, ends_at)
+        self.assertIsNone(
+            await panel.schedule_policy(BOT + 1, USER, policy.id, starts_at, ends_at)
+        )
+
+
+class ExemptionEditorTests(_OpCase):
+    async def test_add_list_delete(self):
+        until = utcnow() + timedelta(days=7)
+        await panel.add_exemption(BOT, USER, 1001, until, "тест")
+        rows = await panel.list_exemptions(BOT)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, 1001)
+        self.assertTrue(await panel.delete_exemption(BOT, USER, 1001))
+        self.assertEqual(await panel.list_exemptions(BOT), [])
+        async with self.factory() as s:
+            actions = list(await s.scalars(select(OpAuditLog.action)))
+        self.assertIn("exemption_add", actions)
+        self.assertIn("exemption_delete", actions)
+
+    async def test_add_is_upsert(self):
+        await panel.add_exemption(BOT, USER, 1001, None)
+        await panel.add_exemption(BOT, USER, 1001, utcnow() + timedelta(days=1))
+        rows = await panel.list_exemptions(BOT)
+        self.assertEqual(len(rows), 1)
+        self.assertIsNotNone(rows[0].until)
+
+    async def test_unknown_exemption_delete(self):
+        self.assertFalse(await panel.delete_exemption(BOT, USER, 999))

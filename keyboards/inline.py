@@ -456,7 +456,14 @@ def op_admin_kb(enabled: bool, paused: bool) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🗂 Ресурсы", callback_data="admin:op:res"),
             InlineKeyboardButton(text="✉️ Сообщения", callback_data="admin:op:msg"),
         ],
-        [InlineKeyboardButton(text="🩺 Диагностика", callback_data="admin:op:diag")],
+        [
+            InlineKeyboardButton(text="🧮 Правила", callback_data="admin:op:rule"),
+            InlineKeyboardButton(text="🗓 Расписание", callback_data="admin:op:time"),
+        ],
+        [
+            InlineKeyboardButton(text="🎫 Исключения", callback_data="admin:op:exempt"),
+            InlineKeyboardButton(text="🩺 Диагностика", callback_data="admin:op:diag"),
+        ],
         [InlineKeyboardButton(text="← Админ-панель", callback_data="admin:back")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -483,6 +490,7 @@ def op_target_kb(target) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=toggle, callback_data=f"admin:op:rt:{target.id}"),
         ],
         [InlineKeyboardButton(text="🔗 Ссылка для вступления", callback_data=f"admin:op:rl:{target.id}")],
+        [InlineKeyboardButton(text="🗓 Срок", callback_data=f"admin:op:rtime:{target.id}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin:op:rd:{target.id}")],
         [InlineKeyboardButton(text="← К ресурсам", callback_data="admin:op:res")],
     ])
@@ -560,3 +568,97 @@ def op_confirm_reset_kb(token: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="♻️ Сбросить", callback_data=f"admin:op:msgd2:{token}", style="danger")],
         [InlineKeyboardButton(text="← Отмена", callback_data=f"admin:op:msg:{token}")],
     ])
+
+
+def op_rules_kb(policies, counts, labels=None) -> InlineKeyboardMarkup:
+    """policies: OpPolicy; counts: {policy_id: число групп}; labels: feature_key -> имя."""
+    labels = labels or {}
+    rows = []
+    for policy in policies:
+        title = (
+            "🌐 Глобальное"
+            if policy.feature_key == "*"
+            else labels.get(policy.feature_key, policy.feature_key)
+        )
+        mark = "🟢" if policy.enabled else "⚪"
+        rows.append([InlineKeyboardButton(
+            text=f"{mark} {title} · {counts.get(policy.id, 0)} гр."[:60],
+            callback_data=f"admin:op:rule:{policy.id}",
+        )])
+    rows.append([InlineKeyboardButton(text="➕ Новое правило", callback_data="admin:op:rule:new")])
+    rows.append([InlineKeyboardButton(text="← К ОП", callback_data="admin:op")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_rule_features_kb(entries) -> InlineKeyboardMarkup:
+    """entries: (feature_key, подпись)."""
+    rows = [[InlineKeyboardButton(
+        text="🌐 Глобальное — все функции", callback_data="admin:op:rule:new:*",
+    )]]
+    for key, label in entries:
+        rows.append([InlineKeyboardButton(
+            text=f"⚙️ {label}"[:60], callback_data=f"admin:op:rule:new:{key}",
+        )])
+    rows.append([InlineKeyboardButton(text="← К правилам", callback_data="admin:op:rule")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_policy_kb(policy, groups, counts) -> InlineKeyboardMarkup:
+    toggle = "⏸ Выключить" if policy.enabled else "▶️ Включить"
+    rows = [[
+        InlineKeyboardButton(text=toggle, callback_data=f"admin:op:rule:on:{policy.id}"),
+        InlineKeyboardButton(text="🗓 Срок", callback_data=f"admin:op:rule:win:{policy.id}"),
+    ]]
+    for index, group in enumerate(groups, 1):
+        mode = "И" if group.mode == "and" else "ИЛИ"
+        rows.append([InlineKeyboardButton(
+            text=f"Группа {index} · {mode} · {counts.get(group.id, 0)}"[:60],
+            callback_data=f"admin:op:rule:g:{group.id}",
+        )])
+    rows.append([
+        InlineKeyboardButton(text="➕ Группа И", callback_data=f"admin:op:rule:gadd:{policy.id}:and"),
+        InlineKeyboardButton(text="➕ Группа ИЛИ", callback_data=f"admin:op:rule:gadd:{policy.id}:or"),
+    ])
+    rows.append([InlineKeyboardButton(text="🗑 Удалить правило", callback_data=f"admin:op:rule:del:{policy.id}")])
+    rows.append([InlineKeyboardButton(text="← К правилам", callback_data="admin:op:rule")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_group_kb(group, policy, targets, selected) -> InlineKeyboardMarkup:
+    rows = []
+    for target in targets:
+        mark = "✅" if target.id in selected else "○"
+        rows.append([InlineKeyboardButton(
+            text=f"{mark} {target.title or target.chat_id}"[:60],
+            callback_data=f"admin:op:rule:gt:{group.id}:{target.id}",
+        )])
+    rows.append([InlineKeyboardButton(text="🗑 Удалить группу", callback_data=f"admin:op:rule:gdel:{group.id}")])
+    rows.append([InlineKeyboardButton(text="← К правилу", callback_data=f"admin:op:rule:{policy.id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_rule_confirm_kb(policy_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Удалить правило", callback_data=f"admin:op:rule:del2:{policy_id}", style="danger")],
+        [InlineKeyboardButton(text="← Отмена", callback_data=f"admin:op:rule:{policy_id}")],
+    ])
+
+
+def op_schedule_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить окно ОП", callback_data="admin:op:time:edit")],
+        [InlineKeyboardButton(text="← К ОП", callback_data="admin:op")],
+    ])
+
+
+def op_exemptions_kb(rows) -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(
+            text=f"🗑 {row.user_id}"[:60],
+            callback_data=f"admin:op:exempt:del:{row.user_id}",
+        )]
+        for row in rows
+    ]
+    keyboard.append([InlineKeyboardButton(text="➕ Добавить", callback_data="admin:op:exempt:add")])
+    keyboard.append([InlineKeyboardButton(text="← К ОП", callback_data="admin:op")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
