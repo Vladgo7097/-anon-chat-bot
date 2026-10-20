@@ -437,3 +437,29 @@ class TargetAutoRuleTests(_OpCase):
         group = (await panel.list_groups(policy.id))[0]
         links = await panel.group_target_ids(group.id)
         self.assertEqual(links, {first.id})
+
+
+class BootstrapOnEnableTests(_OpCase):
+    async def test_enabling_creates_global_rule_from_targets(self):
+        first = await self.add_target(chat_id=-401, title="Реклама 1")
+        second = await self.add_target(chat_id=-402, title="Реклама 2")
+        await panel.set_flag(BOT, USER, "enabled", True)
+        policies = await panel.list_policies(BOT)
+        self.assertEqual(len(policies), 1)
+        self.assertEqual(policies[0].feature_key, "*")
+        groups = await panel.list_groups(policies[0].id)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].mode, "and")
+        self.assertEqual(await panel.group_target_ids(groups[0].id), {first, second})
+
+    async def test_enabling_keeps_existing_rule(self):
+        target = await self.add_target(chat_id=-403)
+        policy = await panel.create_policy(BOT, USER, "*")
+        await panel.set_flag(BOT, USER, "enabled", True)
+        policies = await panel.list_policies(BOT)
+        self.assertEqual([row.id for row in policies], [policy.id])
+        self.assertEqual(await panel.list_groups(policy.id), [])
+
+    async def test_enabling_without_targets_creates_nothing(self):
+        await panel.set_flag(BOT, USER, "enabled", True)
+        self.assertEqual(await panel.list_policies(BOT), [])

@@ -130,7 +130,59 @@ async def set_flag(bot_id: int, actor_id: int, field: str, value: bool):
         setattr(settings, field, value)
         settings.updated_at = utcnow()
         await audit(s, bot_id, actor_id, f"{field}:{int(value)}")
+        if field == "enabled" and value:
+            await _bootstrap_global(s, bot_id, actor_id)
     return settings
+
+
+async def _bootstrap_global(s, bot_id: int, actor_id: int) -> None:
+    """При включении ОП без правил собирает глобальное правило из ресурсов.
+
+    Иначе включённая ОП молчит: ресурсы есть, а требования нет. Правило
+    создаётся один раз; если админ уже настроил политики, состав не трогаем.
+    """
+    existing = await s.scalar(
+        select(OpPolicy.id).where(
+            OpPolicy.bot_id == bot_id, OpPolicy.feature_key == "*"
+        ).limit(1)
+    )
+    if existing is not None:
+        return
+    targets = list(
+        (
+            await s.scalars(
+                select(OpTarget)
+                .where(OpTarget.bot_id == bot_id, OpTarget.is_active.is_(True))
+                .order_by(OpTarget.position, OpTarget.id)
+            )
+        ).all()
+    )
+    if not targets:
+        return
+    position = await s.scalar(
+        select(func.coalesce(func.max(OpPolicy.position), 0)).where(
+            OpPolicy.bot_id == bot_id
+        )
+    )
+    policy = OpPolicy(bot_id=bot_id, feature_key="*", position=(position or 0) + 1)
+    s.add(policy)
+    await s.flush()
+    group = OpRuleGroup(policy_id=policy.id, mode="and", position=1)
+    s.add(group)
+    await s.flush()
+    for target in targets:
+        s.add(OpRuleTarget(group_id=group.id, target_id=target.id))
+    await audit(
+        s,
+        bot_id,
+        actor_id,
+        "policy_bootstrap",
+        {
+            "policy_id": policy.id,
+            "group_id": group.id,
+            "targets": [target.id for target in targets],
+        },
+    )
 
 
 async def list_targets(bot_id: int) -> list[OpTarget]:
