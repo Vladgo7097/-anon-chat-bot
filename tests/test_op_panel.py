@@ -343,3 +343,38 @@ class ExemptionEditorTests(_OpCase):
 
     async def test_unknown_exemption_delete(self):
         self.assertFalse(await panel.delete_exemption(BOT, USER, 999))
+
+
+class DiagnosticsIssuesTests(_OpCase):
+    async def test_enabled_without_configuration(self):
+        await self.enable()
+        issues = await panel.config_issues(await panel.overview(BOT))
+        self.assertEqual(len(issues), 2)
+        self.assertTrue(any("активных ресурсов" in issue for issue in issues))
+        self.assertTrue(any("правил нет" in issue for issue in issues))
+
+    async def test_target_without_link_and_rights(self):
+        await self.enable()
+        await self.add_target(link="", setup_status="pending")
+        issues = await panel.config_issues(await panel.overview(BOT))
+        self.assertTrue(any("нет ссылки" in issue for issue in issues))
+        self.assertTrue(any("права бота не подтверждены" in issue for issue in issues))
+
+    async def test_policy_without_groups_and_empty_group(self):
+        target_id = await self.add_target(
+            link="https://t.me/a", setup_status="verified"
+        )
+        await self.add_policy(groups=[("and", [])])
+        await self.add_policy(feature_key="premium", groups=[])
+        issues = await panel.config_issues(await panel.overview(BOT))
+        self.assertTrue(any("без групп" in issue for issue in issues))
+        self.assertTrue(any("ресурсы не отмечены" in issue for issue in issues))
+
+    async def test_healthy_configuration_has_no_issues(self):
+        await self.enable()
+        target_id = await self.add_target(
+            link="https://t.me/a", setup_status="verified"
+        )
+        await self.add_policy(groups=[("and", [target_id])])
+        issues = await panel.config_issues(await panel.overview(BOT))
+        self.assertEqual(issues, [])

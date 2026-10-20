@@ -337,6 +337,64 @@ async def delete_target(bot_id: int, actor_id: int, target_id: int) -> bool:
     return True
 
 
+async def config_issues(data: dict) -> list[str]:
+    """Замечания к конфигурации: то, что делает ОП тихой или непроходимой."""
+    issues: list[str] = []
+    settings = data["settings"]
+    now = utcnow()
+    live_targets = [
+        target
+        for target in data["targets"]
+        if target.is_active and core.window_live(target.starts_at, target.ends_at, now)
+    ]
+    live_policies = [
+        policy
+        for policy in data["policies"]
+        if policy.enabled and core.window_live(policy.starts_at, policy.ends_at, now)
+    ]
+    if settings.enabled and not settings.paused:
+        if not live_targets:
+            issues.append("ОП включена, но активных ресурсов нет — проверять нечего.")
+        if not live_policies:
+            issues.append("ОП включена, но включённых правил нет — гейт открыт.")
+    for target in data["targets"]:
+        name = target.title or target.chat_id
+        if target.is_active and not target.join_url:
+            issues.append(f"У ресурса «{name}» нет ссылки — пользователь не сможет вступить.")
+        if target.is_active and target.setup_status != "verified":
+            issues.append(
+                f"Ресурс «{name}»: права бота не подтверждены "
+                f"({target.last_error or target.setup_status})."
+            )
+    async with async_session() as s:
+        for policy in live_policies:
+            title = (
+                "Глобальное"
+                if policy.feature_key == "*"
+                else core.feature_name(policy.feature_key, "ru")
+            )
+            groups = list(
+                (
+                    await s.scalars(
+                        select(OpRuleGroup)
+                        .where(OpRuleGroup.policy_id == policy.id)
+                        .order_by(OpRuleGroup.position, OpRuleGroup.id)
+                    )
+                ).all()
+            )
+            if not groups:
+                issues.append(f"Правило «{title}» без групп — ничего не требует.")
+            for index, group in enumerate(groups, 1):
+                count = await s.scalar(
+                    select(func.count(OpRuleTarget.id)).where(
+                        OpRuleTarget.group_id == group.id
+                    )
+                )
+                if not count:
+                    issues.append(f"Правило «{title}», группа {index}: ресурсы не отмечены.")
+    return issues
+
+
 async def diagnostics(bot_id: int) -> dict:
     data = await overview(bot_id)
     async with async_session() as s:
@@ -351,6 +409,7 @@ async def diagnostics(bot_id: int) -> dict:
             ).all()
         )
     data["errors"] = errors
+    data["issues"] = await config_issues(data)
     return data
 
 
@@ -366,29 +425,6 @@ async def audit_page(bot_id: int, limit: int = 20) -> list[OpAuditLog]:
                 )
             ).all()
         )
-
-
-async def schedule_target(
-    bot_id: int,
-    actor_id: int,
-    target_id: int,
-    starts_at: datetime | None,
-    ends_at: datetime | None,
-):
-    async with async_session.begin() as s:
-        target = await s.get(OpTarget, target_id)
-        if target is None or target.bot_id != bot_id:
-            return None
-        target.starts_at = starts_at
-        target.ends_at = ends_at
-        await audit(
-            s,
-            bot_id,
-            actor_id,
-            "target_window",
-            {"target_id": target_id, "starts": str(starts_at), "ends": str(ends_at)},
-        )
-    return target
 
 
 # ── Шаблоны сообщений и подписи кнопок ─────────────────────────

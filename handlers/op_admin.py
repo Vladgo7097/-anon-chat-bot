@@ -220,6 +220,12 @@ def _diag_text(data) -> str:
                 f"⛔ {escape(target.title or str(target.chat_id))} — "
                 f"{escape(target.last_error or target.setup_status)}"
             )
+    lines += ["", "Конфигурация:"]
+    if data.get("issues"):
+        for issue in data["issues"]:
+            lines.append(f"⚠️ {escape(issue)}")
+    else:
+        lines.append("✅ замечаний нет")
     if data["errors"]:
         lines += ["", "Последние ошибки проверки:"]
         for error in data["errors"][:5]:
