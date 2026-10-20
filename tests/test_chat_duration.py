@@ -13,7 +13,7 @@ from sqlalchemy import select, func
 from models.base import Base
 from models.user import User
 from models.chat import Chat, ActiveParticipant, Rating, Block
-import models.payment, models.report, models.operations, models.start
+import models.payment, models.report, models.operations, models.start, models.op
 from repositories.chats import ChatRepository, compatible
 from services.reveal import RevealService
 from utils.time import utcnow

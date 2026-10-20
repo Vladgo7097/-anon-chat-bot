@@ -43,6 +43,7 @@ import models.ban  # noqa: F401
 import models.chat  # noqa: F401
 import models.operations  # noqa: F401
 import models.report  # noqa: F401
+import models.op  # noqa: F401
 
 ATTACKER = 1001
 VICTIM = 1002

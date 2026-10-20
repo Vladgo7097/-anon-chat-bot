@@ -35,6 +35,7 @@ import models.operations  # noqa: F401
 import models.payment  # noqa: F401
 import models.report  # noqa: F401
 import models.ban  # noqa: F401
+import models.op  # noqa: F401
 
 from utils.middleware import AccessMiddleware, AntiFloodMiddleware
 

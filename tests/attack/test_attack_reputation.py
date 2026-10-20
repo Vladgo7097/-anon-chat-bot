@@ -40,6 +40,7 @@ from models.chat import Chat as ChatRow
 from models.operations import Notification
 from models.report import Report
 from models.user import User
+import models.op  # noqa: F401
 from repositories.chats import ChatRepository
 from services.admin import AdminService
 from services.notifications import NotificationService, enqueue

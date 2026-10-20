@@ -35,6 +35,7 @@ import models.chat  # noqa: F401 -- registers metadata used by the routers
 import models.operations  # noqa: F401
 import models.payment  # noqa: F401
 import models.report  # noqa: F401
+import models.op  # noqa: F401
 
 from test_chat_duration import DatabaseCase
 
