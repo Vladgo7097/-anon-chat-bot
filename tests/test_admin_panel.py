@@ -154,12 +154,15 @@ class AdminPanelKeyboardsTests(unittest.TestCase):
     def callbacks(markup):
         return [b.callback_data for row in markup.inline_keyboard for b in row]
 
-    def test_root_offers_seven_sections_that_all_fit_the_payload_limit(self):
+    def test_root_offers_eight_sections_that_all_fit_the_payload_limit(self):
         data = self.callbacks(admin_kb())
-        self.assertEqual(len(data), 7)
-        self.assertEqual(len(set(data)), 7)
+        self.assertEqual(len(data), 8)
+        self.assertEqual(len(set(data)), 8)
         for callback in data:
-            self.assertTrue(callback.startswith("admin:sec:"), callback)
+            self.assertTrue(
+                callback.startswith("admin:sec:") or callback == "admin:op",
+                callback,
+            )
             self.assertLessEqual(len(callback.encode()), 64)
 
     def test_every_section_returns_to_the_root(self):

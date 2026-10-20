@@ -74,8 +74,12 @@ class OpCase(DatabaseCase):
         kwargs.setdefault("enabled", True)
         kwargs.setdefault("timezone", "Europe/Kyiv")
         async with self.factory.begin() as s:
-            settings = OpSettings(bot_id=BOT, **kwargs)
-            s.add(settings)
+            settings = await s.get(OpSettings, BOT)
+            if settings is None:
+                settings = OpSettings(bot_id=BOT)
+                s.add(settings)
+            for key, value in kwargs.items():
+                setattr(settings, key, value)
         return settings
 
     async def add_target(

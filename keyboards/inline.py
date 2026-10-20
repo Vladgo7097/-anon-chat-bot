@@ -108,6 +108,7 @@ def admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin:sec:settings"),
         ],
         [
+            InlineKeyboardButton(text="🧩 Обязательная подписка", callback_data="admin:op"),
             InlineKeyboardButton(text="🧰 Система", callback_data="admin:sec:system"),
         ],
     ])
@@ -428,3 +429,92 @@ def admin_ad_card_kb(campaign) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="Завершить", callback_data=f"admin:ad:complete:{campaign.id}", style="danger")])
     rows.append([InlineKeyboardButton(text="К списку", callback_data="admin:ads")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ── ОП v2: панель ───────────────────────────────────────────────
+
+def _op_mark(target) -> str:
+    if not target.is_active:
+        return "⏸"
+    return "✅" if target.setup_status == "verified" else ("⛔" if target.setup_status == "error" else "⚪")
+
+
+def op_admin_kb(enabled: bool, paused: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if enabled:
+        rows.append([
+            InlineKeyboardButton(
+                text="▶️ Снять паузу" if paused else "⏸ Пауза",
+                callback_data="admin:op:pause",
+            ),
+            InlineKeyboardButton(text="🔴 Выключить", callback_data="admin:op:off"),
+        ])
+    else:
+        rows.append([InlineKeyboardButton(text="🟢 Включить", callback_data="admin:op:on")])
+    rows += [
+        [
+            InlineKeyboardButton(text="🗂 Ресурсы", callback_data="admin:op:res"),
+            InlineKeyboardButton(text="🩺 Диагностика", callback_data="admin:op:diag"),
+        ],
+        [InlineKeyboardButton(text="← Админ-панель", callback_data="admin:back")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_resources_kb(targets) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(
+            text=f"{_op_mark(target)} {target.title or target.chat_id}"[:60],
+            callback_data=f"admin:op:r:{target.id}",
+        )]
+        for target in targets
+    ]
+    rows.append([InlineKeyboardButton(text="➕ Добавить ресурс", callback_data="admin:op:radd")])
+    rows.append([InlineKeyboardButton(text="← К ОП", callback_data="admin:op")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_target_kb(target) -> InlineKeyboardMarkup:
+    toggle = "⏸ Выключить" if target.is_active else "▶️ Включить"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔄 Проверить права", callback_data=f"admin:op:rc:{target.id}"),
+            InlineKeyboardButton(text=toggle, callback_data=f"admin:op:rt:{target.id}"),
+        ],
+        [InlineKeyboardButton(text="🔗 Ссылка для вступления", callback_data=f"admin:op:rl:{target.id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin:op:rd:{target.id}")],
+        [InlineKeyboardButton(text="← К ресурсам", callback_data="admin:op:res")],
+    ])
+
+
+def op_confirm_delete_kb(target_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin:op:rd2:{target_id}", style="danger")],
+        [InlineKeyboardButton(text="← Отмена", callback_data=f"admin:op:r:{target_id}")],
+    ])
+
+
+def op_cancel_kb(target: str = "admin:op:res") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Отмена", callback_data=target)],
+    ])
+
+
+def op_single_kb(target: str, label: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=target)],
+    ])
+
+
+def op_diag_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Проверить все ресурсы", callback_data="admin:op:diag:check")],
+        [InlineKeyboardButton(text="🧾 Журнал действий", callback_data="admin:op:audit")],
+        [InlineKeyboardButton(text="← К ОП", callback_data="admin:op")],
+    ])
+
+
+def op_audit_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Диагностика", callback_data="admin:op:diag")],
+    ])

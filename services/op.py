@@ -191,6 +191,10 @@ def _window_live(starts_at, ends_at, now: datetime) -> bool:
     return True
 
 
+# Панель считает окна той же функцией, что и гейт, -- одна логика на всех.
+window_live = _window_live
+
+
 def settings_live(settings: OpSettings | None, now: datetime | None = None) -> bool:
     """Тумблер, пауза и общее окно -- всё сразу.
 
