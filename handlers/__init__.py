@@ -15,13 +15,14 @@ help_router = Router(name="help")
 reveal_router = Router(name="reveal")
 rating_router = Router(name="rating")
 ads_router = Router(name="ads")
+op_router = Router(name="op")
 
 
 def load_routers() -> tuple[Router, ...]:
     """Import handler modules so decorators populate routers before polling."""
     names = (
         "premium", "help", "start", "menu", "search", "profile", "settings", "report",
-        "admin", "stats", "reveal", "rating", "chat", "ads",
+        "admin", "stats", "reveal", "rating", "chat", "ads", "op",
     )
     for name in names:
         import_module(f"{__name__}.{name}")

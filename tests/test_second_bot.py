@@ -255,7 +255,7 @@ class SecondBotOnboardingTests(unittest.IsolatedAsyncioTestCase):
                        "services.notifications", "services.registration",
                        "services.growth", "services.payments",
                        "services.profile", "services.matching", "services.settings",
-                       "services.reveal", "services.reports", "services.admin", "services.ads"):
+                       "services.reveal", "services.reports", "services.admin", "services.ads", "services.op"):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)

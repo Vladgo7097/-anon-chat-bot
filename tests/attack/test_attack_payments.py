@@ -83,7 +83,7 @@ class PaymentAttackCase(unittest.IsolatedAsyncioTestCase):
             "services.reveal",
             "services.reports",
             "services.admin",
-            "services.ads",
+            "services.ads", "services.op",
             "services.funnel_alert",
             "services.relay",
         ):

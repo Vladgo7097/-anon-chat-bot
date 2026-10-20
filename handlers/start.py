@@ -130,6 +130,16 @@ async def enter_bot(message, state, user, bot, payload=""):
         if detected in T.LANGUAGE_NAMES:
             result = await OnboardingService().advance(user.id, "lang", detected)
             lang = detected
+    if result.code == "MENU":
+        from services import op as op_service
+
+        gate = await op_service.authorize(bot, user)
+        if gate.blocked:
+            await message.answer(
+                op_service.screen_text(gate, lang),
+                reply_markup=op_service.screen_kb(gate, lang),
+            )
+            return
     await show_step(message, state, result, lang=lang)
 
 

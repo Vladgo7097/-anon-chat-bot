@@ -410,7 +410,7 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             "services.reveal",
             "services.reports",
             "services.admin",
-            "services.ads",
+            "services.ads", "services.op",
         ):
             p = patch(module + ".async_session", self.factory)
             p.start()

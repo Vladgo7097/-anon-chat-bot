@@ -59,7 +59,7 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
                        "services.growth", "services.payments",
                        "services.profile", "services.matching",
                        "services.settings", "services.reveal", "services.reports",
-                       "services.admin", "services.ads"):
+                       "services.admin", "services.ads", "services.op"):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)

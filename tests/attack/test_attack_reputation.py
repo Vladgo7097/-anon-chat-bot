@@ -71,7 +71,7 @@ SESSION_MODULES = (
     "services.matching",
     "services.profile",
     "services.settings",
-    "services.ads",
+    "services.ads", "services.op",
 )
 
 

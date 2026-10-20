@@ -78,7 +78,7 @@ WEB_PATCH_MODULES = (
     "repositories.chats",
     "services.matching",
     "services.reports",
-    "services.ads",
+    "services.ads", "services.op",
     "services.reveal",
     "services.payments",
     "services.growth",

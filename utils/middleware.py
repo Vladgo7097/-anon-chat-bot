@@ -87,6 +87,27 @@ class AccessMiddleware(BaseMiddleware):
                 await data["state"].set_state(f"Onboarding:{step}")
                 await onboarding_input(event, data["state"], lang=lang)
             return
+        # ОП: после регистрации дальше гейта не проходит ничто, кроме
+        # разрешённых маршрутов. Ошибка проверки тоже закрывает доступ --
+        # экран покажет технический текст, а не «ты не подписан».
+        from services import op as op_service
+
+        if op_service.gate_applies(command, action):
+            gate = await op_service.authorize(
+                bot, actor, op_service.feature_for(command, action)
+            )
+            if gate.blocked:
+                text = op_service.screen_text(gate, lang)
+                markup = op_service.screen_kb(gate, lang)
+                if callback:
+                    await event.answer(op_service.alert(lang), show_alert=True)
+                    if await op_service.warn_allowed(getattr(bot, "id", None), actor.id):
+                        from handlers.start import callback_target
+
+                        await callback_target(event).answer(text, reply_markup=markup)
+                else:
+                    await event.answer(text, reply_markup=markup)
+                return
         from utils.time import utcnow
         if step == "MENU" and getattr(user, "last_active_date", None) != utcnow().date():
             from services.growth import StreakService
