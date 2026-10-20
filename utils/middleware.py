@@ -28,8 +28,8 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
         chat = getattr(event, "chat", None) or getattr(getattr(event, "message", None), "chat", None)
         if chat and chat.type != "private":
-            # No stored language this early, so the client's own code decides.
-            await event.answer(T.tr(T.GUARDS, bots.default_lang(bot, actor))["private_only"])
+            # В группах бот молчит: ответ «только в личке» сам превращался в
+            # сообщение в общем чате. Личные апдейты продолжают работать.
             return
         text = getattr(event, "text", "") or ""
         callback = isinstance(event, CallbackQuery)

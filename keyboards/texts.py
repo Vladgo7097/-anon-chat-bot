@@ -136,20 +136,17 @@ PROFILE_EDIT_BUTTONS = {
 # mid-registration, blocked, or too fast. These are the first words a user hears
 # from the menu itself, so they follow the language like every screen does.
 GUARDS = {
-    "ru": {"private_only": "Анонимный чат доступен только в личной переписке с ботом.",
-           "banned": "⛔ Ты заблокирован.",
+    "ru": {"banned": "⛔ Ты заблокирован.",
            "register_first": "Сначала заверши регистрацию.",
            "finish_chat": "Сначала заверши текущий диалог.",
            "in_chat": "Ты сейчас в диалоге. Нажми «Стоп», чтобы открыть меню.",
            "slow_down": "Подожди немного перед следующим действием."},
-    "en": {"private_only": "The anonymous chat works only in a private chat with the bot.",
-           "banned": "⛔ You are blocked.",
+    "en": {"banned": "⛔ You are blocked.",
            "register_first": "Finish the registration first.",
            "finish_chat": "Finish the current chat first.",
            "in_chat": "You are in a chat right now. Tap «Stop» to open the menu.",
            "slow_down": "Wait a moment before the next action."},
-    "uk": {"private_only": "Анонімний чат доступний лише в особистому листуванні з ботом.",
-           "banned": "⛔ Тебе заблоковано.",
+    "uk": {"banned": "⛔ Тебе заблоковано.",
            "register_first": "Спочатку заверши реєстрацію.",
            "finish_chat": "Спочатку заверши поточний діалог.",
            "in_chat": "Ти зараз у діалозі. Натисни «Стоп», щоб відкрити меню.",

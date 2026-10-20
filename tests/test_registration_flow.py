@@ -451,5 +451,16 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             ])
 
 
+    async def test_group_message_gets_no_reply(self):
+        """В группе бот не отвечает даже подсказкой «только в личке»."""
+        before = len(self.sent)
+        await self.dp.feed_update(_BOT, Update(update_id=3000, message=Message(
+            message_id=3000, date=datetime.now(timezone.utc),
+            chat=Chat(id=-100555, type="supergroup"),
+            from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
+            text="привет")))
+        self.assertEqual(len(self.sent), before)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
