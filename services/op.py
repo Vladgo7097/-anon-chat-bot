@@ -137,6 +137,8 @@ ALLOWED_COMMANDS = {
     "/season",
 }
 ALLOWED_PREFIXES = ("op:", "lang:", "admin:", "bc:", "pay:", "v1:buy:", "premium:buy:")
+# «Назад» с экрана требования возвращает в меню, но не открывает функции.
+ALLOWED_ACTIONS = {"menu"}
 
 FEATURE_NAMES = {
     "*": {"ru": "бот", "en": "the bot", "uk": "бот"},
@@ -239,6 +241,8 @@ async def settings_or_create(s, bot_id) -> OpSettings:
 def gate_applies(command: str, action: str) -> bool:
     """Нужно ли проверять это действие. Разрешённые маршруты -- по ТЗ §2."""
     if command in ALLOWED_COMMANDS:
+        return False
+    if action in ALLOWED_ACTIONS:
         return False
     return not (action or "").startswith(ALLOWED_PREFIXES)
 
@@ -690,4 +694,10 @@ def screen_kb(gate: Gate, lang: str) -> InlineKeyboardMarkup:
         else tr(CHECK_BUTTON, lang)
     )
     rows.append([InlineKeyboardButton(text=check_label[:64], callback_data="op:check")])
+    back_label = (
+        gate.settings.btn_back
+        if gate.settings is not None and gate.settings.btn_back
+        else tr(BACK_BUTTON, lang)
+    )
+    rows.append([InlineKeyboardButton(text=back_label[:64], callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

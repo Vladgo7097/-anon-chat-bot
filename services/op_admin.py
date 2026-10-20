@@ -257,7 +257,86 @@ async def add_target(
                 "rights": setup_status,
             },
         )
+        if created:
+            await _attach_global(s, bot_id, actor_id, target)
     return target, error
+
+
+async def _attach_global(s, bot_id: int, actor_id: int, target: OpTarget) -> None:
+    """Новый ресурс сразу становится требованием, а не висит без правила.
+
+    Первый ресурс создаёт глобальное правило с одной группой «И». Следующие
+    добавляются в ту же группу, пока она единственная и режим «И»: тогда
+    «все нужные ресурсы» означают ровно то, что видит админ. Как только он
+    собрал «ИЛИ» или несколько групп, автоматика молчит -- состав дальше
+    только ручной.
+    """
+    policies = list(
+        (
+            await s.scalars(
+                select(OpPolicy)
+                .where(OpPolicy.bot_id == bot_id, OpPolicy.feature_key == "*")
+                .order_by(OpPolicy.position, OpPolicy.id)
+            )
+        ).all()
+    )
+    if not policies:
+        position = await s.scalar(
+            select(func.coalesce(func.max(OpPolicy.position), 0)).where(
+                OpPolicy.bot_id == bot_id
+            )
+        )
+        policy = OpPolicy(
+            bot_id=bot_id, feature_key="*", position=(position or 0) + 1
+        )
+        s.add(policy)
+        await s.flush()
+        group = OpRuleGroup(policy_id=policy.id, mode="and", position=1)
+        s.add(group)
+        await s.flush()
+        s.add(OpRuleTarget(group_id=group.id, target_id=target.id))
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "policy_auto",
+            {
+                "policy_id": policy.id,
+                "group_id": group.id,
+                "target_id": target.id,
+            },
+        )
+        return
+    if len(policies) != 1:
+        return
+    groups = list(
+        (
+            await s.scalars(
+                select(OpRuleGroup).where(OpRuleGroup.policy_id == policies[0].id)
+            )
+        ).all()
+    )
+    if len(groups) != 1 or groups[0].mode != "and":
+        return
+    linked = await s.scalar(
+        select(OpRuleTarget).where(
+            OpRuleTarget.group_id == groups[0].id,
+            OpRuleTarget.target_id == target.id,
+        )
+    )
+    if linked is None:
+        s.add(OpRuleTarget(group_id=groups[0].id, target_id=target.id))
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "group_target:1",
+            {
+                "group_id": groups[0].id,
+                "target_id": target.id,
+                "auto": True,
+            },
+        )
 
 
 async def check_target(bot, bot_id: int, target_id: int) -> OpTarget | None:

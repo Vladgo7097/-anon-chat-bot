@@ -147,7 +147,7 @@ class CoreGateTests(OpCase):
             if button.callback_data
         ]
         self.assertIn("https://t.me/a", urls)
-        self.assertEqual(datas, ["op:check"])
+        self.assertEqual(datas, ["op:check", "menu"])
 
     async def test_membership_statuses(self):
         await self.enable()
@@ -181,9 +181,20 @@ class CoreGateTests(OpCase):
         self.assertIsNotNone(gate.error_detail)
         self.assertIn("Telegram не ответил", op_service.screen_text(gate, "ru"))
         markup = op_service.screen_kb(gate, "ru")
-        self.assertEqual(
-            len(markup.inline_keyboard), 1, "при ошибке -- только проверка"
-        )
+        callbacks = [
+            button.callback_data
+            for row in markup.inline_keyboard
+            for button in row
+            if button.callback_data
+        ]
+        urls = [
+            button.url
+            for row in markup.inline_keyboard
+            for button in row
+            if button.url
+        ]
+        self.assertEqual(callbacks, ["op:check", "menu"], "при ошибке -- без вступления")
+        self.assertEqual(urls, [])
         async with self.factory() as s:
             self.assertEqual(await s.scalar(select(func.count(OpErrorLog.id))), 1)
             target = await s.get(OpTarget, target_id)
@@ -357,6 +368,7 @@ class HelperTests(unittest.TestCase):
         self.assertFalse(op_service.gate_applies("", "op:check"))
         self.assertFalse(op_service.gate_applies("", "admin:op"))
         self.assertFalse(op_service.gate_applies("", "v1:buy:premium"))
+        self.assertFalse(op_service.gate_applies("", "menu"))
         self.assertTrue(op_service.gate_applies("/search", "/search"))
         self.assertTrue(op_service.gate_applies("", "search:start"))
         self.assertEqual(op_service.feature_for("/search", "/search"), "search")

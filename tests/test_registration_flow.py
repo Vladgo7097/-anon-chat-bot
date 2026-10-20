@@ -386,5 +386,70 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
                 StartEvent.event_type == "first_start")), 1)
 
 
+    async def test_op_gate_blocks_menu_and_renders_configured_screen(self):
+        """Рекламный ресурс закрывает все функции меню одним экраном.
+
+        Проверяем именно то, что видит пользователь: нажатие каждой кнопки
+        главного меню не доходит до обработчика, а присылает шаблон ОП с
+        вступлением, проверкой и возвратом в меню.
+        """
+        from keyboards import texts as T
+        from models.op import OpPolicy, OpRuleGroup, OpRuleTarget, OpSettings, OpTarget
+
+        await self._to_menu()
+        async with self.factory.begin() as s:
+            s.add(OpSettings(bot_id=_BOT.id, enabled=True, paused=False,
+                             timezone="Europe/Kyiv"))
+            target = OpTarget(
+                bot_id=_BOT.id, chat_id=-100777, title="Реклама",
+                join_url="https://t.me/ads", is_active=True,
+                setup_status="verified",
+            )
+            s.add(target)
+            await s.flush()
+            policy = OpPolicy(bot_id=_BOT.id, feature_key="*", enabled=True)
+            s.add(policy)
+            await s.flush()
+            group = OpRuleGroup(policy_id=policy.id, mode="and")
+            s.add(group)
+            await s.flush()
+            s.add(OpRuleTarget(group_id=group.id, target_id=target.id))
+
+        labels = set()
+        for action in (T.SEARCH, T.PROFILE, T.SETTINGS, T.PREMIUM, T.STATS, T.INVITE):
+            labels |= T.all_labels(action)
+
+        with patch("services.op.chat_membership", AsyncMock(return_value=("no", "left"))), \
+                patch("services.op.warn_allowed", AsyncMock(return_value=True)):
+            for index, label in enumerate(sorted(labels)):
+                before = len(self.sent)
+                await self._send_text(label, update_id=1000 + index)
+                self.assertEqual(
+                    len(self.sent), before + 1,
+                    f"кнопка «{label}» прошла мимо гейта",
+                )
+                markups = [
+                    button
+                    for row in self.sent[-1].reply_markup.inline_keyboard
+                    for button in row
+                ]
+                callbacks = [b.callback_data for b in markups if b.callback_data]
+                urls = [b.url for b in markups if b.url]
+                self.assertIn("op:check", callbacks)
+                self.assertIn("menu", callbacks)
+                self.assertIn("https://t.me/ads", urls)
+                self.assertIn("Реклама", self.sent[-1].text)
+
+            before = len(self.sent)
+            await self._tap("search:start", update_id=2000)
+            self.assertEqual(len(self.sent), before + 1)
+            self.assertIn("op:check", [
+                button.callback_data
+                for row in self.sent[-1].reply_markup.inline_keyboard
+                for button in row
+                if button.callback_data
+            ])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

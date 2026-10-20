@@ -378,3 +378,62 @@ class DiagnosticsIssuesTests(_OpCase):
         await self.add_policy(groups=[("and", [target_id])])
         issues = await panel.config_issues(await panel.overview(BOT))
         self.assertEqual(issues, [])
+
+
+class TargetAutoRuleTests(_OpCase):
+    async def test_first_target_creates_global_and_group(self):
+        target, error = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-301, username="ads")
+        )
+        self.assertIsNone(error)
+        policies = await panel.list_policies(BOT)
+        self.assertEqual(len(policies), 1)
+        self.assertEqual(policies[0].feature_key, "*")
+        groups = await panel.list_groups(policies[0].id)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].mode, "and")
+        self.assertEqual(await panel.group_target_ids(groups[0].id), {target.id})
+        async with self.factory() as s:
+            actions = list(await s.scalars(select(OpAuditLog.action)))
+        self.assertIn("policy_auto", actions)
+
+    async def test_second_target_joins_the_single_and_group(self):
+        first, _ = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-302, username="ads1")
+        )
+        second, _ = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-303, username="ads2")
+        )
+        policy = (await panel.list_policies(BOT))[0]
+        group = (await panel.list_groups(policy.id))[0]
+        self.assertEqual(
+            await panel.group_target_ids(group.id), {first.id, second.id}
+        )
+
+    async def test_or_group_is_left_alone(self):
+        first, _ = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-304, username="ads1")
+        )
+        policy = (await panel.list_policies(BOT))[0]
+        group = (await panel.list_groups(policy.id))[0]
+        async with self.factory.begin() as s:
+            row = await s.get(OpRuleGroup, group.id)
+            row.mode = "or"
+        second, _ = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-305, username="ads2")
+        )
+        self.assertEqual(await panel.group_target_ids(group.id), {first.id})
+        self.assertNotIn(second.id, await panel.group_target_ids(group.id))
+
+    async def test_repeat_add_does_not_duplicate_link(self):
+        first, _ = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-306, username="ads")
+        )
+        repeated, _ = await panel.add_target(
+            PanelBot(), BOT, USER, chat(chat_id=-306, username="ads")
+        )
+        self.assertEqual(first.id, repeated.id)
+        policy = (await panel.list_policies(BOT))[0]
+        group = (await panel.list_groups(policy.id))[0]
+        links = await panel.group_target_ids(group.id)
+        self.assertEqual(links, {first.id})
