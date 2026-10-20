@@ -83,6 +83,11 @@ CHECK_BUTTON = {
     "en": "✅ Check subscription",
     "uk": "✅ Перевірити підписку",
 }
+BACK_BUTTON = {
+    "ru": "← Назад в меню",
+    "en": "← Back to menu",
+    "uk": "← Назад до меню",
+}
 JOIN_BUTTON = {
     "ru": "Подписаться",
     "en": "Subscribe",
@@ -249,6 +254,17 @@ def feature_name(feature_key: str, lang: str) -> str:
 
 def alert(lang: str) -> str:
     return tr(ALERT, lang)
+
+
+def button_default(field: str, lang: str = "ru") -> str:
+    table = {"join": JOIN_BUTTON, "check": CHECK_BUTTON, "back": BACK_BUTTON}[field]
+    return tr(table, lang)
+
+
+def default_text(scope: str, lang: str = "ru") -> str:
+    if scope == "error":
+        return tr(ERROR_TEXT, lang)
+    return tr(SCREEN_TITLE, lang) + "\n\n" + tr(SCREEN_BODY, lang)
 
 
 def _escape_md(value: str) -> str:

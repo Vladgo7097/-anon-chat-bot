@@ -23,15 +23,20 @@ from handlers.admin import AdminOnly, safe_send
 from keyboards.inline import (
     op_admin_kb,
     op_audit_kb,
+    op_buttons_kb,
     op_cancel_kb,
     op_confirm_delete_kb,
+    op_confirm_reset_kb,
     op_diag_kb,
+    op_message_editor_kb,
+    op_messages_kb,
     op_resources_kb,
     op_single_kb,
     op_target_kb,
 )
 from services import op as core
 from services import op_admin as panel
+from utils import bots
 from utils.time import utcnow
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,11 @@ logger = logging.getLogger(__name__)
 class OpAdminTarget(StatesGroup):
     ADD = State()
     LINK = State()
+
+
+class OpAdminMessage(StatesGroup):
+    TEXT = State()
+    BUTTON = State()
 
 
 class ClearOnTap(BaseMiddleware):
@@ -443,7 +453,13 @@ async def op_target_link_input(message: Message, state: FSMContext):
 
 
 @op_admin_router.message(
-    Command("cancel"), StateFilter(OpAdminTarget.ADD, OpAdminTarget.LINK)
+    Command("cancel"),
+    StateFilter(
+        OpAdminTarget.ADD,
+        OpAdminTarget.LINK,
+        OpAdminMessage.TEXT,
+        OpAdminMessage.BUTTON,
+    ),
 )
 async def op_admin_cancel(message: Message, state: FSMContext):
     await state.clear()
@@ -470,3 +486,342 @@ async def cb_op_audit(callback: CallbackQuery):
     rows = await panel.audit_page(callback.bot.id)
     await callback.answer()
     await _render(callback, _audit_text(rows), op_audit_kb())
+
+
+# ── Сообщения: шаблоны и подписи кнопок ─────────────────────────
+
+SCOPE_TITLES = {"global": "Глобальный шаблон", "error": "Техническая ошибка"}
+VARIABLES_HINT = (
+    "Переменные: {first_name}, {username}, {bot_name}, {missing_count}, "
+    "{function_name}."
+)
+TAGS_HINT = (
+    "HTML: <b>, <i>, <u>, <s>, <a href>, <code>, <pre>, <blockquote>, "
+    "<tg-spoiler>. MarkdownV2: *жирный*, _курсив_, [текст](url), `код`."
+)
+
+
+def _token(scope: str, key: str | None = None) -> str:
+    if scope == "global":
+        return "g"
+    if scope == "error":
+        return "e"
+    return f"f:{key}"
+
+
+def _parse_token(token: str) -> tuple[str, str | None]:
+    if token == "g":
+        return "global", None
+    if token == "e":
+        return "error", None
+    if token.startswith("f:") and len(token) > 2:
+        return "feature", token[2:]
+    raise ValueError("Неизвестный шаблон.")
+
+
+def _scope_title(scope: str, key: str | None = None) -> str:
+    if scope == "feature":
+        return f"Функция: {core.feature_name(key or '', 'ru')}"
+    return SCOPE_TITLES[scope]
+
+
+def _editor_text(scope: str, key: str | None, row) -> str:
+    fmt = row.format if row else "html"
+    lines = [
+        f"✉️ {_scope_title(scope, key)}",
+        f"Формат: {panel.FORMAT_TITLES.get(fmt, fmt)}",
+        f"Состояние: {'свой шаблон' if row else 'встроенный текст'}",
+    ]
+    if row is not None and row.updated_at:
+        lines.append(f"Обновлён: {core.fmt_when(row.updated_at)}")
+    text = row.text if row else core.default_text(scope)
+    lines += ["", "Текст:", f"<pre>{escape(text)}</pre>"]
+    if scope != "error":
+        lines += [
+            "",
+            VARIABLES_HINT,
+            "Названия ресурсов со статусами добавляются автоматически.",
+        ]
+    return "\n".join(lines)
+
+
+def _messages_text(rows, keys) -> str:
+    own = {(row.scope, row.feature_key) for row in rows}
+    lines = [
+        "✉️ Сообщения ОП",
+        "",
+        f"🌐 Глобальный: {'свой' if ('global', None) in own else 'встроенный'}",
+        f"⚠️ Ошибка проверки: {'свой' if ('error', None) in own else 'встроенный'}",
+    ]
+    if keys:
+        lines += ["", "По функциям:"]
+        for key in keys:
+            state = "свой" if ("feature", key) in own else "встроенный"
+            lines.append(f"• {core.feature_name(key, 'ru')}: {state}")
+    lines += ["", "Шаблон функции сильнее глобального; экран ошибки — отдельный."]
+    return "\n".join(lines)
+
+
+def _messages_entries(rows, keys) -> list[tuple[str, str]]:
+    own = {(row.scope, row.feature_key) for row in rows}
+    entries = [
+        ("g", f"🌐 Глобальный · {'свой' if ('global', None) in own else 'встроенный'}"),
+        ("e", f"⚠️ Ошибка · {'свой' if ('error', None) in own else 'встроенный'}"),
+    ]
+    for key in keys:
+        mark = "✏️" if ("feature", key) in own else "·"
+        entries.append((f"f:{key}", f"{mark} {core.feature_name(key, 'ru')}"))
+    return entries
+
+
+def _buttons_text(settings) -> str:
+    lines = ["🔘 Подписи кнопок", ""]
+    for field, title in panel.BUTTON_TITLES.items():
+        own = getattr(settings, panel.BUTTON_FIELDS[field])
+        value = own or core.button_default(field)
+        lines.append(f"{title}: «{escape(value)}» — {'своя' if own else 'по умолчанию'}")
+    lines += ["", "Кнопку проверки убрать нельзя — можно только переименовать."]
+    return "\n".join(lines)
+
+
+@op_admin_router.callback_query(F.data == "admin:op:msg")
+async def cb_op_messages(callback: CallbackQuery):
+    rows = await panel.list_templates(callback.bot.id)
+    keys = await panel.feature_keys(callback.bot.id)
+    await callback.answer()
+    await _render(callback, _messages_text(rows, keys), op_messages_kb(_messages_entries(rows, keys)))
+
+
+@op_admin_router.callback_query(F.data == "admin:op:msg:add")
+async def cb_op_messages_add(callback: CallbackQuery):
+    rows = await panel.list_templates(callback.bot.id)
+    keys = await panel.feature_keys(callback.bot.id)
+    entries = _messages_entries(rows, keys)[2:]
+    await callback.answer()
+    await _render(
+        callback,
+        "➕ Шаблон для функции\n\nВыбери функцию — её текст заменит глобальный только для неё.",
+        op_messages_kb(entries),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:msg:.+$"))
+async def cb_op_message_editor(callback: CallbackQuery):
+    token = callback.data.split(":", 3)[3]
+    try:
+        scope, key = _parse_token(token)
+    except ValueError:
+        await callback.answer("Шаблон не найден", show_alert=True)
+        return
+    row = await panel.get_template(callback.bot.id, scope, key)
+    await callback.answer()
+    fmt = panel.FORMAT_TITLES.get(row.format, row.format) if row else "HTML"
+    await _render(
+        callback,
+        _editor_text(scope, key, row),
+        op_message_editor_kb(token, row is not None, fmt),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:msge:.+$"))
+async def cb_op_message_edit(callback: CallbackQuery, state: FSMContext):
+    token = callback.data.split(":", 3)[3]
+    try:
+        scope, key = _parse_token(token)
+    except ValueError:
+        await callback.answer("Шаблон не найден", show_alert=True)
+        return
+    row = await panel.get_template(callback.bot.id, scope, key)
+    fmt = row.format if row else "html"
+    current = row.text if row else core.default_text(scope)
+    await state.set_state(OpAdminMessage.TEXT)
+    await state.update_data(op_scope=token, op_format=fmt)
+    await callback.answer()
+    await safe_send(
+        callback.message,
+        "✏️ Новый текст шаблона\n\n"
+        f"Формат: {panel.FORMAT_TITLES.get(fmt, fmt)}. {TAGS_HINT}\n"
+        f"{VARIABLES_HINT}\n\n"
+        "Сейчас:\n"
+        f"<pre>{escape(current)}</pre>\n\n"
+        "Отправь новый текст одним сообщением. Отмена — /cancel.",
+        reply_markup=op_cancel_kb(f"admin:op:msg:{token}"),
+    )
+
+
+@op_admin_router.message(StateFilter(OpAdminMessage.TEXT), F.text)
+async def op_message_text_input(message: Message, state: FSMContext):
+    data = await state.get_data()
+    token = data.get("op_scope")
+    fmt = data.get("op_format") or "html"
+    try:
+        scope, key = _parse_token(token or "")
+        await panel.save_template(
+            message.bot.id,
+            message.from_user.id,
+            scope,
+            key,
+            message.text,
+            fmt,
+        )
+    except ValueError as problem:
+        await message.answer(
+            f"Шаблон не сохранён: {escape(str(problem))}\n\n"
+            "Отправь другой текст или /cancel.",
+            reply_markup=op_cancel_kb(f"admin:op:msg:{token}"),
+        )
+        return
+    await state.clear()
+    await message.answer(
+        "✅ Шаблон сохранён.",
+        reply_markup=op_single_kb(f"admin:op:msg:{token}", "← К шаблону"),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:msgf:.+$"))
+async def cb_op_message_format(callback: CallbackQuery):
+    token = callback.data.split(":", 3)[3]
+    try:
+        scope, key = _parse_token(token)
+    except ValueError:
+        await callback.answer("Шаблон не найден", show_alert=True)
+        return
+    row = await panel.get_template(callback.bot.id, scope, key)
+    if row is None:
+        await callback.answer("Сначала задай текст", show_alert=True)
+        return
+    order = list(panel.FORMATS)
+    current = row.format if row.format in order else "html"
+    fmt = order[(order.index(current) + 1) % len(order)]
+    updated = await panel.set_template_format(
+        callback.bot.id, callback.from_user.id, scope, key, fmt
+    )
+    await callback.answer(f"Формат: {panel.FORMAT_TITLES[fmt]}")
+    await _render(
+        callback,
+        _editor_text(scope, key, updated),
+        op_message_editor_kb(token, True, panel.FORMAT_TITLES.get(fmt, fmt)),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:msgp:.+$"))
+async def cb_op_message_preview(callback: CallbackQuery):
+    token = callback.data.split(":", 3)[3]
+    try:
+        scope, key = _parse_token(token)
+    except ValueError:
+        await callback.answer("Шаблон не найден", show_alert=True)
+        return
+    row = await panel.get_template(callback.bot.id, scope, key)
+    fmt = row.format if row else "html"
+    text = row.text if row else core.default_text(scope)
+    context = {
+        "first_name": "Аня",
+        "username": "@anya",
+        "bot_name": bots.label(callback.bot.id),
+        "missing_count": 2,
+        "function_name": core.feature_name(key or "*", "ru"),
+    }
+    rendered = core.render(text, context, fmt)
+    if scope != "error":
+        rendered += "\n\n" + core.tr(core.MISSING, "ru").format(
+            titles="Канал А, Группа Б"
+        )
+    parse_mode = {"html": "HTML", "markdown": "MarkdownV2"}.get(fmt)
+    await callback.answer()
+    try:
+        await safe_send(
+            callback.message,
+            "👁 Предпросмотр\n\n" + rendered,
+            parse_mode=parse_mode,
+        )
+    except TelegramBadRequest as error:
+        await safe_send(
+            callback.message,
+            f"⚠️ Telegram не принял разметку: {escape(str(error))}",
+            reply_markup=op_single_kb(f"admin:op:msg:{token}", "← К шаблону"),
+        )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:msgd:.+$"))
+async def cb_op_message_reset_ask(callback: CallbackQuery):
+    token = callback.data.split(":", 3)[3]
+    await callback.answer()
+    await _render(
+        callback,
+        "♻️ Сбросить шаблон к встроенному тексту?\n\n"
+        "Своя формулировка удалится, подписи кнопок останутся.",
+        op_confirm_reset_kb(token),
+    )
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:msgd2:.+$"))
+async def cb_op_message_reset(callback: CallbackQuery):
+    token = callback.data.split(":", 3)[3]
+    try:
+        scope, key = _parse_token(token)
+    except ValueError:
+        await callback.answer("Шаблон не найден", show_alert=True)
+        return
+    removed = await panel.delete_template(
+        callback.bot.id, callback.from_user.id, scope, key
+    )
+    await callback.answer("Сброшено" if removed else "Уже встроенный")
+    await _render(
+        callback,
+        _editor_text(scope, key, None),
+        op_message_editor_kb(token, False),
+    )
+
+
+@op_admin_router.callback_query(F.data == "admin:op:btn")
+async def cb_op_buttons(callback: CallbackQuery):
+    settings = await panel.get_settings(callback.bot.id)
+    await callback.answer()
+    await _render(callback, _buttons_text(settings), op_buttons_kb())
+
+
+@op_admin_router.callback_query(F.data.regexp(r"^admin:op:btn:(join|check|back)$"))
+async def cb_op_button_edit(callback: CallbackQuery, state: FSMContext):
+    field = callback.data.rsplit(":", 1)[1]
+    settings = await panel.get_settings(callback.bot.id)
+    own = getattr(settings, panel.BUTTON_FIELDS[field])
+    current = own or core.button_default(field)
+    await state.set_state(OpAdminMessage.BUTTON)
+    await state.update_data(op_button=field)
+    await callback.answer()
+    await safe_send(
+        callback.message,
+        f"✏️ Подпись кнопки «{panel.BUTTON_TITLES[field]}»\n\n"
+        f"Сейчас: «{escape(current)}»\n\n"
+        "Отправь новую подпись (до 64 символов). Слово «сброс» вернёт "
+        "значение по умолчанию.\nОтмена — /cancel.",
+        reply_markup=op_cancel_kb("admin:op:btn"),
+    )
+
+
+@op_admin_router.message(StateFilter(OpAdminMessage.BUTTON), F.text)
+async def op_button_input(message: Message, state: FSMContext):
+    data = await state.get_data()
+    field = data.get("op_button")
+    if field not in panel.BUTTON_FIELDS:
+        await state.clear()
+        await message.answer(
+            "Не понял, какую кнопку менять.",
+            reply_markup=op_single_kb("admin:op:btn", "← К подписям"),
+        )
+        return
+    text = message.text.strip()
+    value = None if text.lower() in {"сброс", "reset"} else text
+    try:
+        settings = await panel.set_button_label(
+            message.bot.id, message.from_user.id, field, value
+        )
+    except ValueError as problem:
+        await message.answer(
+            f"Не сохранено: {escape(str(problem))}\n\nОтправь другую подпись или /cancel.",
+            reply_markup=op_cancel_kb("admin:op:btn"),
+        )
+        return
+    await state.clear()
+    await message.answer("✅ Подпись сохранена.\n\n" + _buttons_text(settings), reply_markup=op_buttons_kb())

@@ -18,6 +18,7 @@ from models.base import async_session
 from models.op import (
     OpAuditLog,
     OpErrorLog,
+    OpMessageTemplate,
     OpPolicy,
     OpRuleGroup,
     OpRuleTarget,
@@ -377,3 +378,175 @@ async def schedule_target(
             {"target_id": target_id, "starts": str(starts_at), "ends": str(ends_at)},
         )
     return target
+
+
+# ── Шаблоны сообщений и подписи кнопок ─────────────────────────
+
+FORMATS = ("html", "markdown", "plain")
+FORMAT_TITLES = {"html": "HTML", "markdown": "MarkdownV2", "plain": "обычный текст"}
+BUTTON_FIELDS = {"join": "btn_join", "check": "btn_check", "back": "btn_back"}
+BUTTON_TITLES = {"join": "Вступление", "check": "Проверка", "back": "Назад"}
+
+
+def _template_stmt(bot_id: int, scope: str, feature_key: str | None):
+    stmt = select(OpMessageTemplate).where(
+        OpMessageTemplate.bot_id == bot_id,
+        OpMessageTemplate.scope == scope,
+    )
+    if scope == "feature":
+        stmt = stmt.where(OpMessageTemplate.feature_key == feature_key)
+    else:
+        stmt = stmt.where(OpMessageTemplate.feature_key.is_(None))
+    return stmt.limit(1)
+
+
+async def get_template(bot_id: int, scope: str, feature_key: str | None = None):
+    async with async_session() as s:
+        return await s.scalar(_template_stmt(bot_id, scope, feature_key))
+
+
+async def list_templates(bot_id: int) -> list[OpMessageTemplate]:
+    async with async_session() as s:
+        return list(
+            (
+                await s.scalars(
+                    select(OpMessageTemplate)
+                    .where(OpMessageTemplate.bot_id == bot_id)
+                    .order_by(OpMessageTemplate.id)
+                )
+            ).all()
+        )
+
+
+async def save_template(
+    bot_id: int,
+    actor_id: int,
+    scope: str,
+    feature_key: str | None,
+    text: str,
+    fmt: str,
+):
+    """Сохраняет шаблон после валидации; неизвестные переменные не пройдут."""
+    if fmt not in FORMATS:
+        fmt = "html"
+    if scope not in {"global", "error", "feature"}:
+        raise ValueError("Неизвестный тип шаблона.")
+    if scope == "feature" and not feature_key:
+        raise ValueError("Не указана функция.")
+    problem = core.validate_template(text, fmt)
+    if problem:
+        raise ValueError(problem)
+    async with async_session.begin() as s:
+        row = await s.scalar(_template_stmt(bot_id, scope, feature_key))
+        if row is None:
+            row = OpMessageTemplate(
+                bot_id=bot_id,
+                scope=scope,
+                feature_key=feature_key if scope == "feature" else None,
+            )
+            s.add(row)
+        row.text = text
+        row.format = fmt
+        row.updated_at = utcnow()
+        await s.flush()
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "template_save",
+            {"scope": scope, "feature": feature_key, "format": fmt},
+        )
+    return row
+
+
+async def set_template_format(
+    bot_id: int, actor_id: int, scope: str, feature_key: str | None, fmt: str
+):
+    if fmt not in FORMATS:
+        raise ValueError("Неизвестный формат.")
+    async with async_session.begin() as s:
+        row = await s.scalar(_template_stmt(bot_id, scope, feature_key))
+        if row is None:
+            return None
+        row.format = fmt
+        row.updated_at = utcnow()
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "template_format",
+            {"scope": scope, "feature": feature_key, "format": fmt},
+        )
+    return row
+
+
+async def delete_template(
+    bot_id: int, actor_id: int, scope: str, feature_key: str | None
+) -> bool:
+    async with async_session.begin() as s:
+        row = await s.scalar(_template_stmt(bot_id, scope, feature_key))
+        if row is None:
+            return False
+        await s.delete(row)
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "template_delete",
+            {"scope": scope, "feature": feature_key},
+        )
+    return True
+
+
+async def feature_keys(bot_id: int) -> list[str]:
+    """Ключи функций: встроенные + из правил + из готовых шаблонов."""
+    async with async_session() as s:
+        policy_keys = set(
+            (
+                await s.scalars(
+                    select(OpPolicy.feature_key).where(
+                        OpPolicy.bot_id == bot_id, OpPolicy.feature_key != "*"
+                    )
+                )
+            ).all()
+        )
+        template_keys = set(
+            (
+                await s.scalars(
+                    select(OpMessageTemplate.feature_key).where(
+                        OpMessageTemplate.bot_id == bot_id,
+                        OpMessageTemplate.scope == "feature",
+                        OpMessageTemplate.feature_key.is_not(None),
+                    )
+                )
+            ).all()
+        )
+    return sorted((set(core.FEATURE_NAMES) - {"*"}) | policy_keys | template_keys)
+
+
+async def get_settings(bot_id: int):
+    async with async_session.begin() as s:
+        return await core.settings_or_create(s, bot_id)
+
+
+async def set_button_label(bot_id: int, actor_id: int, field: str, value: str | None):
+    column = BUTTON_FIELDS.get(field)
+    if column is None:
+        raise ValueError("Неизвестная кнопка.")
+    if value is not None:
+        value = value.strip()
+        if len(value) > 64:
+            raise ValueError("Подпись длиннее 64 символов — Telegram не примет.")
+        value = value or None
+    async with async_session.begin() as s:
+        settings = await core.settings_or_create(s, bot_id)
+        setattr(settings, column, value)
+        settings.updated_at = utcnow()
+        await audit(
+            s,
+            bot_id,
+            actor_id,
+            "button_label",
+            {"field": field, "value": value},
+        )
+    return settings

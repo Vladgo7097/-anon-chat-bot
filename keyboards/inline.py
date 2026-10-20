@@ -454,8 +454,9 @@ def op_admin_kb(enabled: bool, paused: bool) -> InlineKeyboardMarkup:
     rows += [
         [
             InlineKeyboardButton(text="🗂 Ресурсы", callback_data="admin:op:res"),
-            InlineKeyboardButton(text="🩺 Диагностика", callback_data="admin:op:diag"),
+            InlineKeyboardButton(text="✉️ Сообщения", callback_data="admin:op:msg"),
         ],
+        [InlineKeyboardButton(text="🩺 Диагностика", callback_data="admin:op:diag")],
         [InlineKeyboardButton(text="← Админ-панель", callback_data="admin:back")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -517,4 +518,45 @@ def op_diag_kb() -> InlineKeyboardMarkup:
 def op_audit_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="← Диагностика", callback_data="admin:op:diag")],
+    ])
+
+
+def op_messages_kb(entries) -> InlineKeyboardMarkup:
+    """entries: (token, label) — токен кодирует global/error/feature."""
+    rows = [
+        [InlineKeyboardButton(text=label[:60], callback_data=f"admin:op:msg:{token}")]
+        for token, label in entries
+    ]
+    rows.append([InlineKeyboardButton(text="➕ Шаблон для функции", callback_data="admin:op:msg:add")])
+    rows.append([InlineKeyboardButton(text="🔘 Подписи кнопок", callback_data="admin:op:btn")])
+    rows.append([InlineKeyboardButton(text="← К ОП", callback_data="admin:op")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_message_editor_kb(token: str, has_template: bool, fmt: str = "html") -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text="✏️ Изменить текст", callback_data=f"admin:op:msge:{token}")]]
+    middle = [InlineKeyboardButton(text="👁 Предпросмотр", callback_data=f"admin:op:msgp:{token}")]
+    if has_template:
+        middle.insert(0, InlineKeyboardButton(
+            text=f"🔤 Формат: {fmt}", callback_data=f"admin:op:msgf:{token}"))
+    rows.append(middle)
+    if has_template:
+        rows.append([InlineKeyboardButton(text="♻️ Сбросить к встроенному", callback_data=f"admin:op:msgd:{token}")])
+    rows.append([InlineKeyboardButton(text="← К сообщениям", callback_data="admin:op:msg")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def op_buttons_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Вступление", callback_data="admin:op:btn:join")],
+        [InlineKeyboardButton(text="✏️ Проверка", callback_data="admin:op:btn:check")],
+        [InlineKeyboardButton(text="✏️ Назад", callback_data="admin:op:btn:back")],
+        [InlineKeyboardButton(text="← К сообщениям", callback_data="admin:op:msg")],
+    ])
+
+
+def op_confirm_reset_kb(token: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="♻️ Сбросить", callback_data=f"admin:op:msgd2:{token}", style="danger")],
+        [InlineKeyboardButton(text="← Отмена", callback_data=f"admin:op:msg:{token}")],
     ])

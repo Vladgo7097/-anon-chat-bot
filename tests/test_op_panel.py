@@ -137,3 +137,61 @@ class PanelTests(_OpCase):
             s.add(OpAuditLog(bot_id=BOT, action="new"))
         rows = await panel.audit_page(BOT)
         self.assertEqual([row.action for row in rows], ["new", "old"])
+
+
+class MessageTemplateTests(_OpCase):
+    async def test_save_and_read_back(self):
+        await panel.save_template(
+            BOT, USER, "global", None, "Привет, {first_name}!", "html"
+        )
+        row = await panel.get_template(BOT, "global", None)
+        self.assertEqual(row.text, "Привет, {first_name}!")
+        self.assertEqual(row.format, "html")
+        async with self.factory() as s:
+            actions = list(await s.scalars(select(OpAuditLog.action)))
+        self.assertIn("template_save", actions)
+
+    async def test_unknown_variable_rejected(self):
+        with self.assertRaises(ValueError):
+            await panel.save_template(BOT, USER, "global", None, "{nope}", "html")
+        self.assertIsNone(await panel.get_template(BOT, "global", None))
+
+    async def test_broken_html_rejected(self):
+        with self.assertRaises(ValueError):
+            await panel.save_template(BOT, USER, "error", None, "<b>не закрыт", "html")
+        self.assertIsNone(await panel.get_template(BOT, "error", None))
+
+    async def test_feature_template_is_separate(self):
+        await panel.save_template(BOT, USER, "global", None, "G", "plain")
+        await panel.save_template(BOT, USER, "feature", "premium", "P", "plain")
+        self.assertEqual((await panel.get_template(BOT, "global", None)).text, "G")
+        self.assertEqual(
+            (await panel.get_template(BOT, "feature", "premium")).text, "P"
+        )
+
+    async def test_format_requires_existing_template(self):
+        self.assertIsNone(
+            await panel.set_template_format(BOT, USER, "global", None, "markdown")
+        )
+
+    async def test_delete_template(self):
+        await panel.save_template(BOT, USER, "global", None, "X", "plain")
+        self.assertTrue(await panel.delete_template(BOT, USER, "global", None))
+        self.assertIsNone(await panel.get_template(BOT, "global", None))
+
+    async def test_button_labels_set_and_reset(self):
+        settings = await panel.set_button_label(BOT, USER, "join", "Вступить")
+        self.assertEqual(settings.btn_join, "Вступить")
+        settings = await panel.set_button_label(BOT, USER, "join", None)
+        self.assertIsNone(settings.btn_join)
+
+    async def test_button_label_length(self):
+        with self.assertRaises(ValueError):
+            await panel.set_button_label(BOT, USER, "check", "x" * 65)
+
+    async def test_feature_keys_include_builtin_and_policy(self):
+        await self.add_policy(feature_key="premium", groups=[("and", [])])
+        keys = await panel.feature_keys(BOT)
+        self.assertIn("premium", keys)
+        self.assertIn("search", keys)
+        self.assertNotIn("*", keys)
