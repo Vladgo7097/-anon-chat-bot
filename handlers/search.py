@@ -127,16 +127,17 @@ def search_status_keyboard(offer=None, lang="ru"):
 
 
 def nobody_keyboard(lang="ru"):
+    # The referral button lives in the persistent main menu only. This screen
+    # keeps the contextual "notify me" action; duplicating the invite here
+    # made the same CTA appear in two unrelated places.
     labels = {
-        "ru": ("🔔 Сообщить, когда кто-то появится", "👥 Пригласить друга"),
-        "en": ("🔔 Notify me when someone appears", "👥 Invite a friend"),
-        "uk": ("🔔 Повідомити, коли хтось з’явиться", "👥 Запросити друга"),
+        "ru": "🔔 Сообщить, когда кто-то появится",
+        "en": "🔔 Notify me when someone appears",
+        "uk": "🔔 Повідомити, коли хтось з’явиться",
     }
-    wait, invite = labels.get(lang, labels["ru"])
+    wait = labels.get(lang, labels["ru"])
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=wait, callback_data="search:wait"),
-    ], [
-        InlineKeyboardButton(text=invite, callback_data="search:invite"),
     ]])
 
 
