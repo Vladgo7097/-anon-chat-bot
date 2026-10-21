@@ -43,6 +43,7 @@ def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarku
     rows += [
         [InlineKeyboardButton(text=labels["privacy"], icon_custom_emoji_id="5350491749926058609", callback_data="profile:privacy")],
         [InlineKeyboardButton(text=labels["rewards"], icon_custom_emoji_id="5345843457145453967", callback_data="profile:rewards",style="primary")],
+        [InlineKeyboardButton(text=labels["friends"], icon_custom_emoji_id="5215522595922779944", callback_data="profile:friends")],
         [InlineKeyboardButton(text="🌐 Язык / Language", callback_data="language:menu:profile")],
         [InlineKeyboardButton(text=labels["delete"], icon_custom_emoji_id="5337131193294938034", callback_data="profile:delete")],
     ]
@@ -265,8 +266,8 @@ def admin_user_list_kb(entries, target: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def admin_report_kb(report_id: int, offset: int = 0, has_media: bool = False) -> InlineKeyboardMarkup:
+    rows = [
         [
             InlineKeyboardButton(text="Забанить на 1 день", icon_custom_emoji_id="5260342697075416641", callback_data=f"admin:ban1:{report_id}", style="danger"),
             InlineKeyboardButton(text="Навсегда", icon_custom_emoji_id="5260342697075416641", callback_data=f"admin:banf:{report_id}", style="danger"),
@@ -277,13 +278,21 @@ def admin_report_kb(report_id: int, offset: int = 0) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Мут 7 д", callback_data=f"admin:mute7:{report_id}", style="primary"),
         ],
         [
+            InlineKeyboardButton(text="Предупредить", icon_custom_emoji_id="5280880410346152584", callback_data=f"admin:warn:{report_id}", style="primary"),
+        ],
+    ]
+    if has_media:
+        rows.append([InlineKeyboardButton(text="Снимок жалобы", callback_data=f"admin:report:media:{report_id}")])
+    rows += [
+        [
             InlineKeyboardButton(text="Отклонить", icon_custom_emoji_id="5210952531676504517", callback_data=f"admin:dismiss:{report_id}"),
             InlineKeyboardButton(text="Следующая", callback_data=f"admin:reports:{offset}"),
         ],
         [
             InlineKeyboardButton(text="Назад", icon_custom_emoji_id="5258236805890710909", callback_data="admin:sec:moderation"),
         ],
-    ])
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def admin_broadcast_audience_kb(sizes=None, poll=False) -> InlineKeyboardMarkup:

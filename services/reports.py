@@ -1,9 +1,10 @@
 import logging
-from sqlalchemy import select, or_, func
+from datetime import timedelta
+from sqlalchemy import delete, select, or_, func, update
 from sqlalchemy.exc import IntegrityError
 from models.base import async_session
 from models.chat import Chat, Block
-from models.report import Report
+from models.report import Report, ReportSnapshot
 from repositories.chats import lock_matching
 from services.result import ServiceResult
 from services.chats import ChatService
@@ -11,6 +12,11 @@ from utils.time import utcnow
 
 MAX_REPORTS_PER_DAY = 20  # дневная квота одной учётной записи на жалобы
 MAX_REPORTS_PER_VICTIM_PER_DAY = 20  # дневная квота жалоб на одну жертву
+SNAPSHOT_TTL_DAYS = 30  # медиа жалобы; текст в reports -- 90 дней
+CONTENT_TTL_DAYS = 90
+MEDIA_MARKERS = {"photo": "[фото]", "voice": "[голосовое]", "audio": "[аудио]",
+                 "video": "[видео]", "video_note": "[видеосообщение]",
+                 "sticker": "[стикер]", "animation": "[анимация]"}
 
 REASONS = {"18plus": "Контент 18+", "insult": "Оскорбления", "spam": "Спам/реклама",
            "fraud": "Мошенничество", "minor": "Подозрение на несовершеннолетнего", "other": "Другое"}
@@ -60,11 +66,27 @@ class ReportService:
                 if victim_today >= MAX_REPORTS_PER_VICTIM_PER_DAY:
                     return ServiceResult(False, "QUOTA_EXCEEDED")
                 labels = {user_id: "Вы", partner: "Собеседник"}
-                excerpts = []
+                excerpts, snapshots = [], []
                 for value in context:
-                    sender, separator, text = value.partition(":")
-                    if separator and sender.isdigit():
-                        excerpts.append(f"{labels.get(int(sender), 'Участник')}: {text}")
+                    if isinstance(value, dict):
+                        sender = value.get("user_id")
+                        kind = value.get("kind") or "text"
+                        file_id = value.get("file_id")
+                        text = value.get("text") or ""
+                    else:
+                        # Old Redis rows from a process that started before the
+                        # JSON format: still worth including in the report.
+                        raw_sender, separator, text = value.partition(":")
+                        sender = int(raw_sender) if separator and raw_sender.isdigit() else None
+                        kind, file_id = "text", None
+                    if not sender:
+                        continue
+                    marker = MEDIA_MARKERS.get(kind, "")
+                    excerpt = f"{marker} {text}".strip()
+                    if excerpt:
+                        excerpts.append(f"{labels.get(int(sender), 'Участник')}: {excerpt}")
+                    snapshots.append({"sender_id": int(sender), "kind": kind,
+                                      "file_id": file_id, "text": text})
                 content = details or ""
                 if excerpts:
                     content += ("\n\n" if content else "") + "Последние сообщения:\n" + "\n".join(excerpts)
@@ -75,6 +97,21 @@ class ReportService:
                     s.add(Block(blocker_id=user_id, blocked_id=partner, reason=reason))
                 await s.flush()
                 report_id = report.id
+                now = utcnow()
+                for item in snapshots:
+                    if not item["file_id"] and not item["text"]:
+                        continue
+                    s.add(ReportSnapshot(
+                        report_id=report_id,
+                        sender_id=item["sender_id"],
+                        kind=(item["kind"] or "text")[:16],
+                        file_id=(item["file_id"] or None),
+                        text=(item["text"] or None),
+                        created_at=now,
+                        expires_at=now + timedelta(days=SNAPSHOT_TTL_DAYS),
+                    ))
+                from services.community import block_pair
+                await block_pair(s, user_id, partner)
                 import config
                 if config.OWNER_ID:
                     from services.notifications import enqueue
@@ -86,3 +123,18 @@ class ReportService:
         await relay.report_context(session_id, clear=True)
         logging.getLogger(__name__).info("report_created", extra={"user_id": user_id, "chat_session_id": session_id, "report_id": report_id})
         return ServiceResult(True, "REPORTED", {"partner": partner, "report_id": report_id})
+
+
+async def cleanup():
+    """Purge expired media snapshots and old report text.
+
+    Reports themselves stay as moderation history; only the captured content
+    shortens its life, because that is the part that contains user messages.
+    """
+    now = utcnow()
+    async with async_session.begin() as s:
+        await s.execute(delete(ReportSnapshot).where(ReportSnapshot.expires_at < now))
+        await s.execute(update(Report).where(
+            Report.created_at < now - timedelta(days=CONTENT_TTL_DAYS),
+            Report.message_content.is_not(None),
+        ).values(message_content=None))

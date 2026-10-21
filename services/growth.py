@@ -1,5 +1,6 @@
 from datetime import timedelta
 from sqlalchemy import select, func
+import config
 from models.base import async_session
 from models.user import User
 from models.operations import Referral, Streak, Offer, Achievement, AnalyticsEvent
@@ -49,6 +50,55 @@ async def first_purchase_discount(user_id, percent=50, days=30):
     return percent
 
 
+OP_BYPASS_TEXT = {
+    "ru": "🎁 {count} друзей активировали бота — тебе {days} дней без обязательной подписки. Подробности в профиле.",
+    "en": "🎁 {count} friends activated the bot — you get {days} days without the required subscription. Details in your profile.",
+    "uk": "🎁 {count} друзів активували бота — тобі {days} днів без обов'язкової підписки. Подробиці у профілі.",
+}
+
+
+async def grant_op_bypass(s, referrer):
+    """Turn activated referrals into a temporary OP exemption.
+
+    One reward per activation burst: an active exemption is never extended by
+    later referrals, otherwise the referrer could stay exempt forever without
+    the threshold being re-earned. An expired row is refreshed in place.
+    """
+    threshold = config.OP_REFERRAL_BYPASS_COUNT
+    days = config.OP_REFERRAL_BYPASS_DAYS
+    if threshold <= 0 or days <= 0 or not referrer.bot_id:
+        return None
+    count = int(await s.scalar(select(func.count(Referral.id)).where(
+        Referral.referrer_id == referrer.telegram_id,
+        Referral.status == "activated",
+    )) or 0)
+    if count < threshold:
+        return None
+    from models.op import OpAuditLog, OpExemption
+    now = utcnow()
+    row = await s.scalar(select(OpExemption).where(
+        OpExemption.bot_id == referrer.bot_id,
+        OpExemption.user_id == referrer.telegram_id,
+    ).with_for_update())
+    if row and (row.until is None or row.until > now):
+        return row
+    until = now + timedelta(days=days)
+    note = f"Рефералы: {count} активированных"
+    if row:
+        row.until, row.note, row.created_by = until, note, None
+    else:
+        s.add(OpExemption(bot_id=referrer.bot_id, user_id=referrer.telegram_id,
+                          until=until, note=note, created_by=None))
+    s.add(OpAuditLog(bot_id=referrer.bot_id, actor_id=None, action="referral_bypass",
+                     payload={"user_id": referrer.telegram_id, "count": count, "days": days}))
+    from services.notifications import enqueue
+    lang = referrer.language or "ru"
+    text = OP_BYPASS_TEXT.get(lang, OP_BYPASS_TEXT["ru"]).format(count=count, days=days)
+    await enqueue(s, referrer.telegram_id, "op_bypass",
+                  f"op_bypass:{referrer.telegram_id}:{count}", text, "menu")
+    return row
+
+
 async def completed_chat(s, user):
     await SeasonalService.reward(s,user.telegram_id)
     for count, code in ((1,"first_chat"),(50,"50_chats"),(100,"100_chats")):
@@ -74,6 +124,8 @@ async def completed_chat(s, user):
                           "<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Друг завершил первый диалог — тебе +1 час Premium! Подробности в профиле.",
                           "profile:rewards")
         await offer(s, user.telegram_id, f"ref:{referral.id}:invited", 20)
+        if referrer:
+            await grant_op_bypass(s, referrer)
 
 
 class StreakService:

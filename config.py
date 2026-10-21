@@ -36,6 +36,26 @@ SEARCH_TIMEOUT = 180
 PREMIUM_SEARCH_TIMEOUT = 180
 INACTIVE_CHAT_TTL = 300
 
+# Прогрессивная модерация: подтверждённая жалоба даёт предупреждение.
+# Активные предупреждения живут WARN_TTL_DAYS; на пороге -- автоматический
+# мут, на следующем -- временный бан. Явное действие админа всегда сильнее.
+WARN_TTL_DAYS = int(os.getenv("WARN_TTL_DAYS", "30"))
+WARN_MUTE_AT = int(os.getenv("WARN_MUTE_AT", "3"))
+WARN_BAN_AT = int(os.getenv("WARN_BAN_AT", "5"))
+WARN_MUTE_HOURS = int(os.getenv("WARN_MUTE_HOURS", "24"))
+WARN_BAN_HOURS = int(os.getenv("WARN_BAN_HOURS", "168"))
+
+# Друзья после диалога и возврат собеседника.
+MAX_FRIENDS = int(os.getenv("MAX_FRIENDS", "50"))
+MAX_FRIEND_REQUESTS = int(os.getenv("MAX_FRIEND_REQUESTS", "10"))
+FRIEND_REQUEST_TTL_DAYS = int(os.getenv("FRIEND_REQUEST_TTL_DAYS", "7"))
+RECONNECT_WINDOW_MINUTES = int(os.getenv("RECONNECT_WINDOW_MINUTES", "10"))
+
+# ОП за подтверждённых рефералов: N активированных друзей дают D дней
+# исключения. 0 отключает награду.
+OP_REFERRAL_BYPASS_COUNT = int(os.getenv("OP_REFERRAL_BYPASS_COUNT", "3"))
+OP_REFERRAL_BYPASS_DAYS = int(os.getenv("OP_REFERRAL_BYPASS_DAYS", "7"))
+
 # Цены Telegram Stars
 STARS_INSTANT_SEARCH = int(os.getenv("STARS_INSTANT_SEARCH", "15"))
 STARS_REVEAL_ONE = int(os.getenv("STARS_REVEAL_ONE", "25"))

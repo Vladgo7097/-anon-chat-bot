@@ -1,10 +1,13 @@
 import uuid
 import logging
+from datetime import timedelta
 from sqlalchemy import select, update, delete, or_, and_, text
+import config
 from models.base import async_session
 from models.user import User
 from models.chat import Chat, ActiveParticipant, Block, Rating, RevealRequest
-from services.onboarding import step_for, banned
+from models.community import ReconnectOffer
+from services.onboarding import step_for, banned, muted
 from utils.time import utcnow
 from services.premium import premium_active
 
@@ -41,6 +44,27 @@ ICEBREAKERS = (
 def icebreaker(session_id):
     """Same prompt for both sides of one dialogue, stable for a given session."""
     return ICEBREAKERS[int(session_id[:8], 16) % len(ICEBREAKERS)]
+
+
+MATCH_FOUND = {
+    "ru": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Если не знаешь, с чего начать: ",
+    "en": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Match found!\n\nSay hi first! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Not sure how to start: ",
+    "uk": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Співрозмовника знайдено!\n\nПиши першим! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Якщо не знаєш, з чого почати: ",
+}
+
+
+async def _notify_match(s, chat, users):
+    """Queue the same "match found" notice for both sides of a new chat."""
+    from services.growth import event
+    from locales import tr
+    starter = icebreaker(chat.session_id)
+    by_id = {u.telegram_id: u for u in users}
+    for uid in (chat.user1_id, chat.user2_id):
+        await event(s, uid, "chat_started", f"chat_started:{chat.session_id}:{uid}")
+        from services.notifications import enqueue
+        lang = getattr(by_id.get(uid), "language", None) or "ru"
+        await enqueue(s, uid, "match", f"match:{chat.session_id}:{uid}",
+                      tr(MATCH_FOUND, lang) + starter, chat.session_id)
 
 
 async def lock_matching(session):
@@ -110,20 +134,7 @@ class ChatRepository:
             s.add(chat)
             await s.flush()
             s.add_all([ActiveParticipant(user_id=uid, session_id=chat.session_id) for uid in (a_id, b_id)])
-            from services.growth import event
-            starter = icebreaker(chat.session_id)
-            by_id = {u.telegram_id: u for u in users}
-            MATCH_FOUND = {
-                "ru": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Собеседник найден!\n\nПишите первым! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Если не знаешь, с чего начать: ",
-                "en": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Match found!\n\nSay hi first! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Not sure how to start: ",
-                "uk": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Співрозмовника знайдено!\n\nПиши першим! <tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji>\n\n<tg-emoji emoji-id=\"5312160339335347417\">💡</tg-emoji> Якщо не знаєш, з чого почати: ",
-            }
-            from locales import tr
-            for uid in (a_id, b_id):
-                await event(s, uid, "chat_started", f"chat_started:{chat.session_id}:{uid}")
-                from services.notifications import enqueue
-                lang = getattr(by_id.get(uid), "language", None) or "ru"
-                await enqueue(s,uid,"match",f"match:{chat.session_id}:{uid}",tr(MATCH_FOUND, lang)+starter,chat.session_id)
+            await _notify_match(s, chat, users)
             for user in users:
                 entitlement = filters.get(user.telegram_id)
                 if entitlement and entitlement.kind == "gender_filter_one_match" and not premium_active(user) and user.settings_gender_filter != "a":
@@ -132,6 +143,42 @@ class ChatRepository:
                 if priority and not premium_active(user):
                     priority.remaining_uses -= 1
         logging.getLogger(__name__).info("chat_matched", extra={"chat_session_id": chat.session_id, "user_id": a_id})
+        return chat
+
+    async def start_direct(self, a_id, b_id):
+        """Open a chat between two friends without touching the search queue.
+
+        Search filters (gender/age) are deliberately not applied: the two
+        already chose each other. Bans, mutes, deleted profiles and blocks are.
+        """
+        if a_id == b_id:
+            return None
+        async with async_session.begin() as s:
+            await lock_matching(s)
+            if await s.scalar(select(ActiveParticipant).where(
+                    ActiveParticipant.user_id.in_([a_id, b_id])).limit(1)):
+                return None
+            users = list((await s.scalars(select(User).where(
+                User.telegram_id.in_([a_id, b_id])))).all())
+            if len(users) != 2:
+                return None
+            for user in users:
+                if (step_for(user) != "MENU" or banned(user) or muted(user)
+                        or user.deleted_at or user.bot_blocked_at):
+                    return None
+            if await s.scalar(select(Block).where(or_(
+                    and_(Block.blocker_id == a_id, Block.blocked_id == b_id),
+                    and_(Block.blocker_id == b_id, Block.blocked_id == a_id)))):
+                return None
+            chat = Chat(session_id=uuid.uuid4().hex, user1_id=a_id, user2_id=b_id,
+                        status="active", started_at=utcnow(), last_activity_at=utcnow())
+            s.add(chat)
+            await s.flush()
+            s.add_all([ActiveParticipant(user_id=uid, session_id=chat.session_id)
+                       for uid in (a_id, b_id)])
+            await _notify_match(s, chat, users)
+        logging.getLogger(__name__).info("chat_direct", extra={"chat_session_id": chat.session_id,
+                                                              "user_id": a_id})
         return chat
 
     async def end(self, user_id, session_id=None, reason="stop"):
@@ -147,6 +194,16 @@ class ChatRepository:
             chat.status, chat.ended_at, chat.end_reason, chat.ended_by = "ended", now, reason, user_id
             chat.duration_seconds = max(0, int((now - chat.started_at).total_seconds()))
             await s.execute(delete(ActiveParticipant).where(ActiveParticipant.session_id == chat.session_id))
+            if reason in {"stop", "next"} and config.RECONNECT_WINDOW_MINUTES > 0:
+                blocked = await s.scalar(select(Block).where(or_(
+                    and_(Block.blocker_id == chat.user1_id, Block.blocked_id == chat.user2_id),
+                    and_(Block.blocker_id == chat.user2_id, Block.blocked_id == chat.user1_id))))
+                if not blocked:
+                    s.add(ReconnectOffer(
+                        session_id=chat.session_id,
+                        user1_id=chat.user1_id, user2_id=chat.user2_id,
+                        expires_at=now + timedelta(minutes=config.RECONNECT_WINDOW_MINUTES),
+                    ))
             await s.execute(update(User).where(User.telegram_id.in_([chat.user1_id, chat.user2_id])).values(
                 chats_count=User.chats_count + 1,
                 total_chat_seconds=User.total_chat_seconds + chat.duration_seconds))
@@ -175,8 +232,16 @@ class ChatRepository:
                 from services.notifications import enqueue
                 if reason != "unreachable":
                     partner = chat.user2_id if chat.user1_id == user_id else chat.user1_id
-                    await enqueue(s, partner, "chat_ended", f"ended:{chat.session_id}:{partner}",
-                                  "😢 Собеседник покинул чат.", "menu")
+                    if reason in {"stop", "next"}:
+                        from keyboards import texts as T
+                        lang = next((u.language for u in users
+                                     if u.telegram_id == partner), None) or "ru"
+                        await enqueue(s, partner, "chat_after",
+                                      f"chat_after:{chat.session_id}:{partner}",
+                                      T.tr(T.CHAT_AFTER, lang)["text"], chat.session_id)
+                    else:
+                        await enqueue(s, partner, "chat_ended", f"ended:{chat.session_id}:{partner}",
+                                      "😢 Собеседник покинул чат.", "menu")
                 for uid in (chat.user1_id, chat.user2_id):
                     await enqueue(s, uid, "rating_prompt", f"rate_prompt:{chat.session_id}:{uid}",
                                   "Нашли интересного собеседника?", chat.session_id)

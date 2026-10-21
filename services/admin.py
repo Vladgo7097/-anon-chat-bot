@@ -5,13 +5,14 @@ from sqlalchemy import select, func, or_, update, case
 from models.base import async_session
 from models.user import User
 from models.chat import Chat
-from models.report import Report
+from models.report import Report, ReportSnapshot
 from models.ban import Ban
 from models.mute import Mute
 from models.payment import Payment, Product, PremiumSubscription
 from models.operations import AdminAudit, BotSetting, Broadcast, AnalyticsEvent, Notification
 from models.start import StartEvent
 from services.result import ServiceResult
+from services.moderation import add_warning, apply_progressive, warning_count
 from services.chats import ChatService
 from services.matching import MatchingService
 from utils.time import kyiv_day_bounds, utcnow
@@ -328,9 +329,29 @@ class AdminService:
             mutes=await s.scalar(select(func.count(Mute.id)).where(Mute.user_id==report.reported_id))
             return names,previous,bans,mutes
 
+    async def warnings_against(self, admin, uid):
+        authorize(admin)
+        async with async_session() as s:
+            return await warning_count(s, uid)
+
+    async def snapshot_count(self, admin, report_id):
+        authorize(admin)
+        async with async_session() as s:
+            return int(await s.scalar(select(func.count(ReportSnapshot.id)).where(
+                ReportSnapshot.report_id == report_id,
+                ReportSnapshot.file_id.is_not(None))) or 0)
+
+    async def snapshots(self, admin, report_id):
+        """Media-only: the report card already renders the text excerpts."""
+        authorize(admin)
+        async with async_session() as s:
+            return list((await s.scalars(select(ReportSnapshot).where(
+                ReportSnapshot.report_id == report_id,
+                ReportSnapshot.file_id.is_not(None)).order_by(ReportSnapshot.id))).all())
+
     async def resolve(self, admin, report_id, action):
         authorize(admin)
-        if action not in {"ban1", "banf", "mute1", "mute24", "mute7", "dismiss"}:
+        if action not in {"ban1", "banf", "mute1", "mute24", "mute7", "warn", "dismiss"}:
             return ServiceResult(False,"INVALID")
         if not 0 < report_id <= 2**63 - 1:
             # int64: шире -- s.get() кидал OverflowError посреди транзакции (M1).
@@ -343,18 +364,28 @@ class AdminService:
                 return ServiceResult(False,"ALREADY_RESOLVED")
             report.status="dismissed" if action=="dismiss" else "resolved"
             report.resolved_at,report.resolved_by=utcnow(),admin
+            penalty=None
             if action!="dismiss":
+                # Every confirmed report produces exactly one warning; the
+                # explicit action is applied first, then the thresholds may
+                # upgrade it (a fifth warning turns a 1h mute into a ban).
+                await add_warning(s, report.reported_id, report.reason,
+                                  issued_by=admin, report_id=report.id)
                 if action.startswith("mute"):
                     hours={"mute1":1,"mute24":24,"mute7":168}[action]
                     await self._mute(s,admin,report.reported_id,report.reason,hours,report.id)
-                else:
+                elif action.startswith("ban"):
                     await self._ban(s,admin,report.reported_id,report.reason,24 if action=="ban1" else None,report.id)
+                penalty=await apply_progressive(s, report.reported_id)
             audit(s,admin,action,"report",report_id,{"status":"pending"},{"status":report.status})
             uid=report.reported_id
-        if action!="dismiss":
+        if action.startswith("mute") or penalty=="mute":
             await MatchingService().cancel(uid)
-            await ChatService().end_chat(uid,reason="mute" if action.startswith("mute") else "ban")
-        return ServiceResult(True,"RESOLVED")
+            await ChatService().end_chat(uid,reason="mute")
+        elif action.startswith("ban") or penalty=="ban":
+            await MatchingService().cancel(uid)
+            await ChatService().end_chat(uid,reason="ban")
+        return ServiceResult(True,"RESOLVED",{"penalty":penalty})
 
     async def _ban(self,s,admin,uid,reason,hours,report_id=None):
         user=await s.scalar(select(User).where(User.telegram_id==uid).with_for_update())

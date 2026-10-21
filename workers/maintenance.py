@@ -64,6 +64,7 @@ async def run(bot):
     last=0
     last_funnel=time.monotonic()
     last_op=0
+    last_cleanup=time.monotonic()
     last_beat=0.0
     while True:
         try:
@@ -93,6 +94,17 @@ async def run(bot):
             if time.monotonic()-last_op>60:
                 await op_schedule.check()
                 last_op=time.monotonic()
+            # Retention: expired media snapshots, old report text, expired
+            # warnings and stale friend/reconnect rows. Hourly is enough; the
+            # queries are cheap and the rows are not user-visible after expiry.
+            if time.monotonic()-last_cleanup>3600:
+                from services.community import cleanup as cleanup_community
+                from services.moderation import cleanup as cleanup_warnings
+                from services.reports import cleanup as cleanup_reports
+                await cleanup_community()
+                await cleanup_warnings()
+                await cleanup_reports()
+                last_cleanup=time.monotonic()
             # Telegram never announces a dead token or one someone else is
             # polling -- the bot just goes quiet and keeps retrying forever.
             # probe() asks each token directly, report() turns repeated
@@ -128,6 +140,20 @@ async def run(bot):
                         markup=InlineKeyboardMarkup(inline_keyboard=[[
                             InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["similar"],
                                 callback_data="search:repeat", style="primary")]])
+                    elif notification.type == "friend_request":
+                        from keyboards.community import friend_request_kb
+                        if notification.callback_data and notification.callback_data.isdigit():
+                            markup = friend_request_kb(int(notification.callback_data), lang)
+                    elif notification.type == "friend_invite":
+                        from keyboards.community import friend_invite_kb
+                        if notification.callback_data and notification.callback_data.isdigit():
+                            markup = friend_invite_kb(int(notification.callback_data), lang)
+                    elif notification.type == "chat_after":
+                        from keyboards.community import after_chat_kb
+                        markup = after_chat_kb(notification.callback_data, lang)
+                    elif notification.type == "reconnect_waiting":
+                        from keyboards.community import reconnect_waiting_kb
+                        markup = reconnect_waiting_kb(notification.callback_data, lang)
                     elif notification.callback_data:
                         markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["open"],callback_data=notification.callback_data,style="primary")]])
                     poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None

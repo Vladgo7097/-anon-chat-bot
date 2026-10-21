@@ -359,7 +359,44 @@ async def cb_reports(callback: CallbackQuery):
         return
     r=reports[0]
     names,previous,bans,mutes=await AdminService().report_details(callback.from_user.id,r)
-    await callback.message.answer(f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов, {mutes} мутов\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1))
+    warnings=await AdminService().warnings_against(callback.from_user.id,r.reported_id)
+    media=await AdminService().snapshot_count(callback.from_user.id,r.id)
+    await callback.message.answer(f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоба #{r.id}\nОт: {escape(names.get(r.reporter_id,'Удалённый профиль'))}\nНа: {escape(names.get(r.reported_id,'Удалённый профиль'))}\nПричина: {escape(r.reason)}\nДетали: {escape(r.message_content or 'Не указаны')}\nИстория: {previous} других жалоб, {bans} банов, {mutes} мутов, {warnings} активных предупреждений\nДата: {r.created_at:%d.%m.%Y %H:%M} UTC",reply_markup=admin_report_kb(r.id,offset+1,has_media=bool(media)))
+
+
+@admin_router.callback_query(F.data.startswith("admin:report:media:"))
+async def cb_report_media(callback: CallbackQuery):
+    value=callback.data.split(":")[-1]
+    if not value.isdigit():
+        await callback.answer("Недопустимая жалоба")
+        return
+    items=await AdminService().snapshots(callback.from_user.id,int(value))
+    await callback.answer()
+    if not items:
+        await callback.message.answer("Снимков нет.")
+        return
+    for item in items:
+        caption=f"Снимок жалобы #{item.report_id} · {item.kind}"
+        try:
+            if item.kind == "photo":
+                await callback.message.answer_photo(item.file_id, caption=caption)
+            elif item.kind == "voice":
+                await callback.message.answer_voice(item.file_id, caption=caption)
+            elif item.kind == "audio":
+                await callback.message.answer_audio(item.file_id, caption=caption)
+            elif item.kind == "video":
+                await callback.message.answer_video(item.file_id, caption=caption)
+            elif item.kind == "video_note":
+                await callback.message.answer_video_note(item.file_id)
+            elif item.kind == "sticker":
+                await callback.message.answer_sticker(item.file_id)
+            elif item.kind == "animation":
+                await callback.message.answer_animation(item.file_id, caption=caption)
+            elif item.text:
+                await callback.message.answer(item.text)
+        except Exception:
+            # One expired file_id must not hide the rest of the snapshot.
+            continue
 
 
 @admin_router.callback_query(F.data.startswith("admin:ban1:"))
@@ -367,6 +404,7 @@ async def cb_reports(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("admin:mute1:"))
 @admin_router.callback_query(F.data.startswith("admin:mute24:"))
 @admin_router.callback_query(F.data.startswith("admin:mute7:"))
+@admin_router.callback_query(F.data.startswith("admin:warn:"))
 @admin_router.callback_query(F.data.startswith("admin:dismiss:"))
 async def cb_resolve(callback: CallbackQuery):
     parts=callback.data.split(":")
@@ -397,6 +435,7 @@ async def cb_users(callback: CallbackQuery):
 
 async def user_card_text(admin_id, user):
     reports_count = await AdminService().reports_against(admin_id, user.telegram_id)
+    warnings_count = await AdminService().warnings_against(admin_id, user.telegram_id)
     starts = user.start_count or 0
     events = await AdminService().start_events_count(user.telegram_id)
     started = f" (событий: {events})" if events != starts else ""
@@ -412,6 +451,7 @@ async def user_card_text(admin_id, user):
         f"<tg-emoji emoji-id=\"5224455462178549802\">💬</tg-emoji> Диалогов: {user.chats_count}\n"
         f"🚀 Запусков: {starts}{started}\n"
         f"<tg-emoji emoji-id=\"5280880410346152584\">🚩</tg-emoji> Жалоб на него: {reports_count}\n"
+        f"⚠️ Активных предупреждений: {warnings_count}\n"
         f"<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji> Premium: {premium}\n"
         f"🔇 Мут: {mute}\n"
         f"<tg-emoji emoji-id=\"5312160339335347417\">💰</tg-emoji> Всего потратил: {user.total_stars_spent}<tg-emoji emoji-id=\"5920281855378068765\">⭐</tg-emoji>")

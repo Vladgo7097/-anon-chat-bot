@@ -6,7 +6,7 @@ from repositories.chats import ChatRepository
 
 
 class RelayService:
-    SUPPORTED={"text","photo","voice","sticker","video","video_note","animation"}
+    SUPPORTED={"text","photo","voice","sticker","video","video_note","animation","audio"}
     CONTACT_PATTERN = re.compile(
         r"(?ix)(?:https?://)?t\.me/[a-z0-9_+/-]+|(?<!\w)@[a-z][a-z0-9_]{4,31}|"
         r"(?<!\d)(?:\+?\d[\s().-]*){7,15}(?!\d)"
@@ -30,14 +30,35 @@ class RelayService:
         from services.chat_manager import get_redis
         await (await get_redis()).set(f"contact:allowed:{session_id}:{user_id}", "1", ex=86400)
 
-    async def remember_context(self, session_id, user_id, text):
-        if not text:
+    @staticmethod
+    def file_id(message):
+        """The file_id of the media a message carries, if any.
+
+        Stored only in the report snapshot -- the relay itself uses copy_message
+        and never needs to re-upload a file.
+        """
+        kind = getattr(message, "content_type", None)
+        if kind == "photo":
+            photos = getattr(message, "photo", None) or []
+            return photos[-1].file_id if photos else None
+        value = getattr(message, kind, None) if kind else None
+        return getattr(value, "file_id", None)
+
+    async def remember_context(self, session_id, user_id, text=None, kind="text", file_id=None):
+        """Keep the last eight messages for a possible report.
+
+        JSON instead of "id:text" so a report can snapshot a photo or a voice
+        message too. Old plain rows are still parsed by report_context().
+        """
+        if not text and not file_id:
             return
+        import json
         from services.chat_manager import get_redis
         from redis.exceptions import RedisError
         try:
             key = f"report:context:{session_id}"
-            value = f"{user_id}:{text[:300]}"
+            value = json.dumps({"u": user_id, "k": kind or "text", "f": file_id,
+                                "t": (text or "")[:300]}, ensure_ascii=False)
             r = await get_redis()
             async with r.pipeline(transaction=True) as pipe:
                 pipe.rpush(key, value)
@@ -48,6 +69,12 @@ class RelayService:
             return
 
     async def report_context(self, session_id, clear=False):
+        """Structured buffer items: user_id, kind, file_id, text.
+
+        A plain "id:text" row is still accepted: it was written by an older
+        process during a rolling deploy and must not vanish from a report.
+        """
+        import json
         from services.chat_manager import get_redis
         from redis.exceptions import RedisError
         try:
@@ -56,9 +83,29 @@ class RelayService:
             values = await r.lrange(key, 0, -1)
             if clear:
                 await r.delete(key)
-            return [value.decode() if isinstance(value, bytes) else value for value in values]
         except RedisError:
             return []
+        items = []
+        for value in values:
+            if isinstance(value, bytes):
+                value = value.decode()
+            try:
+                data = json.loads(value)
+                if isinstance(data, dict) and "u" in data:
+                    items.append({
+                        "user_id": int(data["u"]),
+                        "kind": data.get("k") or "text",
+                        "file_id": data.get("f"),
+                        "text": data.get("t") or "",
+                    })
+                    continue
+            except (TypeError, ValueError):
+                pass
+            sender, separator, text = value.partition(":")
+            if separator and sender.isdigit():
+                items.append({"user_id": int(sender), "kind": "text",
+                              "file_id": None, "text": text})
+        return items
 
     async def prepare(self,user_id,content_type):
         chat=await ChatService().active(user_id)

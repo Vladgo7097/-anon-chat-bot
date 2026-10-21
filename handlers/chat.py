@@ -26,9 +26,9 @@ WAIT_COOLDOWN = {"ru": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji
                   "uk": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Зачекай {sec} сек."}
 CONTINUE_NO_DELAY = {"ru": "Можно продолжить без задержки:", "en": "You can continue without the delay:",
                       "uk": "Можна продовжити без затримки:"}
-UNSUPPORTED_TYPE = {"ru": "Этот тип сообщения не поддерживается. Отправь текст, фото, голосовое или видео.",
-                     "en": "This message type isn't supported. Send text, a photo, a voice message or a video.",
-                     "uk": "Цей тип повідомлення не підтримується. Надішли текст, фото, голосове або відео."}
+UNSUPPORTED_TYPE = {"ru": "Этот тип сообщения не поддерживается. Отправь текст, фото, голосовое, аудио или видео.",
+                     "en": "This message type isn't supported. Send text, a photo, a voice message, audio or a video.",
+                     "uk": "Цей тип повідомлення не підтримується. Надішли текст, фото, голосове, аудіо або відео."}
 CONTACT_WARNING = {"ru": "⚠️ В сообщении найден контакт. После отправки собеседник сможет связаться с тобой вне бота. "
                           "Если ты согласен, нажми кнопку и отправь сообщение ещё раз.",
                     "en": "⚠️ A contact was found in the message. Once sent, your match will be able to reach you outside the bot. "
@@ -115,6 +115,10 @@ async def finish(message, user_id, reason="stop", lang="ru"):
         return False
     chat = result.data["chat"]
     await message.answer(T.tr(CHAT_ENDED, lang), reply_markup=main_menu_kb(lang))
+    if reason in {"stop", "next"} and config.RECONNECT_WINDOW_MINUTES > 0:
+        from keyboards.community import after_chat_kb
+        await message.answer(T.tr(T.CHAT_AFTER, lang)["text"],
+                             reply_markup=after_chat_kb(chat.session_id, lang))
     # Every reason finish() is actually called with (stop/next/unreachable) is a
     # real "back at the menu" moment for the person looking at this message.
     from services.ads import AdService
@@ -210,6 +214,10 @@ async def forward_message(message: Message, album=None, lang: str = "ru", muted:
             if copied and len(copied) == len(album):
                 for source, target in zip(album, copied):
                     await service.remember(result.data["session_id"], message.from_user.id, source.message_id, partner, target.message_id)
+                    await service.remember_context(
+                        result.data["session_id"], message.from_user.id,
+                        getattr(source, "caption", None) or "", kind=source.content_type,
+                        file_id=service.file_id(source))
         else:
             params = {}
             reply = getattr(message, "reply_to_message", None)
@@ -222,7 +230,10 @@ async def forward_message(message: Message, album=None, lang: str = "ru", muted:
             if copied:
                 await service.remember(result.data["session_id"], message.from_user.id, message.message_id, partner, copied.message_id)
         await service.delivered(message.from_user.id,result.data["session_id"],message.chat.id,message.message_id)
-        await service.remember_context(result.data["session_id"], message.from_user.id, content)
+        if not album:
+            await service.remember_context(
+                result.data["session_id"], message.from_user.id, content,
+                kind=message.content_type, file_id=service.file_id(message))
     except TelegramForbiddenError:
         await finish(message, message.from_user.id, "unreachable", lang=lang)
     except TelegramBadRequest:
@@ -261,7 +272,9 @@ async def sync_edited_message(message: Message, lang: str = "ru"):
             await target_bot.edit_message_caption(chat_id=partner, message_id=target,
                                                   caption=message.caption, parse_mode=None)
         await service.remember_context(chat.session_id, message.from_user.id,
-                                       message.text or message.caption)
+                                       message.text or message.caption,
+                                       kind=message.content_type,
+                                       file_id=service.file_id(message))
     except TelegramBadRequest:
         await message.answer(T.tr(SYNC_FAILED, lang))
 
