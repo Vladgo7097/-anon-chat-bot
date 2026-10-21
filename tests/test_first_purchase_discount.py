@@ -3,12 +3,15 @@ has already paid, and actually reflected in the invoice amount."""
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sqlalchemy import select
 from test_chat_duration import DatabaseCase
+from handlers.premium import show_premium
 from models.operations import Offer
 from models.payment import Payment
 from services.growth import first_purchase_discount
@@ -44,6 +47,17 @@ class FirstPurchaseDiscountTests(DatabaseCase):
         # 99 stars at -50% -> 49, and the offer is recorded on the payment.
         self.assertEqual(payment.stars_amount, 49)
         self.assertIsNotNone(payment.offer_id)
+
+    async def test_screen_quotes_the_same_discounted_prices_as_the_invoice(self):
+        message = SimpleNamespace(answer=AsyncMock())
+        await show_premium(message, 1, "ru")
+        text = message.answer.await_args.args[0]
+        keyboard = message.answer.await_args.kwargs["reply_markup"]
+        labels = [row[0].text for row in keyboard.inline_keyboard]
+        self.assertIn("Скидка до 50%", text)
+        self.assertIn("1 месяц · 49 ⭐ вместо 99", labels)
+        self.assertIn("3 месяца · 124 ⭐ вместо 249", labels)
+        self.assertIn("12 месяцев · 399 ⭐ вместо 799", labels)
 
     async def test_full_price_without_the_discount(self):
         result = await PaymentService().create(3, "premium_1m")
