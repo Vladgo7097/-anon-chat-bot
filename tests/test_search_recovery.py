@@ -1,4 +1,5 @@
 """Search lifecycle checks without Telegram, Redis or production database IO."""
+
 import asyncio
 import time
 import unittest
@@ -13,11 +14,15 @@ from test_chat_duration import DatabaseCase
 class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.bot = SimpleNamespace(send_message=AsyncMock())
-        self.message = SimpleNamespace(answer=AsyncMock(), from_user=SimpleNamespace(id=1), bot=self.bot)
+        self.message = SimpleNamespace(
+            answer=AsyncMock(), from_user=SimpleNamespace(id=1), bot=self.bot
+        )
         self.message.answer.return_value.delete = AsyncMock()
         self.service = SimpleNamespace(
             enqueue=AsyncMock(return_value=ServiceResult(True, "ALREADY_SEARCHING")),
-            cancel=AsyncMock(), find=AsyncMock(return_value=None))
+            cancel=AsyncMock(),
+            find=AsyncMock(return_value=None),
+        )
         self.redis = AsyncMock()
         self.redis.get.return_value = str(time.time())
         self.redis.zscore.return_value = 1
@@ -29,6 +34,9 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             ("handlers.search.get_redis", AsyncMock(return_value=self.redis)),
             ("handlers.search.get_online_count", AsyncMock(return_value=0)),
             ("services.settings.bot_value", AsyncMock(return_value=60)),
+            # Онлайн-счётчик в карточке поиска видит только владелец; по
+            # умолчанию тесты ходят как обычные пользователи (OWNER_ID=0).
+            ("config.OWNER_ID", 0),
         ):
             p = patch(target, value)
             p.start()
@@ -42,8 +50,10 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_repeat_search_restores_missing_task_without_duplicates(self):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop) as loop:
-            await asyncio.gather(search.begin_search(self.message, 1),
-                                 search.begin_search(self.message, 1))
+            await asyncio.gather(
+                search.begin_search(self.message, 1),
+                search.begin_search(self.message, 1),
+            )
             self.assertEqual(loop.call_count, 1)
             self.assertEqual(list(search._tasks), [1])
             await search.cmd_cancel(self.message)
@@ -60,21 +70,39 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_inline_cancel_deletes_the_search_status_card(self):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop):
             await search.begin_search(self.message, 1)
-        callback = SimpleNamespace(from_user=SimpleNamespace(id=1), answer=AsyncMock(),
-                                    message=SimpleNamespace(answer=AsyncMock()))
+        callback = SimpleNamespace(
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(answer=AsyncMock()),
+        )
         await search.cb_cancel(callback)
         self.message.answer.return_value.delete.assert_awaited_once()
         self.assertNotIn(1, search._status_messages)
 
-    async def test_cancel_without_an_active_search_does_not_try_to_delete_anything(self):
+    async def test_cancel_without_an_active_search_does_not_try_to_delete_anything(
+        self,
+    ):
         await search.cmd_cancel(self.message)
         self.message.answer.return_value.delete.assert_not_awaited()
 
-    async def test_start_status_contains_online_in_one_message(self):
+    async def test_start_status_hides_online_counter_from_users(self):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop):
             await search.begin_search(self.message, 1)
         self.message.answer.assert_awaited_once()
-        self.assertEqual(self.message.answer.await_args.kwargs["reply_markup"].inline_keyboard[-1][0].callback_data, "search:cancel")
+        self.assertEqual(
+            self.message.answer.await_args.kwargs["reply_markup"]
+            .inline_keyboard[-1][0]
+            .callback_data,
+            "search:cancel",
+        )
+        self.assertNotIn("Онлайн сейчас", self.message.answer.await_args.args[0])
+
+    async def test_start_status_shows_online_counter_to_owner_only(self):
+        with (
+            patch.object(search, "search_loop", side_effect=self.waiting_loop),
+            patch("config.OWNER_ID", 1),
+        ):
+            await search.begin_search(self.message, 1)
         self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
 
     async def test_start_status_carries_custom_emoji_and_no_elapsed_timer(self):
@@ -82,28 +110,56 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             await search.begin_search(self.message, 1)
         text = self.message.answer.await_args.args[0]
         self.assertIn('<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji>', text)
-        self.assertIn('<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji>', text)
+        # У пользователей нет ни счётчика, ни его эмодзи.
+        self.assertNotIn("Онлайн сейчас", text)
+        self.assertNotIn("5215522595922779944", text)
         self.assertNotIn("Прошло", text)
 
     async def test_periodic_status_update_also_has_no_elapsed_timer(self):
         status = SimpleNamespace(edit_text=AsyncMock())
-        with patch("handlers.premium.product_keyboard", AsyncMock(return_value=None)), \
-             patch("utils.db.is_premium", AsyncMock(return_value=False)), \
-             patch("handlers.search.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError)):
+        with (
+            patch("handlers.premium.product_keyboard", AsyncMock(return_value=None)),
+            patch("utils.db.is_premium", AsyncMock(return_value=False)),
+            patch(
+                "handlers.search.asyncio.sleep",
+                AsyncMock(side_effect=asyncio.CancelledError),
+            ),
+        ):
             with self.assertRaises(asyncio.CancelledError):
                 await search.search_loop(status, 1, self.bot)
         text = status.edit_text.await_args.args[0]
         self.assertIn('<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji>', text)
-        self.assertIn('<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji>', text)
+        self.assertNotIn("Онлайн сейчас", text)
+        self.assertNotIn("5215522595922779944", text)
         self.assertNotIn("Прошло", text)
         # The elapsed-timer's own custom emoji id must not linger either.
         self.assertNotIn("5258258882022612173", text)
 
+    async def test_periodic_owner_update_keeps_the_online_counter(self):
+        status = SimpleNamespace(edit_text=AsyncMock())
+        with (
+            patch("handlers.premium.product_keyboard", AsyncMock(return_value=None)),
+            patch("utils.db.is_premium", AsyncMock(return_value=False)),
+            patch("config.OWNER_ID", 1),
+            patch(
+                "handlers.search.asyncio.sleep",
+                AsyncMock(side_effect=asyncio.CancelledError),
+            ),
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await search.search_loop(status, 1, self.bot)
+        text = status.edit_text.await_args.args[0]
+        self.assertIn("Онлайн сейчас: 0", text)
+
     async def test_rejected_status_does_not_leave_orphan_search(self):
         from aiogram.exceptions import TelegramRetryAfter
         from aiogram.methods import SendMessage
+
         self.message.answer.side_effect = TelegramRetryAfter(
-            method=SendMessage(chat_id=1, text="test"), message="rate limit", retry_after=193)
+            method=SendMessage(chat_id=1, text="test"),
+            message="rate limit",
+            retry_after=193,
+        )
         with self.assertRaises(TelegramRetryAfter):
             await search.begin_search(self.message, 1)
         self.service.cancel.assert_awaited_once_with(1)
@@ -112,9 +168,17 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_status_rate_limit_does_not_suspend_matching(self):
         from aiogram.exceptions import TelegramRetryAfter
         from aiogram.methods import EditMessageText
-        status = SimpleNamespace(bot=self.bot, edit_text=AsyncMock(side_effect=TelegramRetryAfter(
-            method=EditMessageText(chat_id=1, message_id=1, text="test"),
-            message="rate limit", retry_after=193)))
+
+        status = SimpleNamespace(
+            bot=self.bot,
+            edit_text=AsyncMock(
+                side_effect=TelegramRetryAfter(
+                    method=EditMessageText(chat_id=1, message_id=1, text="test"),
+                    message="rate limit",
+                    retry_after=193,
+                )
+            ),
+        )
         self.service.find.side_effect = [None, SimpleNamespace(user1_id=1, user2_id=2)]
         with patch("handlers.search.asyncio.sleep", AsyncMock()) as sleep:
             await search.search_loop(status, 1)
@@ -139,8 +203,13 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restart_keeps_original_timeout(self):
         self.redis.get.return_value = str(time.time() - 120)
-        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
-             patch("utils.db.is_premium", AsyncMock(return_value=False)):
+        with (
+            patch(
+                "handlers.search.has_active_participation",
+                AsyncMock(return_value=False),
+            ),
+            patch("utils.db.is_premium", AsyncMock(return_value=False)),
+        ):
             await search.search_loop(None, 1, self.bot)
         self.service.find.assert_not_awaited()
         self.service.cancel.assert_awaited_once_with(1)
@@ -148,15 +217,22 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Пока никого нет", self.bot.send_message.await_args.args[1])
 
     async def test_timeout_after_concurrent_match_sends_no_failure(self):
-        with patch("handlers.search.has_active_participation", AsyncMock(return_value=True)):
+        with patch(
+            "handlers.search.has_active_participation", AsyncMock(return_value=True)
+        ):
             await search.search_loop(None, 1, self.bot)
         self.service.cancel.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
     async def test_timeout_ends_search_for_free_user(self):
         self.redis.get.return_value = str(time.time() - 120)
-        with patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
-             patch("utils.db.is_premium", AsyncMock(return_value=False)):
+        with (
+            patch(
+                "handlers.search.has_active_participation",
+                AsyncMock(return_value=False),
+            ),
+            patch("utils.db.is_premium", AsyncMock(return_value=False)),
+        ):
             await search.search_loop(None, 1, self.bot)
         self.service.cancel.assert_awaited_once_with(1)
         self.service.enqueue.assert_not_awaited()
@@ -164,17 +240,33 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def premium_loop(self, queued_seconds, settings):
         """Run one Premium search that has already waited queued_seconds."""
-        self.service.enqueue = AsyncMock(return_value=ServiceResult(True, "SEARCH_STARTED"))
-        self.service.find = AsyncMock(return_value=SimpleNamespace(user1_id=1, user2_id=2))
+        self.service.enqueue = AsyncMock(
+            return_value=ServiceResult(True, "SEARCH_STARTED")
+        )
+        self.service.find = AsyncMock(
+            return_value=SimpleNamespace(user1_id=1, user2_id=2)
+        )
         self.redis.get.return_value = str(time.time() - queued_seconds)
-        with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
-             patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
-             patch("utils.db.is_premium", AsyncMock(return_value=True)), \
-             patch("handlers.search.asyncio.sleep", AsyncMock()):
+        with (
+            patch(
+                "services.settings.bot_value",
+                AsyncMock(
+                    side_effect=lambda key, default=None: settings.get(key, default)
+                ),
+            ),
+            patch(
+                "handlers.search.has_active_participation",
+                AsyncMock(return_value=False),
+            ),
+            patch("utils.db.is_premium", AsyncMock(return_value=True)),
+            patch("handlers.search.asyncio.sleep", AsyncMock()),
+        ):
             await search.search_loop(None, 1, self.bot)
 
     async def test_premium_gets_another_window_while_under_the_cap(self):
-        await self.premium_loop(70, {"search_timeout": 60, "premium_search_timeout": 180})
+        await self.premium_loop(
+            70, {"search_timeout": 60, "premium_search_timeout": 180}
+        )
         self.service.cancel.assert_awaited_once_with(1)
         self.service.enqueue.assert_awaited_once_with(1)
         self.service.find.assert_awaited_once_with(1)
@@ -182,14 +274,18 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_premium_stops_once_the_cap_is_reached(self):
         # Nobody should sit in the queue past the cap, Premium included.
-        await self.premium_loop(200, {"search_timeout": 60, "premium_search_timeout": 180})
+        await self.premium_loop(
+            200, {"search_timeout": 60, "premium_search_timeout": 180}
+        )
         self.service.cancel.assert_awaited_once_with(1)
         self.service.enqueue.assert_not_awaited()
         self.bot.send_message.assert_awaited_once()
         self.assertIn("Пока никого нет", self.bot.send_message.await_args.args[1])
 
     async def test_a_zero_cap_restores_the_unlimited_premium_search(self):
-        await self.premium_loop(6000, {"search_timeout": 60, "premium_search_timeout": 0})
+        await self.premium_loop(
+            6000, {"search_timeout": 60, "premium_search_timeout": 0}
+        )
         self.service.enqueue.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
@@ -200,25 +296,49 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.enqueue = AsyncMock(return_value=ServiceResult(False, "BANNED"))
         self.redis.get.return_value = str(time.time() - 70)
         settings = {"search_timeout": 60, "premium_search_timeout": 180}
-        with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
-             patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
-             patch("utils.db.is_premium", AsyncMock(return_value=True)), \
-             patch("handlers.search.asyncio.sleep", AsyncMock()):
+        with (
+            patch(
+                "services.settings.bot_value",
+                AsyncMock(
+                    side_effect=lambda key, default=None: settings.get(key, default)
+                ),
+            ),
+            patch(
+                "handlers.search.has_active_participation",
+                AsyncMock(return_value=False),
+            ),
+            patch("utils.db.is_premium", AsyncMock(return_value=True)),
+            patch("handlers.search.asyncio.sleep", AsyncMock()),
+        ):
             await search.search_loop(None, 1, self.bot)
         self.service.enqueue.assert_awaited_once_with(1)
         self.bot.send_message.assert_awaited_once()
         self.assertIn("остановлен", self.bot.send_message.await_args.args[1])
 
-    async def test_premium_search_stays_silent_when_reenqueue_finds_concurrent_match(self):
+    async def test_premium_search_stays_silent_when_reenqueue_finds_concurrent_match(
+        self,
+    ):
         # A concurrent match already sent its own notice to both sides;
         # sending a second, contradictory message here would be a bug too.
-        self.service.enqueue = AsyncMock(return_value=ServiceResult(False, "ALREADY_CHATTING"))
+        self.service.enqueue = AsyncMock(
+            return_value=ServiceResult(False, "ALREADY_CHATTING")
+        )
         self.redis.get.return_value = str(time.time() - 70)
         settings = {"search_timeout": 60, "premium_search_timeout": 180}
-        with patch("services.settings.bot_value", AsyncMock(side_effect=lambda key, default=None: settings.get(key, default))), \
-             patch("handlers.search.has_active_participation", AsyncMock(return_value=False)), \
-             patch("utils.db.is_premium", AsyncMock(return_value=True)), \
-             patch("handlers.search.asyncio.sleep", AsyncMock()):
+        with (
+            patch(
+                "services.settings.bot_value",
+                AsyncMock(
+                    side_effect=lambda key, default=None: settings.get(key, default)
+                ),
+            ),
+            patch(
+                "handlers.search.has_active_participation",
+                AsyncMock(return_value=False),
+            ),
+            patch("utils.db.is_premium", AsyncMock(return_value=True)),
+            patch("handlers.search.asyncio.sleep", AsyncMock()),
+        ):
             await search.search_loop(None, 1, self.bot)
         self.service.enqueue.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
@@ -290,15 +410,23 @@ class SearchLockTests(unittest.IsolatedAsyncioTestCase):
         # Whichever gets there first, the second holder's enter must not
         # appear before the first holder's exit.
         first = order[0].split(":")[0]
-        self.assertEqual(order, [f"{first}:enter", f"{first}:exit",
-                                  f"{'b' if first == 'a' else 'a'}:enter",
-                                  f"{'b' if first == 'a' else 'a'}:exit"])
+        self.assertEqual(
+            order,
+            [
+                f"{first}:enter",
+                f"{first}:exit",
+                f"{'b' if first == 'a' else 'a'}:enter",
+                f"{'b' if first == 'a' else 'a'}:exit",
+            ],
+        )
 
     async def test_release_does_not_delete_a_lock_it_no_longer_owns(self):
         # Simulates a holder whose TTL expired and got overwritten by a new
         # holder: releasing the stale token must not evict the new one.
         self.redis.store["search:lock:7"] = "someone-elses-token"
-        released = await self.redis.eval(search._RELEASE_SCRIPT, 1, "search:lock:7", "my-token")
+        released = await self.redis.eval(
+            search._RELEASE_SCRIPT, 1, "search:lock:7", "my-token"
+        )
         self.assertEqual(released, 0)
         self.assertEqual(self.redis.store["search:lock:7"], "someone-elses-token")
 
@@ -343,8 +471,11 @@ class WaitingListTests(DatabaseCase):
         self.addCleanup(p.stop)
 
     async def test_opting_in_saves_the_alert_and_confirms_in_the_users_language(self):
-        callback = SimpleNamespace(from_user=SimpleNamespace(id=2), answer=AsyncMock(),
-                                    message=SimpleNamespace(edit_text=AsyncMock()))
+        callback = SimpleNamespace(
+            from_user=SimpleNamespace(id=2),
+            answer=AsyncMock(),
+            message=SimpleNamespace(edit_text=AsyncMock()),
+        )
         await search.cb_wait_for_match(callback, lang="en")
         self.assertIn(2, {int(m) for m in self.redis.sets["search:waiting_alerts"]})
         self.assertTrue(await self.redis.exists("search:waiting_alert:2"))
@@ -354,6 +485,7 @@ class WaitingListTests(DatabaseCase):
     async def test_a_newcomer_wakes_an_opted_in_user_in_their_own_language(self):
         from sqlalchemy import select
         from models.user import User
+
         async with self.factory.begin() as s:
             user2 = await s.scalar(select(User).where(User.telegram_id == 2))
             user2.language = "uk"
@@ -377,10 +509,16 @@ class WaitingListTests(DatabaseCase):
         bot.send_message.assert_not_awaited()
 
     async def test_invite_link_uses_the_bots_own_username_not_a_hardcoded_one(self):
-        callback = SimpleNamespace(from_user=SimpleNamespace(id=1), answer=AsyncMock(),
-                                    message=SimpleNamespace(answer=AsyncMock()),
-                                    bot=SimpleNamespace(get_me=AsyncMock(
-                                        return_value=SimpleNamespace(username="totally_different_bot"))))
+        callback = SimpleNamespace(
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(answer=AsyncMock()),
+            bot=SimpleNamespace(
+                get_me=AsyncMock(
+                    return_value=SimpleNamespace(username="totally_different_bot")
+                )
+            ),
+        )
         await search.cb_invite_friend(callback, lang="ru")
         callback.message.answer.assert_awaited_once()
         text = callback.message.answer.await_args.args[0]

@@ -5,8 +5,17 @@ import time
 from contextlib import asynccontextmanager
 from aiogram import F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramRetryAfter,
+)
 from handlers import search_router
 from keyboards import texts as T
 from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
@@ -17,42 +26,79 @@ import config
 
 logger = logging.getLogger(__name__)
 
-ALREADY_SEARCHING = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Поиск уже идёт.",
-                      "en": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Search is already running.",
-                      "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Пошук вже триває."}
-FAIL_REASONS = {
-    "BANNED": {"ru": "⛔ Ты заблокирован.", "en": "⛔ You are banned.", "uk": "⛔ Тебе заблоковано."},
-    "MUTED": {"ru": "🔇 Ты в муте — писать и искать собеседника нельзя.",
-               "en": "🔇 You're muted — writing and searching are unavailable.",
-               "uk": "🔇 Ти в муті — писати і шукати співрозмовника не можна."},
-    "ALREADY_CHATTING": {"ru": "Ты уже в диалоге. Нажми «Стоп».", "en": "You're already chatting. Tap \"Stop\".",
-                          "uk": "Ти вже в діалозі. Натисни «Стоп»."},
-    "ONBOARDING_REQUIRED": {"ru": "Сначала заверши регистрацию: /start", "en": "Finish registration first: /start",
-                             "uk": "Спочатку заверши реєстрацію: /start"},
+ALREADY_SEARCHING = {
+    "ru": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Поиск уже идёт.',
+    "en": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Search is already running.',
+    "uk": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Пошук вже триває.',
 }
-SEARCHING_STATUS = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу собеседника...\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {online}",
-                     "en": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Looking for a match...\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Online now: {online}",
-                     "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Шукаю співрозмовника...\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн зараз: {online}"}
-SEARCHING_PROGRESS = {"ru": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Ищу{dots}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн сейчас: {online}",
-                       "en": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Searching{dots}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Online now: {online}",
-                       "uk": "<tg-emoji emoji-id=\"5976789958407493804\">🔎</tg-emoji> Шукаю{dots}\n\n<tg-emoji emoji-id=\"5215522595922779944\">👥</tg-emoji> Онлайн зараз: {online}"}
-SEARCH_STOPPED = {"ru": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Поиск остановлен.",
-                   "en": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Search stopped.",
-                   "uk": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пошук зупинено."}
-NOBODY_YET = {"ru": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?",
-              "en": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> No one's around yet. Widen your search filters?",
-              "uk": "<tg-emoji emoji-id=\"5296482716567495148\">⏳</tg-emoji> Поки що нікого немає. Розширити критерії пошуку?"}
-SEARCH_UNAVAILABLE = {"ru": "Поиск временно недоступен. Попробуй ещё раз.",
-                       "en": "Search is temporarily unavailable. Try again.",
-                       "uk": "Пошук тимчасово недоступний. Спробуй ще раз."}
+FAIL_REASONS = {
+    "BANNED": {
+        "ru": "⛔ Ты заблокирован.",
+        "en": "⛔ You are banned.",
+        "uk": "⛔ Тебе заблоковано.",
+    },
+    "MUTED": {
+        "ru": "🔇 Ты в муте — писать и искать собеседника нельзя.",
+        "en": "🔇 You're muted — writing and searching are unavailable.",
+        "uk": "🔇 Ти в муті — писати і шукати співрозмовника не можна.",
+    },
+    "ALREADY_CHATTING": {
+        "ru": "Ты уже в диалоге. Нажми «Стоп».",
+        "en": 'You\'re already chatting. Tap "Stop".',
+        "uk": "Ти вже в діалозі. Натисни «Стоп».",
+    },
+    "ONBOARDING_REQUIRED": {
+        "ru": "Сначала заверши регистрацию: /start",
+        "en": "Finish registration first: /start",
+        "uk": "Спочатку заверши реєстрацію: /start",
+    },
+}
+SEARCHING_STATUS = {
+    "ru": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Ищу собеседника...',
+    "en": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Looking for a match...',
+    "uk": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Шукаю співрозмовника...',
+}
+SEARCHING_PROGRESS = {
+    "ru": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Ищу{dots}',
+    "en": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Searching{dots}',
+    "uk": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Шукаю{dots}',
+}
+SEARCHING_ONLINE = {
+    "ru": '\n\n<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji> Онлайн сейчас: {online}',
+    "en": '\n\n<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji> Online now: {online}',
+    "uk": '\n\n<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji> Онлайн зараз: {online}',
+}
+SEARCH_STOPPED = {
+    "ru": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Поиск остановлен.',
+    "en": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Search stopped.',
+    "uk": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Пошук зупинено.',
+}
+NOBODY_YET = {
+    "ru": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Пока никого нет. Расширить критерии поиска?',
+    "en": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> No one\'s around yet. Widen your search filters?',
+    "uk": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Поки що нікого немає. Розширити критерії пошуку?',
+}
+SEARCH_UNAVAILABLE = {
+    "ru": "Поиск временно недоступен. Попробуй ещё раз.",
+    "en": "Search is temporarily unavailable. Try again.",
+    "uk": "Пошук тимчасово недоступний. Спробуй ще раз.",
+}
 CANCEL_LABEL = {"ru": "Отменить поиск", "en": "Cancel search", "uk": "Скасувати пошук"}
-SEARCH_CANCELLED_TOAST = {"ru": "Поиск отменён", "en": "Search cancelled", "uk": "Пошук скасовано"}
-WAITING_SAVED = {"ru": "🔔 Хорошо, сообщим в течение 12 часов, когда кто-то начнёт поиск.",
-                 "en": "🔔 We’ll notify you within 12 hours when someone starts searching.",
-                 "uk": "🔔 Повідомимо протягом 12 годин, коли хтось почне пошук."}
-WAITING_AVAILABLE = {"ru": "🔔 Кто-то появился в поиске. Можно попробовать ещё раз!",
-                     "en": "🔔 Someone is searching now. You can try again!",
-                     "uk": "🔔 Хтось уже шукає співрозмовника. Спробуй ще раз!"}
+SEARCH_CANCELLED_TOAST = {
+    "ru": "Поиск отменён",
+    "en": "Search cancelled",
+    "uk": "Пошук скасовано",
+}
+WAITING_SAVED = {
+    "ru": "🔔 Хорошо, сообщим в течение 12 часов, когда кто-то начнёт поиск.",
+    "en": "🔔 We’ll notify you within 12 hours when someone starts searching.",
+    "uk": "🔔 Повідомимо протягом 12 годин, коли хтось почне пошук.",
+}
+WAITING_AVAILABLE = {
+    "ru": "🔔 Кто-то появился в поиске. Можно попробовать ещё раз!",
+    "en": "🔔 Someone is searching now. You can try again!",
+    "uk": "🔔 Хтось уже шукає співрозмовника. Спробуй ще раз!",
+}
 
 _tasks = {}
 _status_messages = {}
@@ -82,9 +128,15 @@ async def has_active_participation(user_id):
     from sqlalchemy import select
     from models.base import async_session
     from models.chat import ActiveParticipant
+
     async with async_session() as s:
-        return bool(await s.scalar(select(ActiveParticipant.session_id)
-            .where(ActiveParticipant.user_id == user_id)))
+        return bool(
+            await s.scalar(
+                select(ActiveParticipant.session_id).where(
+                    ActiveParticipant.user_id == user_id
+                )
+            )
+        )
 
 
 async def cancel_task(user_id):
@@ -122,8 +174,29 @@ async def begin_search(message, user_id, lang="ru"):
 
 def search_status_keyboard(offer=None, lang="ru"):
     rows = list(offer.inline_keyboard) if offer else []
-    return InlineKeyboardMarkup(inline_keyboard=rows + [[
-        InlineKeyboardButton(text=T.tr(CANCEL_LABEL, lang), icon_custom_emoji_id="5273914604752216432", callback_data="search:cancel")]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows
+        + [
+            [
+                InlineKeyboardButton(
+                    text=T.tr(CANCEL_LABEL, lang),
+                    icon_custom_emoji_id="5273914604752216432",
+                    callback_data="search:cancel",
+                )
+            ]
+        ]
+    )
+
+
+def search_status_text(template, lang="ru", dots="", online=None):
+    """Текст карточки поиска; онлайн-счётчик видит только владелец.
+
+    online=None убирает строку целиком, у пользователей счётчика нет.
+    """
+    text = T.tr(template, lang).format(dots=dots)
+    if online is not None:
+        text += T.tr(SEARCHING_ONLINE, lang).format(online=online)
+    return text
 
 
 def nobody_keyboard(lang="ru"):
@@ -136,9 +209,13 @@ def nobody_keyboard(lang="ru"):
         "uk": "🔔 Повідомити, коли хтось з’явиться",
     }
     wait = labels.get(lang, labels["ru"])
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=wait, callback_data="search:wait"),
-    ]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=wait, callback_data="search:wait"),
+            ]
+        ]
+    )
 
 
 async def notify_waiting_users(bot, newcomer_id):
@@ -148,22 +225,37 @@ async def notify_waiting_users(bot, newcomer_id):
     if not ids:
         return
     from repositories.users import UserRepository
+
     for raw_id in ids:
         user_id = int(raw_id)
-        if user_id == newcomer_id or not await r.exists(f"search:waiting_alert:{user_id}"):
+        if user_id == newcomer_id or not await r.exists(
+            f"search:waiting_alert:{user_id}"
+        ):
             await r.srem("search:waiting_alerts", raw_id)
             continue
         await r.delete(f"search:waiting_alert:{user_id}")
         await r.srem("search:waiting_alerts", raw_id)
         row = await UserRepository().get(user_id)
-        lang = (getattr(row, "language", None) or "ru")
+        lang = getattr(row, "language", None) or "ru"
         # The queue spans both bots, so each waiter is woken through the bot
         # they actually talk to -- the other token would just get a 403.
         target = bots.resolve(getattr(row, "bot_id", None)) or bot
         try:
-            await target.send_message(user_id, T.tr(WAITING_AVAILABLE, lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text=T.label(T.SEARCH, lang), callback_data="search:repeat", style="primary")
-            ]]))
+            await target.send_message(
+                user_id,
+                T.tr(WAITING_AVAILABLE, lang),
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text=T.label(T.SEARCH, lang),
+                                callback_data="search:repeat",
+                                style="primary",
+                            )
+                        ]
+                    ]
+                ),
+            )
         except (TelegramForbiddenError, TelegramBadRequest):
             continue
 
@@ -172,11 +264,14 @@ async def _begin_search(message, user_id, lang="ru"):
     result = await MatchingService().enqueue(user_id)
     task = _tasks.get(user_id)
     if result.code == "ALREADY_SEARCHING" and task and not task.done():
-        await message.answer(T.tr(ALREADY_SEARCHING, lang), reply_markup=search_kb_reply(lang))
+        await message.answer(
+            T.tr(ALREADY_SEARCHING, lang), reply_markup=search_kb_reply(lang)
+        )
         return
     if not result.ok:
         if result.code == "MUTED":
             from services.onboarding import mute_alert
+
             await message.answer(mute_alert((result.data or {}).get("until"), lang))
             return
         # Send the chat keyboard along with the "press Стоп" answer: a user whose
@@ -187,10 +282,15 @@ async def _begin_search(message, user_id, lang="ru"):
         return
     await notify_waiting_users(message.bot, user_id)
     await cancel_task(user_id)
+    # Живой счётчик онлайна в карточке — только для владельца, остальным он
+    # без пользы и лишний раз дёргает Redis в поиске.
+    is_owner = message.from_user.id == config.OWNER_ID
+    online = await get_online_count() if is_owner else None
     try:
         status = await message.answer(
-            T.tr(SEARCHING_STATUS, lang).format(online=await get_online_count()),
-            reply_markup=search_status_keyboard(lang=lang))
+            search_status_text(SEARCHING_STATUS, lang, online=online),
+            reply_markup=search_status_keyboard(lang=lang),
+        )
     except Exception:
         # Do not leave an orphan queue entry when Telegram rejects the status.
         await MatchingService().cancel(user_id)
@@ -224,8 +324,9 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
             r = await get_redis()
             if await r.zscore("search_queue", str(user_id)) is None:
                 return
-            elapsed = int(time.monotonic()-started)
+            elapsed = int(time.monotonic() - started)
             from services.settings import bot_value
+
             if elapsed >= await bot_value("search_timeout", config.SEARCH_TIMEOUT):
                 # cancel() takes the matching lock, so any concurrent match has
                 # committed by now and is visible below; one that starts after
@@ -234,11 +335,15 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                 if await has_active_participation(user_id):
                     return
                 from utils.db import is_premium
+
                 # Premium keeps its priority window, but no longer searches
                 # without end: waiting in the queue past the cap helps nobody.
-                cap = await bot_value("premium_search_timeout", config.PREMIUM_SEARCH_TIMEOUT)
+                cap = await bot_value(
+                    "premium_search_timeout", config.PREMIUM_SEARCH_TIMEOUT
+                )
                 if await is_premium(user_id) and (
-                        not cap or time.monotonic()-queued_since < cap):
+                    not cap or time.monotonic() - queued_since < cap
+                ):
                     requeued = await MatchingService().enqueue(user_id)
                     if requeued.code == "SEARCH_STARTED":
                         started = time.monotonic()
@@ -250,12 +355,20 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                         # would just contradict that message.
                         return
                     try:
-                        await bot.send_message(user_id, T.tr(SEARCH_STOPPED, lang), reply_markup=main_menu_kb(lang))
+                        await bot.send_message(
+                            user_id,
+                            T.tr(SEARCH_STOPPED, lang),
+                            reply_markup=main_menu_kb(lang),
+                        )
                     except (TelegramForbiddenError, TelegramBadRequest):
                         pass
                     return
                 try:
-                    await bot.send_message(user_id, T.tr(NOBODY_YET, lang), reply_markup=nobody_keyboard(lang))
+                    await bot.send_message(
+                        user_id,
+                        T.tr(NOBODY_YET, lang),
+                        reply_markup=nobody_keyboard(lang),
+                    )
                 except (TelegramForbiddenError, TelegramBadRequest):
                     pass
                 return
@@ -267,14 +380,37 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
             try:
                 from handlers.premium import product_keyboard
                 from utils.db import is_premium
+
                 if status is not None and time.monotonic() >= status_retry_at:
-                    offer = await product_keyboard(["instant_search"]) if elapsed > await bot_value("search_slow_offer_seconds", 20) and not await is_premium(user_id) else None
-                    dots = "." * (elapsed//2%3+1)
-                    await status.edit_text(T.tr(SEARCHING_PROGRESS, lang).format(dots=dots, online=await get_online_count()), reply_markup=search_status_keyboard(offer, lang))
+                    offer = (
+                        await product_keyboard(["instant_search"])
+                        if elapsed > await bot_value("search_slow_offer_seconds", 20)
+                        and not await is_premium(user_id)
+                        else None
+                    )
+                    dots = "." * (elapsed // 2 % 3 + 1)
+                    await status.edit_text(
+                        search_status_text(
+                            SEARCHING_PROGRESS,
+                            lang,
+                            dots=dots,
+                            online=(
+                                await get_online_count()
+                                if user_id == config.OWNER_ID
+                                else None
+                            ),
+                        ),
+                        reply_markup=search_status_keyboard(offer, lang),
+                    )
                     if offer and not offer_tracked:
                         from services.growth import track
-                        await track(user_id,"search_slow_offer_shown",f"slow_search:{user_id}:{queued_at}")
-                        offer_tracked=True
+
+                        await track(
+                            user_id,
+                            "search_slow_offer_shown",
+                            f"slow_search:{user_id}:{queued_at}",
+                        )
+                        offer_tracked = True
             except TelegramRetryAfter as error:
                 status_retry_at = time.monotonic() + error.retry_after
             except TelegramBadRequest:
@@ -286,7 +422,9 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         logger.exception("event=search_failed user_id=%s", user_id)
         await MatchingService().cancel(user_id)
         try:
-            await bot.send_message(user_id, T.tr(SEARCH_UNAVAILABLE, lang), reply_markup=main_menu_kb(lang))
+            await bot.send_message(
+                user_id, T.tr(SEARCH_UNAVAILABLE, lang), reply_markup=main_menu_kb(lang)
+            )
         except (TelegramForbiddenError, TelegramBadRequest):
             pass
     finally:
@@ -333,7 +471,11 @@ async def cb_wait_for_match(callback: CallbackQuery, lang: str = "ru"):
     await callback.message.edit_text(T.tr(WAITING_SAVED, lang))
 
 
-NOT_ONBOARDED = {"ru": "Сначала заверши регистрацию.", "en": "Finish registration first.", "uk": "Спочатку заверши реєстрацію."}
+NOT_ONBOARDED = {
+    "ru": "Сначала заверши регистрацию.",
+    "en": "Finish registration first.",
+    "uk": "Спочатку заверши реєстрацію.",
+}
 INVITE_MESSAGE = {
     "ru": "Пригласи друга — так шанс найти собеседника станет выше:\n{link}",
     "en": "Invite a friend — that raises the odds of finding a match:\n{link}",
@@ -346,8 +488,11 @@ async def cb_invite_friend(callback: CallbackQuery, lang: str = "ru"):
     from models.base import async_session
     from models.user import User
     from sqlalchemy import select
+
     async with async_session() as s:
-        code = await s.scalar(select(User.referral_code).where(User.telegram_id == callback.from_user.id))
+        code = await s.scalar(
+            select(User.referral_code).where(User.telegram_id == callback.from_user.id)
+        )
     if not code:
         await callback.answer(T.tr(NOT_ONBOARDED, lang), show_alert=True)
         return
