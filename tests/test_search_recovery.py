@@ -379,6 +379,162 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.find.assert_not_awaited()
         self.service.cancel.assert_awaited_once_with(1)
 
+    # --- Карточка поиска переживает рестарт через Redis-ссылку ---
+
+    async def test_begin_search_stores_the_card_reference_in_redis(self):
+        self.message.answer.return_value = SimpleNamespace(
+            chat=SimpleNamespace(id=55), message_id=777, delete=AsyncMock()
+        )
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        # TTL покрывает окно поиска + premium-потолок + запас (bot_value = 60).
+        self.redis.set.assert_any_call("search:card:1", "55:777", ex=240)
+
+    async def test_new_search_reclaims_the_orphan_card(self):
+        self.bot.delete_message = AsyncMock()
+        self.service.enqueue = AsyncMock(
+            return_value=ServiceResult(True, "SEARCH_STARTED")
+        )
+        self.redis.get = AsyncMock(
+            side_effect=lambda key, from_time=time.time: (
+                "2:888" if key == "search:card:1" else str(from_time())
+            )
+        )
+        with (
+            patch("handlers.search.bots.bot_for", AsyncMock(return_value=self.bot)),
+            patch.object(search, "search_loop", side_effect=self.waiting_loop),
+        ):
+            await search.begin_search(self.message, 1)
+        self.bot.delete_message.assert_awaited_once_with(2, 888)
+
+    async def test_cancel_after_restart_reclaims_the_card_by_redis_reference(self):
+        self.bot.delete_message = AsyncMock()
+        self.redis.get = AsyncMock(
+            side_effect=lambda key: "2:999" if key == "search:card:1" else None
+        )
+        with patch("handlers.search.bots.bot_for", AsyncMock(return_value=self.bot)):
+            await search.cmd_cancel(self.message)
+        self.bot.delete_message.assert_awaited_once_with(2, 999)
+        self.redis.delete.assert_any_call("search:card:1")
+        self.service.cancel.assert_awaited_once_with(1)
+
+    async def test_cancel_with_a_live_card_does_not_answer_to_the_reference_again(
+        self,
+    ):
+        self.bot.delete_message = AsyncMock()
+        self.redis.get = AsyncMock(
+            side_effect=lambda key: "2:999" if key == "search:card:1" else None
+        )
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        await search.cmd_cancel(self.message)
+        self.message.answer.return_value.delete.assert_awaited_once()
+        self.bot.delete_message.assert_not_awaited()
+
+    async def test_restore_reissues_the_card_saved_before_restart(self):
+        self.bot.delete_message = AsyncMock()
+        self.redis.get = AsyncMock(
+            side_effect=lambda key, from_time=time.time: (
+                "2:999" if key == "search:card:1" else str(from_time())
+            )
+        )
+
+        async def entries(*args):
+            yield "1", 1
+
+        self.redis.zscan_iter = entries
+        self.redis.exists.side_effect = lambda key: key == "search:user:1"
+        with (
+            patch("handlers.search.bots.bot_for", AsyncMock(return_value=self.bot)),
+            patch.object(search, "search_loop", side_effect=self.waiting_loop) as loop,
+        ):
+            await search.restore_searches()
+            await asyncio.sleep(0)  # tick: created task's first chunk must run
+        loop.assert_called_once()
+        status = loop.await_args.args[0]
+        self.assertIs(status.bot, self.bot)
+        self.assertEqual(status.chat.id, 2)
+        self.assertEqual(status.message_id, 999)
+        self.assertIs(search._status_messages[1], status)
+
+    async def test_restore_without_a_saved_card_keeps_the_statusless_loop(self):
+        async def entries(*args):
+            yield "1", 1
+
+        self.redis.zscan_iter = entries
+        self.redis.exists.side_effect = lambda key: key == "search:user:1"
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop) as loop:
+            await search.restore_searches()
+        loop.assert_called_once_with(None, 1, lang="ru")
+        self.assertNotIn(1, search._status_messages)
+
+    async def test_a_garbage_card_reference_is_ignored_on_cancel(self):
+        # Ссылка с мусором вместо chat_id:message_id не обязана падать:
+        # cancel просто не находит карточку и экономится без креша.
+        self.bot.delete_message = AsyncMock()
+        self.redis.get = AsyncMock(
+            side_effect=lambda key: "not-a-ref" if key == "search:card:1" else None
+        )
+        await search.cmd_cancel(self.message)
+        self.bot.delete_message.assert_not_awaited()
+        self.service.cancel.assert_awaited_once_with(1)
+
+    # --- Redis-сбой на входах поиска отвечает SEARCH_UNAVAILABLE ---
+
+    async def test_redis_outage_at_start_answers_with_unavailable(self):
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        with patch(
+            "handlers.search.get_redis",
+            AsyncMock(side_effect=RedisConnectionError("boom")),
+        ):
+            await search.begin_search(self.message, 1)
+        self.service.enqueue.assert_not_awaited()
+        self.assertIn("временно недоступен", self.message.answer.await_args.args[0])
+
+    async def test_redis_outage_during_cancel_answers_with_unavailable(self):
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        with patch(
+            "handlers.search.get_redis",
+            AsyncMock(side_effect=RedisConnectionError("boom")),
+        ):
+            await search.cmd_cancel(self.message)
+        self.assertIn("временно недоступен", self.message.answer.await_args.args[0])
+        self.service.cancel.assert_not_awaited()
+
+    async def test_redis_outage_when_waiting_answers_with_unavailable(self):
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        callback = SimpleNamespace(
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(edit_text=AsyncMock()),
+        )
+        with patch(
+            "handlers.search.get_redis",
+            AsyncMock(side_effect=RedisConnectionError("boom")),
+        ):
+            await search.cb_wait_for_match(callback, lang="ru")
+        self.assertIn("временно недоступен", callback.answer.await_args.args[0])
+        callback.message.edit_text.assert_not_awaited()
+
+    async def test_redis_blip_in_waking_waiters_does_not_break_the_started_search(
+        self,
+    ):
+        self.service.enqueue = AsyncMock(
+            return_value=ServiceResult(True, "SEARCH_STARTED")
+        )
+        self.message.answer.return_value = SimpleNamespace(
+            chat=SimpleNamespace(id=55), message_id=777, delete=AsyncMock()
+        )
+        self.redis.smembers = AsyncMock(side_effect=ConnectionError("boom"))
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop):
+            await search.begin_search(self.message, 1)
+        texts = " ".join(call.args[0] for call in self.message.answer.await_args_list)
+        self.assertIn("Ищу собеседника", texts)
+        self.assertNotIn("временно недоступен", texts)
+
 
 class ExpiredQueueTests(DatabaseCase):
     async def test_expiry_of_either_participant_prevents_match(self):

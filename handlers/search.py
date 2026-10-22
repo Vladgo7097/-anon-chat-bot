@@ -3,6 +3,8 @@ import logging
 import secrets
 import time
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
 from aiogram import F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -21,6 +23,7 @@ from keyboards import texts as T
 from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
 from services.matching import MatchingService
 from services.chat_manager import get_redis, get_online_count
+from redis.exceptions import RedisError
 from utils import bots
 import config
 
@@ -155,21 +158,144 @@ async def cancel_search(user_id):
     """Cancel the search loop/queue entry and remove the status card.
 
     Only an explicit user cancel removes the card — a match or timeout leaves
-    it as history, since another message already covers that outcome.
+    it as history, since another message already covers that outcome. After a
+    restart the live object is gone, so the Redis reference takes over.
     """
     status = _status_messages.pop(user_id, None)
     await cancel_task(user_id)
     await MatchingService().cancel(user_id)
+    await _clear_search_card(user_id, status=status)
+
+
+# Redis-сбои, которые ловим на входе поиска/отмены: до создания карточки или
+# записи очереди они чистые — честный "временно недоступен" лучше обезличенной
+# ошибки из глобального ловца. Остальные Redis-точки внутри уже best effort.
+_REDIS_DOWN = (RedisError, TimeoutError, ConnectionError)
+
+
+def card_key(user_id):
+    return f"search:card:{user_id}"
+
+
+async def _save_search_card(user_id, status):
+    """Карточка переживает рестарт только через Redis-ссылку с chat_id и
+    message_id — живой объект между процессами не переезжает. TTL покрывает
+    максимум жизни очереди: окно + premium-потолок + запас."""
+    try:
+        from services.settings import bot_value
+
+        timeout = await bot_value("search_timeout", config.SEARCH_TIMEOUT)
+        cap = await bot_value("premium_search_timeout", config.PREMIUM_SEARCH_TIMEOUT)
+        r = await get_redis()
+        await r.set(
+            card_key(user_id),
+            f"{status.chat.id}:{status.message_id}",
+            ex=int(timeout) + max(0, int(cap)) + 120,
+        )
+    except Exception:
+        # best effort: сбой ссылки никогда не должен уронить уже стартовавший
+        # поиск — без неё рестарт просто не найдёт старую карточку.
+        logger.warning(
+            "event=search_card_save_failed user_id=%s", user_id, exc_info=True
+        )
+
+
+def _parse_card_ref(ref):
+    # Мусор в ключе не должен ломать отмену: непонятная ссылка = нет карточки.
+    chat_id, _, message_id = str(ref).partition(":")
+    if chat_id.isdigit() and message_id.isdigit():
+        return int(chat_id), int(message_id)
+    return None
+
+
+async def _clear_search_card(user_id, status=None):
+    """Убрать ссылку и саму карточку, если она ещё жива.
+
+    Живой объект важнее ссылки: он пришёл с живого события того же бота.
+    После рестарта остаётся только ссылка — по ней карточку удаляет бот,
+    с которым юзер реально разговаривает.
+    """
+    ref = None
+    try:
+        r = await get_redis()
+        ref = await r.get(card_key(user_id))
+        if ref is not None:
+            await r.delete(card_key(user_id))
+    except _REDIS_DOWN:
+        return
     if status is not None:
         try:
             await status.delete()
         except TelegramBadRequest:
             pass
+        return
+    ids = None if ref is None else _parse_card_ref(ref)
+    if ids is None:
+        return
+    try:
+        bot = await bots.bot_for(user_id)
+        await bot.delete_message(*ids)
+    except Exception:
+        logger.exception("event=search_card_cleanup_failed user_id=%s", user_id)
+
+
+class _RestoredCard:
+    """Карточка, пережившая рестарт: edit/delete уходят в Telegram по
+    сохранённым chat_id и message_id, не через мёртвый объект."""
+
+    def __init__(self, bot, chat_id, message_id):
+        self.bot = bot
+        self.chat = SimpleNamespace(id=chat_id)
+        self.message_id = message_id
+
+    async def edit_text(self, text, reply_markup=None, **kwargs):
+        return await self.bot.edit_message_text(
+            text,
+            chat_id=self.chat.id,
+            message_id=self.message_id,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+
+    async def delete(self):
+        return await self.bot.delete_message(self.chat.id, self.message_id)
+
+
+async def _restored_status(r, user_id):
+    """Живой объект карточки после рестарта или None, если её нет.
+
+    Возвращённая карточка снова анимируется точками и переиздаётся циклом
+    поиска; на отмену она удаляется, как будто бот не перевоплощался.
+    """
+    try:
+        ref = await r.get(card_key(user_id))
+    except _REDIS_DOWN:
+        return None
+    ids = _parse_card_ref(ref) if ref else None
+    if ids is None:
+        return None
+    try:
+        return _RestoredCard(await bots.bot_for(user_id), *ids)
+    except Exception:
+        logger.exception("event=restore_card_failed user_id=%s", user_id)
+        return None
 
 
 async def begin_search(message, user_id, lang="ru"):
-    async with search_lock(user_id):
-        await _begin_search(message, user_id, lang)
+    """Вход поиска с мягким ответом на недоступный Redis.
+
+    До создания записи очереди сбой Redis чистый: ничего не поставлено в
+    очередь, SEARCH_UNAVAILABLE — честный ответ. Поздние сбои разбирают
+    _begin_search и search_loop, не эта обёртка.
+    """
+    try:
+        async with search_lock(user_id):
+            await _begin_search(message, user_id, lang)
+    except _REDIS_DOWN:
+        logger.warning("event=search_redis_down user_id=%s", user_id)
+        await message.answer(
+            T.tr(SEARCH_UNAVAILABLE, lang), reply_markup=main_menu_kb(lang)
+        )
 
 
 def search_status_keyboard(offer=None, lang="ru"):
@@ -280,12 +406,23 @@ async def _begin_search(message, user_id, lang="ru"):
         markup = chat_kb_reply(lang) if result.code == "ALREADY_CHATTING" else None
         await message.answer(T.tr(FAIL_REASONS[result.code], lang), reply_markup=markup)
         return
-    await notify_waiting_users(message.bot, user_id)
+    # Пробуждение ждущих — best effort: сбой Redis не должен превращать
+    # уже созданную запись очереди в осиротевшую.
+    try:
+        await notify_waiting_users(message.bot, user_id)
+    except _REDIS_DOWN:
+        logger.warning("event=waiting_notify_skipped user_id=%s", user_id)
     await cancel_task(user_id)
+    # Старая карточка с прошлых заплаток (рестарт, прерванный цикл) снимается
+    # до выпуска новой — иначе юзер копит её как снежный ком.
+    await _clear_search_card(user_id)
     # Живой счётчик онлайна в карточке — только для владельца, остальным он
     # без пользы и лишний раз дёргает Redis в поиске. user_id — авторитетный
     # источник: на callback-пути message.from_user это сам бот.
-    online = await get_online_count() if user_id == config.OWNER_ID else None
+    try:
+        online = await get_online_count() if user_id == config.OWNER_ID else None
+    except _REDIS_DOWN:
+        online = None
     try:
         status = await message.answer(
             search_status_text(SEARCHING_STATUS, lang, online=online),
@@ -298,6 +435,7 @@ async def _begin_search(message, user_id, lang="ru"):
     task = asyncio.create_task(search_loop(status, user_id, lang=lang))
     _tasks[user_id] = task
     _status_messages[user_id] = status
+    await _save_search_card(user_id, status)
 
 
 async def search_loop(status, user_id, bot=None, lang="ru"):
@@ -448,25 +586,39 @@ async def cb_search_start(callback: CallbackQuery, lang: str = "ru"):
 
 @search_router.message(F.text.in_(T.all_labels(T.CANCEL)))
 async def cmd_cancel(message: Message, lang: str = "ru"):
-    async with search_lock(message.from_user.id):
-        await cancel_search(message.from_user.id)
+    try:
+        async with search_lock(message.from_user.id):
+            await cancel_search(message.from_user.id)
+    except _REDIS_DOWN:
+        await message.answer(
+            T.tr(SEARCH_UNAVAILABLE, lang), reply_markup=main_menu_kb(lang)
+        )
+        return
     await message.answer(T.menu_text(lang), reply_markup=main_menu_kb(lang))
 
 
 @search_router.callback_query(F.data == "search:cancel")
 async def cb_cancel(callback: CallbackQuery, lang: str = "ru"):
+    try:
+        async with search_lock(callback.from_user.id):
+            await cancel_search(callback.from_user.id)
+    except _REDIS_DOWN:
+        await callback.answer(T.tr(SEARCH_UNAVAILABLE, lang), show_alert=True)
+        return
     await callback.answer(T.tr(SEARCH_CANCELLED_TOAST, lang))
-    async with search_lock(callback.from_user.id):
-        await cancel_search(callback.from_user.id)
     await callback.message.answer(T.menu_text(lang), reply_markup=main_menu_kb(lang))
 
 
 @search_router.callback_query(F.data == "search:wait")
 async def cb_wait_for_match(callback: CallbackQuery, lang: str = "ru"):
-    r = await get_redis()
-    await r.set(f"search:waiting_alert:{callback.from_user.id}", "1", ex=12 * 3600)
-    await r.sadd("search:waiting_alerts", str(callback.from_user.id))
-    await r.expire("search:waiting_alerts", 12 * 3600)
+    try:
+        r = await get_redis()
+        await r.set(f"search:waiting_alert:{callback.from_user.id}", "1", ex=12 * 3600)
+        await r.sadd("search:waiting_alerts", str(callback.from_user.id))
+        await r.expire("search:waiting_alerts", 12 * 3600)
+    except _REDIS_DOWN:
+        await callback.answer(T.tr(SEARCH_UNAVAILABLE, lang), show_alert=True)
+        return
     await callback.answer()
     await callback.message.edit_text(T.tr(WAITING_SAVED, lang))
 
@@ -524,7 +676,12 @@ async def restore_searches():
             row = await UserRepository().get(user_id)
             if row is not None:
                 lang = getattr(row, "language", None) or "ru"
-            _tasks[user_id] = asyncio.create_task(search_loop(None, user_id, lang=lang))
+            status = await _restored_status(r, user_id)
+            _tasks[user_id] = asyncio.create_task(
+                search_loop(status, user_id, lang=lang)
+            )
+            if status is not None:
+                _status_messages[user_id] = status
 
 
 async def shutdown_searches():
