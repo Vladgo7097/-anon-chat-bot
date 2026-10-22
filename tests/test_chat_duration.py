@@ -1,4 +1,5 @@
 """Service integration tests using an isolated database, never the live database."""
+
 import asyncio
 import os
 import sys
@@ -7,9 +8,10 @@ import unittest
 from pathlib import Path
 from datetime import timedelta
 from unittest.mock import patch, AsyncMock
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from models.base import Base
 from models.user import User
 from models.chat import Chat, ActiveParticipant, Rating, Block
@@ -19,30 +21,80 @@ from services.reveal import RevealService
 from utils.time import utcnow
 
 
+def engine_is_postgres(conn):
+    return conn.dialect.name == "postgresql"
+
+
 class DatabaseCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        url="sqlite+aiosqlite:///" + str(Path(self.temp.name)/"test.db")
+        url = "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "test.db")
         if os.getenv("RUN_POSTGRES_TESTS") == "1":
             import config
             from sqlalchemy.engine import make_url
-            url=config.DATABASE_URL
-            if make_url(url).database != "anon_chat_test" or make_url(url).host != "test-db":
-                raise RuntimeError("Integration tests require the isolated test-db/anon_chat_test")
+
+            url = config.DATABASE_URL
+            if (
+                make_url(url).database != "anon_chat_test"
+                or make_url(url).host != "test-db"
+            ):
+                raise RuntimeError(
+                    "Integration tests require the isolated test-db/anon_chat_test"
+                )
         self.engine = create_async_engine(url)
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
-        for module in ("models.base", "repositories.chats", "repositories.users", "services.reveal", "services.reports", "services.admin", "services.notifications", "services.registration", "services.payments", "services.growth", "services.profile", "services.settings", "services.matching", "services.ads", "services.op", "services.op_admin", "services.op_schedule", "services.funnel_alert", "services.community", "services.moderation"):
+        for module in (
+            "models.base",
+            "repositories.chats",
+            "repositories.users",
+            "services.reveal",
+            "services.reports",
+            "services.admin",
+            "services.notifications",
+            "services.registration",
+            "services.payments",
+            "services.growth",
+            "services.profile",
+            "services.settings",
+            "services.matching",
+            "services.ads",
+            "services.op",
+            "services.op_admin",
+            "services.op_schedule",
+            "services.funnel_alert",
+            "services.community",
+            "services.moderation",
+        ):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)
         async with self.engine.begin() as c:
-            await c.run_sync(Base.metadata.drop_all)
-            await c.run_sync(Base.metadata.create_all)
+            if engine_is_postgres(c):
+                # metadata.drop_all знает только свои таблицы: миграции создают
+                # и сносят их независимо (пример -- report_ai, модель которого
+                # удалена, а миграция 020 осталась). DROP SCHEMA CASCADE чище
+                # базы целиком, включая чужие для metadata таблицы и FK.
+                await c.execute(text("DROP SCHEMA public CASCADE"))
+                await c.execute(text("CREATE SCHEMA public"))
+                await c.run_sync(Base.metadata.create_all)
+            else:
+                await c.run_sync(Base.metadata.drop_all)
+                await c.run_sync(Base.metadata.create_all)
         async with self.factory.begin() as s:
             for uid, gender in ((1, "male"), (2, "female"), (3, "male")):
-                s.add(User(telegram_id=uid, anon_id=f"#test{uid}", gender=gender, age=23,
-                    onboarding_completed=True, onboarding_step="MENU", rules_version=1, rules_accepted_at=utcnow(),
-                    total_chat_seconds=100))
+                s.add(
+                    User(
+                        telegram_id=uid,
+                        anon_id=f"#test{uid}",
+                        gender=gender,
+                        age=23,
+                        onboarding_completed=True,
+                        onboarding_step="MENU",
+                        rules_version=1,
+                        rules_accepted_at=utcnow(),
+                        total_chat_seconds=100,
+                    )
+                )
         self.redis = AsyncMock()
         self.redis.zscore.return_value = 1
         self.repo = ChatRepository()
@@ -58,7 +110,7 @@ class SessionTests(DatabaseCase):
         self.assertIsNotNone(chat)
         async with self.factory.begin() as s:
             c = await s.get(Chat, chat.id)
-            c.started_at = utcnow()-timedelta(seconds=60)
+            c.started_at = utcnow() - timedelta(seconds=60)
         ended = await self.repo.end(1, chat.session_id)
         self.assertGreaterEqual(ended.duration_seconds, 60)
         self.assertIsNone(await self.repo.end(2, chat.session_id))
@@ -68,10 +120,14 @@ class SessionTests(DatabaseCase):
         self.assertFalse(await self.repo.rate(chat.session_id, 3, 1))
         async with self.factory() as s:
             self.assertEqual(await s.scalar(select(func.count(Chat.id))), 1)
-            self.assertEqual(await s.scalar(select(func.count()).select_from(ActiveParticipant)), 0)
-            for u in (await s.scalars(select(User).where(User.telegram_id.in_([1,2])))).all():
+            self.assertEqual(
+                await s.scalar(select(func.count()).select_from(ActiveParticipant)), 0
+            )
+            for u in (
+                await s.scalars(select(User).where(User.telegram_id.in_([1, 2])))
+            ).all():
                 self.assertEqual(u.chats_count, 1)
-                self.assertEqual(u.total_chat_seconds, 100+ended.duration_seconds)
+                self.assertEqual(u.total_chat_seconds, 100 + ended.duration_seconds)
 
     async def test_no_double_pair_and_no_cancelled_match(self):
         self.assertIsNotNone(await self.repo.match(1, 2, self.redis))
@@ -84,12 +140,12 @@ class SessionTests(DatabaseCase):
             s.add(Block(blocker_id=2, blocked_id=1))
         self.assertIsNone(await self.repo.match(1, 2, self.redis))
         async with self.factory.begin() as s:
-            user = await s.scalar(select(User).where(User.telegram_id==3))
-            user.premium_expires = utcnow()+timedelta(days=1)
+            user = await s.scalar(select(User).where(User.telegram_id == 3))
+            user.premium_expires = utcnow() + timedelta(days=1)
             user.settings_gender_filter = "f"
         self.assertIsNone(await self.repo.match(1, 3, self.redis))
         async with self.factory.begin() as s:
-            user = await s.scalar(select(User).where(User.telegram_id==3))
+            user = await s.scalar(select(User).where(User.telegram_id == 3))
             user.age = 17
         self.assertIsNone(await self.repo.match(2, 3, self.redis))
 
@@ -98,7 +154,9 @@ class SessionTests(DatabaseCase):
         reveal = RevealService()
         self.assertFalse((await reveal.consent(3, chat.session_id)).ok)
         self.assertEqual((await reveal.consent(1, chat.session_id)).code, "PENDING")
-        self.assertEqual((await reveal.consent(1, chat.session_id)).code, "ALREADY_REQUESTED")
+        self.assertEqual(
+            (await reveal.consent(1, chat.session_id)).code, "ALREADY_REQUESTED"
+        )
         self.assertEqual((await reveal.consent(2, chat.session_id)).code, "MUTUAL")
         await self.repo.end(1, chat.session_id)
         new = await self.repo.match(1, 2, self.redis)
