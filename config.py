@@ -8,6 +8,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 # BOT_TOKEN -- only the fallback language differs. Empty disables it.
 BOT2_TOKEN = os.getenv("BOT2_TOKEN", "")
 BOT2_DEFAULT_LANG = os.getenv("BOT2_DEFAULT_LANG", "uk")
+# Язык и поведение primary, когда второй токен снят (бывают и обратные свапы,
+# и отмирания). Пусто/не задано = прежние "ru + детект клиента", так что эти
+# ручки ничего не меняют, пока их кто-то не откроет.
+BOT_DEFAULT_LANG = os.getenv("BOT_DEFAULT_LANG", "")
+BOT_DETECT_CLIENT_LANG = os.getenv("BOT_DETECT_CLIENT_LANG", "1") != "0"
 # Канал тревог, не зависящий ни от одного из наших токенов: очередь
 # уведомлений разносит тот же процесс, что и бота, поэтому при полной
 # смерти обоих токенов сообщить владельцу иначе некому. Принимает POST
