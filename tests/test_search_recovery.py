@@ -105,6 +105,19 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             await search.begin_search(self.message, 1)
         self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
 
+    async def test_callback_path_uses_the_tapper_id_not_the_bots(self):
+        # callback.message.from_user — это бот; владелец определяется по
+        # from_user колбэка, иначе счётчик был бы виден только при вводе /search.
+        callback = SimpleNamespace(
+            from_user=SimpleNamespace(id=1), answer=AsyncMock(), message=self.message
+        )
+        with (
+            patch.object(search, "search_loop", side_effect=self.waiting_loop),
+            patch("config.OWNER_ID", 1),
+        ):
+            await search.cb_search_start(callback)
+        self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
+
     async def test_start_status_carries_custom_emoji_and_no_elapsed_timer(self):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop):
             await search.begin_search(self.message, 1)

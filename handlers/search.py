@@ -283,9 +283,9 @@ async def _begin_search(message, user_id, lang="ru"):
     await notify_waiting_users(message.bot, user_id)
     await cancel_task(user_id)
     # Живой счётчик онлайна в карточке — только для владельца, остальным он
-    # без пользы и лишний раз дёргает Redis в поиске.
-    is_owner = message.from_user.id == config.OWNER_ID
-    online = await get_online_count() if is_owner else None
+    # без пользы и лишний раз дёргает Redis в поиске. user_id — авторитетный
+    # источник: на callback-пути message.from_user это сам бот.
+    online = await get_online_count() if user_id == config.OWNER_ID else None
     try:
         status = await message.answer(
             search_status_text(SEARCHING_STATUS, lang, online=online),
