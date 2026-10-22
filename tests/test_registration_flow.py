@@ -6,6 +6,7 @@ exactly why a broken dispatch path (the language tap never reaching its
 handler) stayed green. This file only exercises what a real user does: sends
 messages and taps buttons.
 """
+
 import sys
 import tempfile
 import unittest
@@ -49,17 +50,29 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         _next_uid[0] += 1
         self.temp = tempfile.TemporaryDirectory()
         self.engine = create_async_engine(
-            "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "reg.db"))
+            "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "reg.db")
+        )
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
         # Patch every module that holds its own reference to async_session:
         # a consumer imported while another test's patch is active would keep
         # that test's factory (and its deleted temp file) forever.
-        for module in ("models.base", "repositories.chats", "repositories.users",
-                       "services.notifications", "services.registration",
-                       "services.growth", "services.payments",
-                       "services.profile", "services.matching",
-                       "services.settings", "services.reveal", "services.reports",
-                       "services.admin", "services.ads", "services.op"):
+        for module in (
+            "models.base",
+            "repositories.chats",
+            "repositories.users",
+            "services.notifications",
+            "services.registration",
+            "services.growth",
+            "services.payments",
+            "services.profile",
+            "services.matching",
+            "services.settings",
+            "services.reveal",
+            "services.reports",
+            "services.admin",
+            "services.ads",
+            "services.op",
+        ):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)
@@ -102,24 +115,56 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         return True
 
     async def _send_text(self, text, update_id=1, lang_code=None):
-        await self.dp.feed_update(_BOT, Update(update_id=update_id, message=Message(
-            message_id=update_id, date=datetime.now(timezone.utc),
-            chat=Chat(id=self.uid, type="private"),
-            from_user=User(id=self.uid, is_bot=False, first_name="Tester",
-                            language_code=lang_code), text=text)))
+        await self.dp.feed_update(
+            _BOT,
+            Update(
+                update_id=update_id,
+                message=Message(
+                    message_id=update_id,
+                    date=datetime.now(timezone.utc),
+                    chat=Chat(id=self.uid, type="private"),
+                    from_user=User(
+                        id=self.uid,
+                        is_bot=False,
+                        first_name="Tester",
+                        language_code=lang_code,
+                    ),
+                    text=text,
+                ),
+            ),
+        )
 
     async def _tap(self, data, update_id=1):
-        await self.dp.feed_update(_BOT, Update(update_id=update_id, callback_query=CallbackQuery(
-            id=str(update_id), from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
-            chat_instance="offline", data=data, message=Message(
-                message_id=update_id, date=datetime.now(timezone.utc),
-                chat=Chat(id=self.uid, type="private"),
-                from_user=User(id=1, is_bot=True, first_name="Test", username="offline_test_bot"),
-                text="stub"))))
+        await self.dp.feed_update(
+            _BOT,
+            Update(
+                update_id=update_id,
+                callback_query=CallbackQuery(
+                    id=str(update_id),
+                    from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
+                    chat_instance="offline",
+                    data=data,
+                    message=Message(
+                        message_id=update_id,
+                        date=datetime.now(timezone.utc),
+                        chat=Chat(id=self.uid, type="private"),
+                        from_user=User(
+                            id=1,
+                            is_bot=True,
+                            first_name="Test",
+                            username="offline_test_bot",
+                        ),
+                        text="stub",
+                    ),
+                ),
+            ),
+        )
 
     async def _user(self):
         async with self.factory() as s:
-            return await s.scalar(select(UserModel).where(UserModel.telegram_id == self.uid))
+            return await s.scalar(
+                select(UserModel).where(UserModel.telegram_id == self.uid)
+            )
 
     async def _to_menu(self):
         """Drive a full RU registration and return the last sent payload."""
@@ -140,8 +185,11 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._send_text("Парень")
         for age in ("17", "100", "0"):
             await self._send_text(age)
-            self.assertIn("Сервис доступен только с 18 лет", self.sent[-1].text,
-                          f"возраст {age!r} должен быть отклонён сервером")
+            self.assertIn(
+                "Сервис доступен только с 18 лет",
+                self.sent[-1].text,
+                f"возраст {age!r} должен быть отклонён сервером",
+            )
             self.assertIsNone((await self._user()).age)
         # Nonsense on the only step the user can type into must say so, not
         # silently re-show the keyboard.
@@ -151,6 +199,21 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._send_text(" 25 ")
         self.assertEqual((await self._user()).age, 25)
         self.assertIn("Правила", self.sent[-1].text)
+
+    async def _age_rejection_in_language(self, lang, needle):
+        # Отказ вне 18..99 раньше был жёстко русским прямо из сервиса:
+        # uk/en юзер получал русский текст. Локализуется в хендлере.
+        await self._seed_user(language=lang, gender="female", onboarding_step="AGE")
+        await self._send_text("/start")
+        await self._send_text("100")
+        self.assertIn(needle, self.sent[-1].text, lang)
+        self.assertIsNone((await self._user()).age)
+
+    async def test_age_rejection_speaks_ukrainian(self):
+        await self._age_rejection_in_language("uk", "Обери вік від 18 до 99")
+
+    async def test_age_rejection_speaks_english(self):
+        await self._age_rejection_in_language("en", "Pick an age between 18 and 99")
 
     async def test_interrupted_registration_resumes_where_it_stopped(self):
         await self._seed_user(language="uk", gender="female", onboarding_step="AGE")
@@ -197,13 +260,16 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("Правила общения" in m.text for m in self.sent[-2:]))
         self.assertIn("Принимаю", self.sent[-1].reply_markup.keyboard[0][0].text)
         user = await self._user()
-        self.assertIsNone(user.rules_accepted_at, "просмотр правил не должен их принимать")
+        self.assertIsNone(
+            user.rules_accepted_at, "просмотр правил не должен их принимать"
+        )
         await self._send_text("Принимаю правила")
         self.assertTrue((await self._user()).onboarding_completed)
 
     async def test_unregistered_user_cannot_reach_menu_features(self):
         from handlers.profile import show_profile
         from handlers.search import begin_search
+
         with (
             patch("handlers.profile.show_profile", AsyncMock()) as profile,
             patch("handlers.search.begin_search", AsyncMock()) as search,
@@ -211,24 +277,42 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             await self._send_text("/start")
             await self._tap("lang:ru")
             # Every menu affordance must bounce back to the unfinished step.
-            for action in ("Найти собеседника", "Мой профиль", "Настройки поиска", "Premium"):
+            for action in (
+                "Найти собеседника",
+                "Мой профиль",
+                "Настройки поиска",
+                "Premium",
+            ):
                 await self._send_text(action)
-                self.assertIn("Укажи свой пол", self.sent[-1].text,
-                              f"{action!r} должен вернуть на шаг регистрации")
+                self.assertIn(
+                    "Укажи свой пол",
+                    self.sent[-1].text,
+                    f"{action!r} должен вернуть на шаг регистрации",
+                )
             for callback in ("search:start", "profile", "settings", "premium"):
                 await self._tap(callback)
-                self.assertIn("Укажи свой пол", self.sent[-1].text,
-                              f"{callback!r} должен вернуть на шаг регистрации")
+                self.assertIn(
+                    "Укажи свой пол",
+                    self.sent[-1].text,
+                    f"{callback!r} должен вернуть на шаг регистрации",
+                )
             profile.assert_not_awaited()
             search.assert_not_awaited()
         self.assertFalse((await self._user()).onboarding_completed)
 
     async def test_re_registration_after_account_deletion(self):
         from services.profile import ProfileService
+
         await self._to_menu()
         with (
-            patch("services.matching.MatchingService.cancel", AsyncMock(return_value=ServiceResult(True, "OK"))),
-            patch("services.chats.ChatService.end_chat", AsyncMock(return_value=ServiceResult(True, "OK"))),
+            patch(
+                "services.matching.MatchingService.cancel",
+                AsyncMock(return_value=ServiceResult(True, "OK")),
+            ),
+            patch(
+                "services.chats.ChatService.end_chat",
+                AsyncMock(return_value=ServiceResult(True, "OK")),
+            ),
         ):
             self.assertTrue((await ProfileService().delete(self.uid)).ok)
         await self._send_text("/start")
@@ -253,17 +337,31 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_referral_payload_is_stored(self):
         from models.operations import Referral
         from utils.time import utcnow
+
         referrer_id = self.uid + 500
         async with self.factory.begin() as s:
-            s.add(UserModel(telegram_id=referrer_id, anon_id=f"#ref{referrer_id}",
-                            referral_code="refcode123", gender="male", age=30,
-                            onboarding_completed=True, onboarding_step="MENU",
-                            rules_version=1, rules_accepted_at=utcnow()))
+            s.add(
+                UserModel(
+                    telegram_id=referrer_id,
+                    anon_id=f"#ref{referrer_id}",
+                    referral_code="refcode123",
+                    gender="male",
+                    age=30,
+                    onboarding_completed=True,
+                    onboarding_step="MENU",
+                    rules_version=1,
+                    rules_accepted_at=utcnow(),
+                )
+            )
         await self._send_text("/start ref_refcode123")
         user = await self._user()
-        self.assertEqual(user.referrer_id, referrer_id, "реферальная ссылка не записана")
+        self.assertEqual(
+            user.referrer_id, referrer_id, "реферальная ссылка не записана"
+        )
         async with self.factory() as s:
-            referral = await s.scalar(select(Referral).where(Referral.referred_id == self.uid))
+            referral = await s.scalar(
+                select(Referral).where(Referral.referred_id == self.uid)
+            )
         self.assertIsNotNone(referral, "строка реферала не создана")
         self.assertIn("Выберите язык", self.sent[-1].text)
 
@@ -306,10 +404,14 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._send_text("/start")
         before = len(self.sent)
         await self._tap("lang:en")
-        self.assertEqual(len(self.sent), before + 1,
-                         "тап по языку не дошёл до обработчика")
-        self.assertNotIn("Выберите язык", self.sent[-1].text,
-                         "вместо продолжения регистрации показан экран языка заново")
+        self.assertEqual(
+            len(self.sent), before + 1, "тап по языку не дошёл до обработчика"
+        )
+        self.assertNotIn(
+            "Выберите язык",
+            self.sent[-1].text,
+            "вместо продолжения регистрации показан экран языка заново",
+        )
         self.assertEqual((await self._user()).language, "en")
 
     async def test_client_language_skips_the_picker(self):
@@ -361,9 +463,19 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         sent; answering the missing object raised, so the tap died with
         "Не удалось выполнить действие"."""
         await self._send_text("/start")
-        await self.dp.feed_update(_BOT, Update(update_id=5, callback_query=CallbackQuery(
-            id="5", from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
-            chat_instance="offline", data="lang:ru", message=None)))
+        await self.dp.feed_update(
+            _BOT,
+            Update(
+                update_id=5,
+                callback_query=CallbackQuery(
+                    id="5",
+                    from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
+                    chat_instance="offline",
+                    data="lang:ru",
+                    message=None,
+                ),
+            ),
+        )
         user = await self._user()
         self.assertEqual(user.language, "ru")
         self.assertIn("Укажи свой пол", self.sent[-1].text)
@@ -376,15 +488,21 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_every_unique_start_is_counted_once(self):
         from models.start import StartEvent
+
         await self._send_text("/start", update_id=901)
         self.assertEqual((await self._user()).start_count, 1)
         await self._send_text("/start", update_id=902)
         self.assertEqual((await self._user()).start_count, 2)
         async with self.factory() as s:
             self.assertEqual(await s.scalar(select(func.count(StartEvent.id))), 2)
-            self.assertEqual(await s.scalar(select(func.count(StartEvent.id)).where(
-                StartEvent.event_type == "first_start")), 1)
-
+            self.assertEqual(
+                await s.scalar(
+                    select(func.count(StartEvent.id)).where(
+                        StartEvent.event_type == "first_start"
+                    )
+                ),
+                1,
+            )
 
     async def test_op_gate_blocks_menu_and_renders_configured_screen(self):
         """Рекламный ресурс закрывает все функции меню одним экраном.
@@ -398,11 +516,17 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
 
         await self._to_menu()
         async with self.factory.begin() as s:
-            s.add(OpSettings(bot_id=_BOT.id, enabled=True, paused=False,
-                             timezone="Europe/Kyiv"))
+            s.add(
+                OpSettings(
+                    bot_id=_BOT.id, enabled=True, paused=False, timezone="Europe/Kyiv"
+                )
+            )
             target = OpTarget(
-                bot_id=_BOT.id, chat_id=-100777, title="Реклама",
-                join_url="https://t.me/ads", is_active=True,
+                bot_id=_BOT.id,
+                chat_id=-100777,
+                title="Реклама",
+                join_url="https://t.me/ads",
+                is_active=True,
                 setup_status="verified",
             )
             s.add(target)
@@ -419,13 +543,18 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         for action in (T.SEARCH, T.PROFILE, T.SETTINGS, T.PREMIUM, T.STATS, T.INVITE):
             labels |= T.all_labels(action)
 
-        with patch("services.op.chat_membership", AsyncMock(return_value=("no", "left"))), \
-                patch("services.op.warn_allowed", AsyncMock(return_value=True)):
+        with (
+            patch(
+                "services.op.chat_membership", AsyncMock(return_value=("no", "left"))
+            ),
+            patch("services.op.warn_allowed", AsyncMock(return_value=True)),
+        ):
             for index, label in enumerate(sorted(labels)):
                 before = len(self.sent)
                 await self._send_text(label, update_id=1000 + index)
                 self.assertEqual(
-                    len(self.sent), before + 1,
+                    len(self.sent),
+                    before + 1,
                     f"кнопка «{label}» прошла мимо гейта",
                 )
                 markups = [
@@ -443,22 +572,32 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             before = len(self.sent)
             await self._tap("search:start", update_id=2000)
             self.assertEqual(len(self.sent), before + 1)
-            self.assertIn("op:check", [
-                button.callback_data
-                for row in self.sent[-1].reply_markup.inline_keyboard
-                for button in row
-                if button.callback_data
-            ])
-
+            self.assertIn(
+                "op:check",
+                [
+                    button.callback_data
+                    for row in self.sent[-1].reply_markup.inline_keyboard
+                    for button in row
+                    if button.callback_data
+                ],
+            )
 
     async def test_group_message_gets_no_reply(self):
         """В группе бот не отвечает даже подсказкой «только в личке»."""
         before = len(self.sent)
-        await self.dp.feed_update(_BOT, Update(update_id=3000, message=Message(
-            message_id=3000, date=datetime.now(timezone.utc),
-            chat=Chat(id=-100555, type="supergroup"),
-            from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
-            text="привет")))
+        await self.dp.feed_update(
+            _BOT,
+            Update(
+                update_id=3000,
+                message=Message(
+                    message_id=3000,
+                    date=datetime.now(timezone.utc),
+                    chat=Chat(id=-100555, type="supergroup"),
+                    from_user=User(id=self.uid, is_bot=False, first_name="Tester"),
+                    text="привет",
+                ),
+            ),
+        )
         self.assertEqual(len(self.sent), before)
 
 

@@ -22,34 +22,58 @@ class Onboarding(StatesGroup):
 LANGUAGE_TEXT = "🌐 Choose your language\nВыберите язык\nОберіть мову"
 
 WELCOME_TEXT = {
-    "ru": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привет!\n\nЭто анонимный чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nПоиск и переписка бесплатны. Собеседник не увидит твой username и Telegram ID, пока вы оба не согласитесь раскрыться.\n\nСервис для людей 18+. Для старта нужны только пол, возраст и принятие правил.\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Укажи свой пол, чтобы начать:",
-    "en": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Hi!\n\nThis is an anonymous chat bot <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nHere you can meet and talk to random people\nwithout revealing your name, username or Telegram ID.\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Tell us your gender to start:",
-    "uk": "<tg-emoji emoji-id=\"5350596259365273418\">👋</tg-emoji> Привіт!\n\nЦе анонімний чат-бот <tg-emoji emoji-id=\"5278367493700732437\">🎭</tg-emoji>\n\nТут можна знайомитись і спілкуватися з випадковими людьми,\nне розкриваючи своє ім'я, username і Telegram ID.\n\n<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Вкажи свою стать, щоб почати:",
+    "ru": '<tg-emoji emoji-id="5350596259365273418">👋</tg-emoji> Привет!\n\nЭто анонимный чат-бот <tg-emoji emoji-id="5278367493700732437">🎭</tg-emoji>\n\nПоиск и переписка бесплатны. Собеседник не увидит твой username и Telegram ID, пока вы оба не согласитесь раскрыться.\n\nСервис для людей 18+. Для старта нужны только пол, возраст и принятие правил.\n\n<tg-emoji emoji-id="5348232622898167572">👤</tg-emoji> Укажи свой пол, чтобы начать:',
+    "en": '<tg-emoji emoji-id="5350596259365273418">👋</tg-emoji> Hi!\n\nThis is an anonymous chat bot <tg-emoji emoji-id="5278367493700732437">🎭</tg-emoji>\n\nHere you can meet and talk to random people\nwithout revealing your name, username or Telegram ID.\n\n<tg-emoji emoji-id="5348232622898167572">👤</tg-emoji> Tell us your gender to start:',
+    "uk": '<tg-emoji emoji-id="5350596259365273418">👋</tg-emoji> Привіт!\n\nЦе анонімний чат-бот <tg-emoji emoji-id="5278367493700732437">🎭</tg-emoji>\n\nТут можна знайомитись і спілкуватися з випадковими людьми,\nне розкриваючи своє ім\'я, username і Telegram ID.\n\n<tg-emoji emoji-id="5348232622898167572">👤</tg-emoji> Вкажи свою стать, щоб почати:',
 }
 GENDER_TEXT = {
-    "ru": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Укажи свой пол\n\nЭто поможет правильно подбирать собеседников.",
-    "en": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Tell us your gender\n\nThis helps match you with the right people.",
-    "uk": "<tg-emoji emoji-id=\"5348232622898167572\">👤</tg-emoji> Вкажи свою стать\n\nЦе допоможе правильно підбирати співрозмовників.",
+    "ru": '<tg-emoji emoji-id="5348232622898167572">👤</tg-emoji> Укажи свой пол\n\nЭто поможет правильно подбирать собеседников.',
+    "en": '<tg-emoji emoji-id="5348232622898167572">👤</tg-emoji> Tell us your gender\n\nThis helps match you with the right people.',
+    "uk": '<tg-emoji emoji-id="5348232622898167572">👤</tg-emoji> Вкажи свою стать\n\nЦе допоможе правильно підбирати співрозмовників.',
 }
 AGE_TEXT = {
-    "ru": "<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Сколько тебе лет?\n\nВыбери свой возраст:",
-    "en": "<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> How old are you?\n\nChoose your age:",
-    "uk": "<tg-emoji emoji-id=\"5452055425690123301\">🎂</tg-emoji> Скільки тобі років?\n\nОбери свій вік:",
+    "ru": '<tg-emoji emoji-id="5452055425690123301">🎂</tg-emoji> Сколько тебе лет?\n\nВыбери свой возраст:',
+    "en": '<tg-emoji emoji-id="5452055425690123301">🎂</tg-emoji> How old are you?\n\nChoose your age:',
+    "uk": '<tg-emoji emoji-id="5452055425690123301">🎂</tg-emoji> Скільки тобі років?\n\nОбери свій вік:',
 }
 AGE_INPUT_HINT = {
     "ru": "Введи возраст кнопкой или цифрами — от 18 до 99.",
     "en": "Pick your age with a button or type digits — 18 to 99.",
     "uk": "Обери вік кнопкою або введи цифри — від 18 до 99.",
 }
-RULES_TEXT = {
-    "ru": "<tg-emoji emoji-id=\"5976292450870761243\">📜</tg-emoji> Правила общения\n\n1️⃣ Запрещена реклама и спам\n2️⃣ Запрещены оскорбления и травля\n3️⃣ Запрещён запрещённый и нежелательный контент\n4️⃣ Не разглашай личные данные — свои и чужие\n5️⃣ Жалуйся на нарушителей кнопкой <tg-emoji emoji-id=\"5460755126761312667\">🚩</tg-emoji>\n\nДля рассмотрения жалобы последние текстовые сообщения временно хранятся до 30 минут. Фото, голосовые, аудио и видео сохраняются только после явной отправки жалобы и удаляются через 30 дней; текст жалобы — до 90 дней.\n\nНарушение правил может привести к блокировке.\n\nНажимая кнопку ниже, ты подтверждаешь, что ознакомился с правилами. Сервис доступен только с 18 лет.",
-    "en": "<tg-emoji emoji-id=\"5976292450870761243\">📜</tg-emoji> Chat rules\n\n1️⃣ No ads or spam\n2️⃣ No insults or harassment\n3️⃣ No prohibited or unwanted content\n4️⃣ Don't share personal data — yours or someone else's\n5️⃣ Report violators with the <tg-emoji emoji-id=\"5460755126761312667\">🚩</tg-emoji> button\n\nTo review reports, recent text messages are kept for up to 30 minutes. Photos, voice messages, audio and video are saved only after a report is actually filed and are deleted after 30 days; report text is kept for up to 90 days.\n\nBreaking the rules can lead to a ban.\n\nBy tapping the button below, you confirm you've read the rules. The service is available from 18 years old only.",
-    "uk": "<tg-emoji emoji-id=\"5976292450870761243\">📜</tg-emoji> Правила спілкування\n\n1️⃣ Заборонена реклама і спам\n2️⃣ Заборонені образи й цькування\n3️⃣ Заборонений заборонений і небажаний контент\n4️⃣ Не розголошуй особисті дані — свої й чужі\n5️⃣ Скаржся на порушників кнопкою <tg-emoji emoji-id=\"5460755126761312667\">🚩</tg-emoji>\n\nДля розгляду скарги останні текстові повідомлення тимчасово зберігаються до 30 хвилин. Фото, голосові, аудіо та відео зберігаються лише після явної відправки скарги й видаляються через 30 днів; текст скарги — до 90 днів.\n\nПорушення правил може призвести до блокування.\n\nНатискаючи кнопку нижче, ти підтверджуєш, що ознайомився з правилами. Сервіс доступний лише з 18 років.",
+AGE_REJECTED = {
+    "ru": "Сервис доступен только с 18 лет. Выбери возраст от 18 до 99.",
+    "en": "The service is for 18+ only. Pick an age between 18 and 99.",
+    "uk": "Сервіс доступний лише з 18 років. Обери вік від 18 до 99.",
 }
-BANNED_UNTIL = {"ru": "⛔ Ты заблокирован до {until} UTC.", "en": "⛔ You are banned until {until} UTC.", "uk": "⛔ Тебе заблоковано до {until} UTC."}
-BANNED_FOREVER = {"ru": "⛔ Ты заблокирован бессрочно.", "en": "⛔ You are banned permanently.", "uk": "⛔ Тебе заблоковано безстроково."}
+RULES_TEXT = {
+    "ru": '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Правила общения\n\n1️⃣ Запрещена реклама и спам\n2️⃣ Запрещены оскорбления и травля\n3️⃣ Запрещён запрещённый и нежелательный контент\n4️⃣ Не разглашай личные данные — свои и чужие\n5️⃣ Жалуйся на нарушителей кнопкой <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji>\n\nДля рассмотрения жалобы последние текстовые сообщения временно хранятся до 30 минут. Фото, голосовые, аудио и видео сохраняются только после явной отправки жалобы и удаляются через 30 дней; текст жалобы — до 90 дней.\n\nНарушение правил может привести к блокировке.\n\nНажимая кнопку ниже, ты подтверждаешь, что ознакомился с правилами. Сервис доступен только с 18 лет.',
+    "en": '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Chat rules\n\n1️⃣ No ads or spam\n2️⃣ No insults or harassment\n3️⃣ No prohibited or unwanted content\n4️⃣ Don\'t share personal data — yours or someone else\'s\n5️⃣ Report violators with the <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji> button\n\nTo review reports, recent text messages are kept for up to 30 minutes. Photos, voice messages, audio and video are saved only after a report is actually filed and are deleted after 30 days; report text is kept for up to 90 days.\n\nBreaking the rules can lead to a ban.\n\nBy tapping the button below, you confirm you\'ve read the rules. The service is available from 18 years old only.',
+    "uk": '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Правила спілкування\n\n1️⃣ Заборонена реклама і спам\n2️⃣ Заборонені образи й цькування\n3️⃣ Заборонений заборонений і небажаний контент\n4️⃣ Не розголошуй особисті дані — свої й чужі\n5️⃣ Скаржся на порушників кнопкою <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji>\n\nДля розгляду скарги останні текстові повідомлення тимчасово зберігаються до 30 хвилин. Фото, голосові, аудіо та відео зберігаються лише після явної відправки скарги й видаляються через 30 днів; текст скарги — до 90 днів.\n\nПорушення правил може призвести до блокування.\n\nНатискаючи кнопку нижче, ти підтверджуєш, що ознайомився з правилами. Сервіс доступний лише з 18 років.',
+}
+BANNED_UNTIL = {
+    "ru": "⛔ Ты заблокирован до {until} UTC.",
+    "en": "⛔ You are banned until {until} UTC.",
+    "uk": "⛔ Тебе заблоковано до {until} UTC.",
+}
+BANNED_FOREVER = {
+    "ru": "⛔ Ты заблокирован бессрочно.",
+    "en": "⛔ You are banned permanently.",
+    "uk": "⛔ Тебе заблоковано безстроково.",
+}
 
-TEXTS = {"WELCOME": WELCOME_TEXT, "GENDER": GENDER_TEXT, "AGE": AGE_TEXT, "RULES": RULES_TEXT}
+LANGUAGE_CHANGED = {
+    "ru": "Язык изменён на русский.",
+    "en": "Language changed to English.",
+    "uk": "Мову змінено на українську.",
+}
+
+TEXTS = {
+    "WELCOME": WELCOME_TEXT,
+    "GENDER": GENDER_TEXT,
+    "AGE": AGE_TEXT,
+    "RULES": RULES_TEXT,
+}
 
 
 class _DirectTarget:
@@ -62,7 +86,9 @@ class _DirectTarget:
         self._bot, self._chat_id = bot, chat_id
 
     async def answer(self, text, reply_markup=None, **kwargs):
-        await self._bot.send_message(self._chat_id, text, reply_markup=reply_markup, **kwargs)
+        await self._bot.send_message(
+            self._chat_id, text, reply_markup=reply_markup, **kwargs
+        )
 
 
 def callback_target(callback):
@@ -75,8 +101,11 @@ def callback_target(callback):
 async def show_step(message, state, result, page=0, lang="ru"):
     if result.code == "BANNED":
         until = result.data.get("until")
-        text = (T.tr(BANNED_UNTIL, lang).format(until=f"{until:%d.%m.%Y %H:%M}") if until
-                else T.tr(BANNED_FOREVER, lang))
+        text = (
+            T.tr(BANNED_UNTIL, lang).format(until=f"{until:%d.%m.%Y %H:%M}")
+            if until
+            else T.tr(BANNED_FOREVER, lang)
+        )
         await message.answer(text)
         return
     step = result.code
@@ -95,16 +124,28 @@ async def show_step(message, state, result, page=0, lang="ru"):
 
 
 @start_router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext, event_update: Update | None = None):
+async def cmd_start(
+    message: Message, state: FSMContext, event_update: Update | None = None
+):
     user = message.from_user
     # Регистрация запуска -- отдельной транзакцией до онбординга: повторная
     # доставка апдейта не считается второй раз, первый запуск заводит
     # событие и единственное уведомление владельцу (services.registration).
     if event_update is not None:
         from services.registration import register_start
-        await register_start(user.id, message.bot.id, event_update.update_id,
-                             username=user.username, first_name=user.first_name)
-    payload = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
+
+        await register_start(
+            user.id,
+            message.bot.id,
+            event_update.update_id,
+            username=user.username,
+            first_name=user.first_name,
+        )
+    payload = (
+        message.text.split(maxsplit=1)[1]
+        if len(message.text.split(maxsplit=1)) > 1
+        else ""
+    )
     await enter_bot(message, state, user, message.bot, payload)
 
 
@@ -113,8 +154,11 @@ async def enter_bot(message, state, user, bot, payload=""):
 
     Язык берётся из языка клиента (у второго бота -- украинский по
     умолчанию), чтобы ru/uk/en-аудитория не видела экран выбора."""
-    result = await OnboardingService().start(user.id, user.username, user.first_name, payload)
+    result = await OnboardingService().start(
+        user.id, user.username, user.first_name, payload
+    )
     from utils import bots
+
     lang = (result.data or {}).get("language") or bots.default_lang(bot, user)
     if result.code == "LANGUAGE":
         # Telegram already knows what language its client runs on: a ru/uk/en
@@ -154,6 +198,7 @@ async def cb_language(callback: CallbackQuery, state: FSMContext):
     actor = callback.from_user
     target = callback_target(callback)
     from repositories.users import UserRepository
+
     if code not in T.LANGUAGE_NAMES:
         await callback.answer()
         return
@@ -167,8 +212,7 @@ async def cb_language(callback: CallbackQuery, state: FSMContext):
         step = step_for(row) if row else "LANGUAGE"
         if step == "MENU":
             await state.clear()
-            await target.answer(
-                {"ru": "Язык изменён на Русский.", "en": "Language changed to English.", "uk": "Мову змінено на українську."}[code])
+            await target.answer(T.tr(LANGUAGE_CHANGED, code))
             await target.answer(T.menu_text(code), reply_markup=main_menu_kb(code))
         else:
             # A stale language button tapped mid-registration must not paint a
@@ -178,7 +222,13 @@ async def cb_language(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-_ONBOARDING_LABELS = T.all_labels(T.BEGIN) | T.all_labels(T.MALE) | T.all_labels(T.FEMALE) | T.all_labels(T.ACCEPT) | T.all_labels(T.RULES)
+_ONBOARDING_LABELS = (
+    T.all_labels(T.BEGIN)
+    | T.all_labels(T.MALE)
+    | T.all_labels(T.FEMALE)
+    | T.all_labels(T.ACCEPT)
+    | T.all_labels(T.RULES)
+)
 
 
 @start_router.message(StateFilter(None), F.text.in_(_ONBOARDING_LABELS))
@@ -207,23 +257,39 @@ async def onboarding_input(message: Message, state: FSMContext, lang: str = "ru"
     rules_press = text in T.all_labels(T.RULES)
     if paging and result.code == "AGE":
         import config
-        page = min(max(0, page + (1 if text in T.all_labels(T.PAGE_NEXT) else -1)), (config.MAX_AGE-config.MIN_AGE)//config.AGE_PAGE_SIZE)
+
+        page = min(
+            max(0, page + (1 if text in T.all_labels(T.PAGE_NEXT) else -1)),
+            (config.MAX_AGE - config.MIN_AGE) // config.AGE_PAGE_SIZE,
+        )
     elif result.code == "AGE" and action == "invalid" and not rules_press:
         # The age step is the only one the user can type into: silently
         # re-showing the keyboard made the tap look dead.
         result = ServiceResult(False, "AGE", {"error": T.tr(AGE_INPUT_HINT, lang)})
+    elif (
+        result.code == "AGE"
+        and action == "age"
+        and (result.data or {}).get("error") == "age_range"
+    ):
+        # Цифры вне 18..99: сервис отдаёт маркер без текста, чтобы uk/en юзер
+        # не получал русский отказ — локализуем в хендлере вместе с языком.
+        result = ServiceResult(False, "AGE", {"error": T.tr(AGE_REJECTED, lang)})
     if rules_press:
         await message.answer(T.tr(RULES_TEXT, lang))
     await show_step(message, state, result, page, lang)
 
 
 @start_router.callback_query(F.data.in_({"rules", "rules:ok", "back:start", "menu"}))
-async def cb_start_navigation(callback: CallbackQuery, state: FSMContext, lang: str = "ru"):
+async def cb_start_navigation(
+    callback: CallbackQuery, state: FSMContext, lang: str = "ru"
+):
     target = callback_target(callback)
     if callback.data == "rules":
         await target.answer(T.tr(RULES_TEXT, lang))
     else:
         actor = callback.from_user
-        result = await OnboardingService().start(actor.id, actor.username, actor.first_name)
+        result = await OnboardingService().start(
+            actor.id, actor.username, actor.first_name
+        )
         await show_step(target, state, result, lang=lang)
     await callback.answer()
