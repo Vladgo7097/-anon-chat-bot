@@ -515,8 +515,16 @@ async def restore_searches():
                 continue
             # No live event to read a bot or a language from. search_loop
             # resolves the sender per user from the row, which is the only way
-            # to reach a search that was started on the other bot.
-            _tasks[user_id] = asyncio.create_task(search_loop(None, user_id))
+            # to reach a search that was started on the other bot; the same
+            # row supplies the language, so a uk-user's timeout post-restart
+            # does not arrive in Russian.
+            lang = "ru"
+            from repositories.users import UserRepository
+
+            row = await UserRepository().get(user_id)
+            if row is not None:
+                lang = getattr(row, "language", None) or "ru"
+            _tasks[user_id] = asyncio.create_task(search_loop(None, user_id, lang=lang))
 
 
 async def shutdown_searches():

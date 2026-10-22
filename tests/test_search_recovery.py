@@ -29,11 +29,15 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         # notify_waiting_users() reads this set every time a search begins --
         # empty by default so it's a no-op unless a test opts in.
         self.redis.smembers.return_value = set()
+        # restore_searches() resolves the language from the user row; tests
+        # keep Redis/DB out — row lookup is mocked here, None means "ru".
+        self.users_repo = SimpleNamespace(get=AsyncMock(return_value=None))
         for target, value in (
             ("handlers.search.MatchingService", lambda: self.service),
             ("handlers.search.get_redis", AsyncMock(return_value=self.redis)),
             ("handlers.search.get_online_count", AsyncMock(return_value=0)),
             ("services.settings.bot_value", AsyncMock(return_value=60)),
+            ("repositories.users.UserRepository", lambda: self.users_repo),
             # Онлайн-счётчик в карточке поиска видит только владелец; по
             # умолчанию тесты ходят как обычные пользователи (OWNER_ID=0).
             ("config.OWNER_ID", 0),
@@ -211,8 +215,21 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(list(search._tasks), [1])
             # No bot is handed in: the loop resolves the sender from the row,
             # which is the only way to reach a search started on the other bot.
-            loop.assert_called_once_with(None, 1)
+            loop.assert_called_once_with(None, 1, lang="ru")
             self.service.cancel.assert_awaited_once_with(2)
+
+    async def test_restart_passes_the_users_language_to_the_restored_loop(self):
+        row = SimpleNamespace(language="uk")
+        self.users_repo.get = AsyncMock(return_value=row)
+
+        async def entries(*args):
+            yield "5", 1
+
+        self.redis.zscan_iter = entries
+        self.redis.exists.side_effect = lambda key: key == "search:user:5"
+        with patch.object(search, "search_loop", side_effect=self.waiting_loop) as loop:
+            await search.restore_searches()
+            loop.assert_called_once_with(None, 5, lang="uk")
 
     async def test_restart_keeps_original_timeout(self):
         self.redis.get.return_value = str(time.time() - 120)
