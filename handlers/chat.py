@@ -197,24 +197,6 @@ async def cb_allow_contact(callback: CallbackQuery, lang: str = "ru"):
             pass  # карточка старше 48 часов — тост уже подтверждение дал
 
 
-async def _partner_left_notice(bot, chat, user_id):
-    """Партнёр узнаёт о конце диалога сразу, а не по тишине тогда, когда его
-    следующее сообщение упрётся в «не в чате». В кросс-бот паре доставляет
-    бот партнёра, не бот отправителя."""
-    partner = chat.user2_id if chat.user1_id == user_id else chat.user1_id
-    if not partner:
-        return
-    from utils.db import user_lang
-
-    lang = await user_lang(partner)
-    text = T.tr(T.REPORT_TEXT, lang)["partner_left"]
-    try:
-        target_bot = await bots.bot_for(partner, bot)
-        await target_bot.send_message(partner, text, reply_markup=main_menu_kb(lang))
-    except (TelegramForbiddenError, TelegramBadRequest):
-        pass
-
-
 async def finish(message, user_id, reason="stop", lang="ru"):
     result = await ChatService().end_chat(user_id, reason=reason)
     if not result.ok:
@@ -222,7 +204,6 @@ async def finish(message, user_id, reason="stop", lang="ru"):
         return False
     chat = result.data["chat"]
     await message.answer(T.tr(CHAT_ENDED, lang), reply_markup=main_menu_kb(lang))
-    await _partner_left_notice(message.bot, chat, user_id)
     if reason in {"stop", "next"} and config.RECONNECT_WINDOW_MINUTES > 0:
         from keyboards.community import after_chat_kb
 
