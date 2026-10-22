@@ -5,21 +5,36 @@ from handlers import rating_router
 from keyboards import texts as T
 from repositories.chats import ChatRepository
 
-THANKS = {"ru": "Спасибо за оценку!", "en": "Thanks for the rating!", "uk": "Дякуємо за оцінку!"}
-RATE_UNAVAILABLE = {"ru": "Оценка уже учтена или диалог недоступен.", "en": "Already rated, or the chat is no longer available.",
-                     "uk": "Оцінку вже враховано або діалог недоступний."}
-THANKS_DONE = {"ru": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Спасибо за оценку!",
-               "en": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Thanks for the rating!",
-               "uk": "<tg-emoji emoji-id=\"5280880410346152584\">✅</tg-emoji> Дякуємо за оцінку!"}
-INVITE_PROMPT = {
-    "ru": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Понравилось общение? Пригласи друга — после его первого диалога ты получишь час Premium, а он — скидку.",
-    "en": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Enjoyed the chat? Invite a friend — after their first chat you'll get an hour of Premium and they'll get a discount.",
-    "uk": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Сподобалось спілкування? Запроси друга — після його першого діалогу ти отримаєш годину Premium, а він — знижку.",
+THANKS = {
+    "ru": "Спасибо за оценку!",
+    "en": "Thanks for the rating!",
+    "uk": "Дякуємо за оцінку!",
 }
-INVITE_BUTTON = {"ru": "Поделиться ссылкой", "en": "Share the link", "uk": "Поділитись посиланням"}
-OLD_RATING = {"ru": "Эта кнопка устарела. Оценка доступна у новых диалогов.",
-              "en": "This button is outdated. Ratings are available on new chats.",
-              "uk": "Ця кнопка застаріла. Оцінка доступна у нових діалогах."}
+RATE_UNAVAILABLE = {
+    "ru": "Оценка уже учтена или диалог недоступен.",
+    "en": "Already rated, or the chat is no longer available.",
+    "uk": "Оцінку вже враховано або діалог недоступний.",
+}
+THANKS_DONE = {
+    "ru": '<tg-emoji emoji-id="5280880410346152584">✅</tg-emoji> Спасибо за оценку!',
+    "en": '<tg-emoji emoji-id="5280880410346152584">✅</tg-emoji> Thanks for the rating!',
+    "uk": '<tg-emoji emoji-id="5280880410346152584">✅</tg-emoji> Дякуємо за оцінку!',
+}
+INVITE_PROMPT = {
+    "ru": '<tg-emoji emoji-id="5348232622898167572">❤️</tg-emoji> Понравилось общение? Пригласи друга — после его первого диалога ты получишь час Premium, а он — скидку.',
+    "en": "<tg-emoji emoji-id=\"5348232622898167572\">❤️</tg-emoji> Enjoyed the chat? Invite a friend — after their first chat you'll get an hour of Premium and they'll get a discount.",
+    "uk": '<tg-emoji emoji-id="5348232622898167572">❤️</tg-emoji> Сподобалось спілкування? Запроси друга — після його першого діалогу ти отримаєш годину Premium, а він — знижку.',
+}
+INVITE_BUTTON = {
+    "ru": "Поделиться ссылкой",
+    "en": "Share the link",
+    "uk": "Поділитись посиланням",
+}
+OLD_RATING = {
+    "ru": "Эта кнопка устарела. Оценка доступна у новых диалогов.",
+    "en": "This button is outdated. Ratings are available on new chats.",
+    "uk": "Ця кнопка застаріла. Оцінка доступна у нових діалогах.",
+}
 
 
 @rating_router.callback_query(F.data.startswith("v1:rate:"))
@@ -37,16 +52,27 @@ async def cb_rate(callback: CallbackQuery, lang: str = "ru"):
         # Riding the emotional high of a chat the user just rated positively
         # -- the natural moment to ask them to bring a friend, not buried in
         # a menu they may never open.
-        if parts[3] == "1":
+        if parts[3] == "1" and callback.message:
             from urllib.parse import quote
             from repositories.users import UserRepository
+
             user = await UserRepository().get(callback.from_user.id)
             if user and user.referral_code:
                 bot = await callback.bot.get_me()
                 link = f"https://t.me/{bot.username}?start=ref_{user.referral_code}"
-                await callback.message.answer(T.tr(INVITE_PROMPT, lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text=T.tr(INVITE_BUTTON, lang), url=f"https://t.me/share/url?url={quote(link, safe='')}")
-                ]]))
+                await callback.message.answer(
+                    T.tr(INVITE_PROMPT, lang),
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text=T.tr(INVITE_BUTTON, lang),
+                                    url=f"https://t.me/share/url?url={quote(link, safe='')}",
+                                )
+                            ]
+                        ]
+                    ),
+                )
 
 
 @rating_router.callback_query(F.data.startswith("rate:"))
