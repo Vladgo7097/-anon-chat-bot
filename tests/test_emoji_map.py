@@ -192,6 +192,16 @@ class AdminKeyboardShapeTests(unittest.TestCase):
         self.assertTrue(slot_from_payload(slot_payload(longest, 7)) is not None)
         self.assertIsNone(slot_from_payload("пустой-вне-каталога"))
 
+    def test_callbacks_fit_telegram_budget(self):
+        from services.emoji_map import slot_keys, slot_payload
+
+        sample_id = "0" * 19  # длина реального custom-emoji id
+        for key in slot_keys():
+            slot_cb = f"admin:slot:{slot_payload(key, 64 - 11 - 2)}"
+            set_cb = f"admin:iconset:{slot_payload(key, 64 - 14 - 20 - 2)}:{sample_id}"
+            self.assertLessEqual(len(slot_cb.encode("utf-8")), 64)
+            self.assertLessEqual(len(set_cb.encode("utf-8")), 64)
+
 
 if __name__ == "__main__":
     unittest.main()
