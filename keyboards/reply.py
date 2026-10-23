@@ -28,13 +28,14 @@ def keyboard(rows, lang):
 
 def main_menu_kb(lang="ru"):
     # IDEA стоит на месте INVITE: рефералка уходит в карточку наград,
-    # меню не держит кнопку без живого CTA (см. menu.py).
+    # меню не держит кнопку без живого CTA (см. menu.py). CHAT убран по
+    # dj-скому слову: наш чат живёт по ссылке /handler'у, а не в меню рядышком.
     return keyboard(
         [
             [T.SEARCH, T.PROFILE],
             [T.SETTINGS, T.PREMIUM],
             [T.STATS, T.HELP],
-            [T.CHAT, T.IDEA],
+            [T.IDEA],
         ],
         lang,
     )

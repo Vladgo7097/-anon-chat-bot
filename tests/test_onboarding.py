@@ -127,16 +127,12 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(menu.is_persistent)
         self.assertTrue(all(b.style == "primary" for row in menu.keyboard for b in row))
         self.assertTrue(all(b.text for row in menu.keyboard for b in row))
-        # The community-chat button must exist exactly once. Bot API
-        # KeyboardButton has no url field -- the link lives in the handler's
-        # inline answer (tests/test_chat_link.py proves that path end to end).
+        # The community-chat button left the menu (removed on request):
+        # the chat itself lives behind the handler, not as a menu row.
         chat_buttons = [
             b for row in menu.keyboard for b in row if b.text in T.all_labels(T.CHAT)
         ]
-        self.assertEqual(len(chat_buttons), 1)
-        self.assertNotEqual(
-            getattr(chat_buttons[0], "url", None), config.COMMUNITY_CHAT_URL
-        )
+        self.assertEqual(len(chat_buttons), 0)
         # The referral button left the main menu (the schedule rewards card
         # carries the invitation now); the idea button took its slot.
         invite_buttons = [

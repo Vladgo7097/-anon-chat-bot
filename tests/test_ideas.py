@@ -41,7 +41,7 @@ class MenuCompositionTests(unittest.TestCase):
                 [T.SEARCH, T.PROFILE],
                 [T.SETTINGS, T.PREMIUM],
                 [T.STATS, T.HELP],
-                [T.CHAT, T.IDEA],
+                [T.IDEA],
             ],
         )
 

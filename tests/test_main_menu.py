@@ -25,7 +25,6 @@ MENU_BUTTONS = (
     T.PREMIUM,
     T.STATS,
     T.HELP,
-    T.CHAT,
     T.IDEA,
 )
 LANGS = ("ru", "en", "uk")
@@ -82,7 +81,7 @@ class MenuKeyboardTests(unittest.TestCase):
                 [T.SEARCH, T.PROFILE],
                 [T.SETTINGS, T.PREMIUM],
                 [T.STATS, T.HELP],
-                [T.CHAT, T.IDEA],
+                [T.IDEA],
             ],
         )
 
@@ -97,8 +96,8 @@ class MenuKeyboardTests(unittest.TestCase):
     def test_every_button_is_a_label_the_router_can_recognize(self):
         for lang in LANGS:
             labels = [b.text for row in main_menu_kb(lang).keyboard for b in row]
-            self.assertEqual(len(labels), 8)
-            self.assertEqual(len(set(labels)), 8)
+            self.assertEqual(len(labels), 7)
+            self.assertEqual(len(set(labels)), 7)
             for label in labels:
                 with self.subTest(lang=lang, label=label):
                     self.assertIn(label, T.SYSTEM_TEXTS)
@@ -209,7 +208,7 @@ class MenuDispatchTests(unittest.IsolatedAsyncioTestCase):
         # Help, the community-chat row and the invite row have no dependency to
         # swap -- the handler is the screen -- so those are proven by the reply
         # they sent instead of by a spy.
-        standalone = {T.HELP, T.CHAT, T.IDEA}
+        standalone = {T.HELP, T.IDEA}
         for key, screen in screens.items():
             if key in standalone:
                 continue
