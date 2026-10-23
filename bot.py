@@ -69,7 +69,12 @@ async def on_startup():
     await ChatService().reconcile()
     from services.emoji_settings import load_cache
 
-    await load_cache()
+    try:
+        await load_cache()
+    except Exception:
+        # Бот обязан подняться даже без переопределений: слоты откатываются
+        # к дефолтам из кода, повторная попытка - на следующем старте.
+        logger.exception("emoji overrides cache not loaded - using defaults")
     logger.info("Database tables created")
     await notify_owner_on_startup()
 

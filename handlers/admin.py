@@ -2393,10 +2393,6 @@ def _slot_status_line(key: str) -> str:
     return f"• <b>{escape(mark)}</b> — переопределена: <code>{escape(override)}</code>"
 
 
-def slots_by_id_defaults() -> dict[str, str]:
-    return {str(k): v for k, v in T.EMOJI_IDS.items()}
-
-
 async def _icon_card(answer_into: Message, emoji_id: str) -> None:
     """Карточка иконки: живой рендер, места в коде, назначение на слот."""
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -2405,6 +2401,7 @@ async def _icon_card(answer_into: Message, emoji_id: str) -> None:
         group_by_id,
         repo_root,
         scan_emoji_refs,
+        slots_for_id,
     )
 
     refs = scan_emoji_refs(repo_root())
@@ -2419,7 +2416,9 @@ async def _icon_card(answer_into: Message, emoji_id: str) -> None:
         )
         return
     text = f"<b>Иконка</b> {tag}\n<code>{emoji_id}</code>" + (
-        f" — набор: {chars.get(emoji_id, (None, '—'))[1]}" if ok_fetch else ""
+        f" — набор: {escape(chars.get(emoji_id, (None, '—'))[1] or '—')}"
+        if ok_fetch
+        else ""
     )
     if grouped:
         id_refs = grouped[0][1]
@@ -2432,9 +2431,11 @@ async def _icon_card(answer_into: Message, emoji_id: str) -> None:
         )
     else:
         text += "\nв коде: не используется (новая)."
-    slots = [key for key, eid in slots_by_id_defaults().items() if eid == emoji_id]
+    slots = slots_for_id(emoji_id)
     if slots:
-        text += "\nслоты каталога: " + ", ".join(T.label(k, "ru") for k in slots)
+        text += "\nслоты: " + ", ".join(
+            f"{T.label(k, 'ru')} ({origin})" for k, origin in slots
+        )
     keyboard = [
         [
             InlineKeyboardButton(
@@ -2602,16 +2603,17 @@ async def cb_slot_reset(callback: CallbackQuery) -> None:
 
 def get_slot_from_index(payload: str) -> str | None:
     """slotpick/slotclear/slotreset несут индекс: это внутренние короткие пути."""
-    from services.emoji_map import _slot_keys
+    from services.emoji_map import slot_keys
 
     if not payload.isdigit():
         return None
-    keys = _slot_keys()
+    keys = slot_keys()
     index = int(payload)
     return keys[index] if 0 <= index < len(keys) else None
 
 
 async def _slots_refresh(callback: CallbackQuery) -> None:
+    from aiogram.exceptions import TelegramBadRequest
     from services.emoji_map import fetch_characters, slots_overview, slots_kb
 
     if callback.message is None:
@@ -2619,11 +2621,17 @@ async def _slots_refresh(callback: CallbackQuery) -> None:
     overview = slots_overview()
     ids = sorted({eid for _key, eid in overview if eid})
     chars, _ok = await fetch_characters(callback.bot, ids)
-    await callback.message.answer(
-        "⚙️ <b>Слоты меню</b> — актуально:\n"
-        + "\n".join(_slot_status_line(key) for key, _eid in overview),
-        reply_markup=slots_kb(chars),
+    text = "⚙️ <b>Слоты меню</b> — актуально:\n" + "\n".join(
+        _slot_status_line(key) for key, _eid in overview
     )
+    keyboard = slots_kb(chars)
+    try:
+        # Обновление инлайнит тот же экран — без пачки дубликатов в чате.
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except TelegramBadRequest as err:
+        if "message is not modified" in str(err).lower():
+            return
+        await callback.message.answer(text, reply_markup=keyboard)
 
 
 class AdminEmojiPick(StatesGroup):

@@ -3,15 +3,14 @@
 Слот -- один ключ главного каталога клавиатур (keyboards/texts.EMOJI_IDS).
 Хранение: bot_settings["emoji_overrides"] = {"value": {слот: id или ""}}.
 Пустая строка означает «кнопка намеренно без иконки»; отсутствие ключа --
-оляпия дефолта из кода. Кэш синхронный: kb_button() собирается на каждый
-рендер синхронно, поэтому id берётся из словаря, который перезаряжается на
-старте бота и после каждой записи.
+дефолт из кода. Кэш синхронный: kb_button() собирается на каждый рендер
+синхронно, поэтому id берётся из словаря, который перезаряжается на старте
+бота и после каждой записи.
 """
 
 import logging
 
 from models.base import async_session
-from services.settings import bot_value
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +22,8 @@ _cache: dict[str, str] = {}
 
 
 async def load_cache() -> None:
+    from services.settings import bot_value
+
     global _cache
     _cache = dict(await bot_value(SETTING_KEY, {}) or {})
 

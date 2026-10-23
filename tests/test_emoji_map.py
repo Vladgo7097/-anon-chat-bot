@@ -167,17 +167,28 @@ class AdminKeyboardShapeTests(unittest.TestCase):
         self.assertTrue(all(b.icon_custom_emoji_id == "777" for b in flat))
         self.assertTrue(all(b.callback_data.startswith("admin:iconset:") for b in flat))
 
+    def test_slots_for_id_marks_default_and_override(self):
+        from services import emoji_settings
+        from services.emoji_map import slots_for_id
+
+        emoji_settings._cache = {}
+        slots = slots_for_id(IDEA_BUTTON_ID)
+        self.assertIn((T.IDEA, " defолт"), slots)
+        emoji_settings._cache = {T.IDEA: IDEA_BUTTON_ID}
+        slots = slots_for_id(IDEA_BUTTON_ID)
+        self.assertIn((T.IDEA, "переопределение"), slots)
+
     def test_slot_payload_roundtrip_label_and_index(self):
         from services.emoji_map import (
-            _slot_keys,
+            slot_keys,
             slot_from_payload,
             slot_payload,
         )
 
-        for key in _slot_keys():
+        for key in slot_keys():
             self.assertEqual(slot_from_payload(slot_payload(key, 64 - 11 - 2)), key)
         # узкий бюджет выталкивает длинный лейбл в индексный фолбэк по каталогу
-        longest = max(_slot_keys(), key=lambda k: len(k.encode("utf-8")))
+        longest = max(slot_keys(), key=lambda k: len(k.encode("utf-8")))
         self.assertTrue(slot_from_payload(slot_payload(longest, 7)) is not None)
         self.assertIsNone(slot_from_payload("пустой-вне-каталога"))
 

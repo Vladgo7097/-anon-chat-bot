@@ -162,7 +162,7 @@ def slots_overview() -> list[tuple[str, str | None]]:
     """Слоты каталога reply-клавиатур: (ключ, действующая иконка)."""
     from services import emoji_settings
 
-    return [(key, emoji_settings.effective_id(key)) for key in _slot_keys()]
+    return [(key, emoji_settings.effective_id(key)) for key in slot_keys()]
 
 
 def slot_payload(key: str, budget: int) -> str:
@@ -174,23 +174,38 @@ def slot_payload(key: str, budget: int) -> str:
     """
     if len(key.encode("utf-8")) <= budget:
         return key
-    keys = _slot_keys()
+    keys = slot_keys()
     return str(keys.index(key)) if key in keys else ""
 
 
 def slot_from_payload(payload: str):
     """Обратное к slot_payload: цифра - это индекс каталога, строка - лейбл."""
     if payload.isdigit():
-        keys = _slot_keys()
+        keys = slot_keys()
         index = int(payload)
         return keys[index] if 0 <= index < len(keys) else None
-    return payload if payload in _slot_keys() else None
+    return payload if payload in slot_keys() else None
 
 
-def _slot_keys() -> list[str]:
+def slot_keys() -> list[str]:
+    """Каталог слотов reply-клавиатур: ключи-лейблы из texts.py."""
     from keyboards import texts as T
 
     return list(T.EMOJI_IDS.keys())
+
+
+def slots_for_id(emoji_id: str) -> list[tuple[str, str]]:
+    """Слоты, где эта иконка реально работает: дефолт или переопределение."""
+    from services import emoji_settings
+
+    found = []
+    for key in slot_keys():
+        eid = emoji_settings.effective_id(key)
+        if eid != emoji_id:
+            continue
+        origin = "переопределение" if key in emoji_settings.overrides() else " defолт"
+        found.append((key, origin))
+    return found
 
 
 def assign_slots_kb(emoji_id: str):
@@ -219,17 +234,6 @@ def _slot_label(key) -> str:
     from keyboards import texts as T
 
     return T.label(key, "ru")
-
-
-def _slot_index(key) -> int:
-    return _slot_keys().index(key)
-
-
-def _slot_by_index(index: int):
-    keys = _slot_keys()
-    if 0 <= index < len(keys):
-        return keys[index]
-    return None
 
 
 def slots_kb(chars, per_row: int = 3):
