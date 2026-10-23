@@ -62,6 +62,7 @@ from services.admin import (
 from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
+from services.emoji_map import send_emoji_map
 
 
 logger = logging.getLogger(__name__)
@@ -2364,3 +2365,18 @@ async def idea_duplicate_text(message: Message, state: FSMContext):
         "🔁 Отмечено дубликатом, автор уведомлён. Карточка:",
         reply_markup=_idea_card_kb(idea),
     )
+
+
+# ── Карта эмодзи (/icons) ───────────────────────────────────────────────
+
+
+@admin_router.message(Command("icons"))
+async def cmd_emoji_map(message: Message) -> None:
+    """Владелец видит каждую иконку: id, символ, места в коде, живой образец."""
+    backmap = {str(v): k for k, v in T.EMOJI_IDS.items()}
+    await send_emoji_map(message, backmap)
+
+
+@admin_router.callback_query(F.data == "admin:emoji:demo")
+async def cb_emoji_demo(callback: CallbackQuery) -> None:
+    await callback.answer("Демо-кнопка — просто образец иконки.")
