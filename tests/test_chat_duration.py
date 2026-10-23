@@ -65,6 +65,7 @@ class DatabaseCase(unittest.IsolatedAsyncioTestCase):
             "services.community",
             "services.moderation",
             "services.ideas",
+            "services.emoji_settings",
         ):
             p = patch(module + ".async_session", self.factory)
             p.start()

@@ -67,6 +67,9 @@ async def on_startup():
     from services.chats import ChatService
 
     await ChatService().reconcile()
+    from services.emoji_settings import load_cache
+
+    await load_cache()
     logger.info("Database tables created")
     await notify_owner_on_startup()
 

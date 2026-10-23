@@ -1,6 +1,7 @@
 import logging
 import re
 from html import escape
+from pathlib import Path
 import config
 from aiogram import F, BaseMiddleware
 from aiogram.filters import Command, StateFilter
@@ -11,6 +12,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyKeyboardMarkup,
     BufferedInputFile,
 )
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -63,6 +65,7 @@ from services.ads import AdCampaignService, CHANNEL_USERNAME_RE
 from services.payments import PaymentService
 from services.chat_manager import get_online_count, get_partner
 from services.emoji_map import send_emoji_map
+from keyboards.reply import kb_button
 
 
 logger = logging.getLogger(__name__)
@@ -2367,7 +2370,7 @@ async def idea_duplicate_text(message: Message, state: FSMContext):
     )
 
 
-# ── Карта эмодзи (/icons) ───────────────────────────────────────────────
+# ── Карта эмодзи (/icons): осмотр + назначение иконок на слоты ──────────
 
 
 @admin_router.message(Command("icons"))
@@ -2377,6 +2380,294 @@ async def cmd_emoji_map(message: Message) -> None:
     await send_emoji_map(message, backmap)
 
 
-@admin_router.callback_query(F.data == "admin:emoji:demo")
-async def cb_emoji_demo(callback: CallbackQuery) -> None:
-    await callback.answer("Демо-кнопка — просто образец иконки.")
+def _slot_key_by_index(index: int) -> str | None:
+    keys = list(T.EMOJI_IDS.keys())
+    return keys[index] if 0 <= index < len(keys) else None
+
+
+def _slot_status_line(key: str) -> str:
+    from services import emoji_settings
+
+    default = T.EMOJI_IDS.get(key) or "—"
+    override = emoji_settings._cache.get(key)
+    mark = T.label(key, "ru")
+    if override is None:
+        return f"• <b>{escape(mark)}</b> — дефолт из кода: <code>{default}</code>"
+    if not override:
+        return f"• <b>{escape(mark)}</b> — иконка снята (была <code>{default}</code>)"
+    return f"• <b>{escape(mark)}</b> — переопределена: <code>{escape(override)}</code>"
+
+
+async def _icon_card(message_or_callback, emoji_id: str, *, fresh: bool = True):
+    """Карточка иконки: живой рендер, места в коде, назначение на слот."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from services.emoji_map import (
+        fetch_characters,
+        group_by_id,
+        scan_emoji_refs,
+    )
+
+    refs = scan_emoji_refs(repo_root_for_scan())
+    grouped = group_by_id([r for r in refs if r.emoji_id == emoji_id])
+    chars, ok_fetch = await fetch_characters(message_or_callback.bot, [emoji_id])
+    char = chars.get(emoji_id, ("?", None))[0] or "?"
+    tag = f'<tg-emoji emoji-id="{emoji_id}">{escape(char)}</tg-emoji>'
+    if not grouped and not ok_fetch:
+        await message_or_callback.answer(
+            f"{tag} <code>{emoji_id}</code> — Telegram не подтвердил id: "
+            "не сохраню, слот останется прежним."
+        )
+        return
+    text = f"<b>Иконка</b> {tag}\n<code>{emoji_id}</code>" + (
+        f" — набор: {chars.get(emoji_id, (None, '—'))[1]}" if ok_fetch else ""
+    )
+    if grouped:
+        refs = grouped[0][1]
+        buttons = sum(1 for r in refs if r.kind == "button")
+        texts = len(refs) - buttons
+        where = next(iter(refs))
+        text += (
+            f"\nв коде: кнопок {buttons} · текстов {texts} · {where.file}:L{where.line}"
+        )
+    else:
+        text += "\nв коде: не используется (новая)."
+    slots = [key for key, eid in slots_by_id_defaults().items() if eid == emoji_id]
+    if slots:
+        text += "\nслоты каталога: " + ", ".join(T.label(k, "ru") for k in slots)
+    ask = [
+        [
+            InlineKeyboardButton(
+                text="🎯 Назначить слоту",
+                callback_data=f"admin:assign:{emoji_id}",
+            )
+        ],
+        [InlineKeyboardButton(text="⬅ К карте", callback_data="admin:icons:back")],
+    ]
+    await message_or_callback.answer(text, reply_markup=InlineKeyboardMarkup(ask))
+
+
+def repo_root_for_scan() -> Path:
+    from services.emoji_map import repo_root
+
+    return repo_root()
+
+
+def slots_by_id_defaults() -> dict[str, str]:
+    return {str(k): v for k, v in T.EMOJI_IDS.items()}
+
+
+@admin_router.callback_query(F.data.startswith("admin:icon:"))
+async def cb_icon_card(callback: CallbackQuery) -> None:
+    emoji_id = callback.data.removeprefix("admin:icon:")
+    if not emoji_id.isdigit():
+        await callback.answer("Непонятный id.")
+        return
+    await callback.answer()
+    await _icon_card(callback.message, emoji_id)
+
+
+@admin_router.callback_query(F.data.startswith("admin:assign:"))
+async def cb_assign_pick_slot(callback: CallbackQuery) -> None:
+    """Список слотов, на которые можно назначить эту иконку."""
+    from services.emoji_map import assign_slots_kb
+
+    emoji_id = callback.data.removeprefix("admin:assign:")
+    await callback.message.answer(
+        f"Куда назначить <code>{emoji_id}</code>? Нажми на слот:",
+        reply_markup=assign_slots_kb(emoji_id, {}),
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("admin:set:"))
+async def cb_assign_set(callback: CallbackQuery) -> None:
+    from services import emoji_settings
+
+    _, _, idx, emoji_id = callback.data.split(":", 3)
+    index = int(idx)
+    slot = _slot_key_by_index(index)
+    if not slot or not emoji_id.isdigit():
+        await callback.answer("Слот не найден.")
+        return
+    await emoji_settings.set_override(slot, emoji_id, callback.from_user.id)
+    await callback.answer("Назначено.")
+    await callback.message.answer(
+        f"Слот «{T.label(slot, 'ru')}» теперь с иконкой <code>{emoji_id}</code>. "
+        "Превью кнопки:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[kb_button(slot, "ru")]], resize_keyboard=True
+        ),
+    )
+
+
+@admin_router.callback_query(F.data == "admin:slots")
+async def cb_slots(callback: CallbackQuery) -> None:
+    from services.emoji_map import fetch_characters, slots_overview, slots_kb
+
+    await callback.answer()
+    overview = slots_overview()
+    ids = sorted({eid for _key, eid in overview if eid})
+    chars, _ok = await fetch_characters(callback.bot, ids)
+    lines = [
+        "⚙️ <b>Слоты меню</b> — что стоит и что переопределено:\n"
+        + "\n".join(_slot_status_line(key) for key, _eid in overview)
+    ]
+    await callback.message.answer(lines[0], reply_markup=slots_kb(chars))
+
+
+@admin_router.callback_query(F.data.startswith("admin:slot:"))
+async def cb_slot_card(callback: CallbackQuery) -> None:
+    """Карточка слота: статус, ввод новой иконки, снятие/сброс."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from services import emoji_settings
+
+    index = int(callback.data.removeprefix("admin:slot:"))
+    slot = _slot_key_by_index(index)
+    if not slot:
+        await callback.answer("Слот не найден.")
+        return
+    effective = emoji_settings.effective_id(slot)
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="✏️ Задать иконку (шлёшь эмодзи или id)",
+                callback_data=f"admin:slotpick:{index}",
+            )
+        ]
+    ]
+    if effective:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="🚫 Убрать иконку",
+                    callback_data=f"admin:slotclear:{index}",
+                )
+            ]
+        )
+    if slot in emoji_settings._cache:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="↩️ Вернуть дефолт из кода",
+                    callback_data=f"admin:slotreset:{index}",
+                )
+            ]
+        )
+    buttons.append([InlineKeyboardButton(text="⬅ Слоты", callback_data="admin:slots")])
+    await callback.message.answer(
+        _slot_status_line(slot),
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("admin:slotclear:"))
+async def cb_slot_clear(callback: CallbackQuery) -> None:
+    from services import emoji_settings
+
+    slot = _slot_key_by_index(int(callback.data.removeprefix("admin:slotclear:")))
+    if not slot:
+        await callback.answer("Слот не найден.")
+        return
+    await emoji_settings.set_override(slot, "", callback.from_user.id)
+    await callback.answer("Иконка снята.")
+    await cb_slots_refresh(callback)
+
+
+@admin_router.callback_query(F.data.startswith("admin:slotreset:"))
+async def cb_slot_reset(callback: CallbackQuery) -> None:
+    from services import emoji_settings
+
+    slot = _slot_key_by_index(int(callback.data.removeprefix("admin:slotreset:")))
+    if not slot:
+        await callback.answer("Слот не найден.")
+        return
+    await emoji_settings.clear_override(slot)
+    await callback.answer("Дефолт возвращён.")
+    await cb_slots_refresh(callback)
+
+
+async def cb_slots_refresh(callback: CallbackQuery) -> None:
+    from services.emoji_map import fetch_characters, slots_overview, slots_kb
+
+    overview = slots_overview()
+    ids = sorted({eid for _key, eid in overview if eid})
+    chars, _ok = await fetch_characters(callback.bot, ids)
+    await callback.message.answer(
+        "⚙️ <b>Слоты меню</b> — актуально:\n"
+        + "\n".join(_slot_status_line(key) for key, _eid in overview),
+        reply_markup=slots_kb(chars),
+    )
+
+
+class AdminEmojiPick(StatesGroup):
+    slot = State()
+
+
+@admin_router.callback_query(F.data.startswith("admin:slotpick:"))
+async def cb_slot_pick_start(callback: CallbackQuery, state: FSMContext) -> None:
+    slot = _slot_key_by_index(int(callback.data.removeprefix("admin:slotpick:")))
+    if not slot:
+        await callback.answer("Слот не найден.")
+        return
+    await callback.answer()
+    await state.set_state(AdminEmojiPick.slot)
+    await state.update_data(
+        slot=slot, admin_id=callback.from_user.id, chat_id=callback.message.chat.id
+    )
+    await callback.message.answer(
+        f"Пришли сообщение с <b>кастомным эмодзи</b> с премиум-аккаунта "
+        f"(или просто числовой id) — встанет на слот «{T.label(slot, 'ru')}».",
+    )
+
+
+@admin_router.message(AdminEmojiPick.slot)
+async def cb_slot_pick_receive(message: Message, state: FSMContext) -> None:
+    from services import emoji_settings
+    from services.emoji_map import fetch_characters
+
+    data = await state.get_data()
+    if data.get("admin_id") != message.from_user.id:
+        return
+    slot: str = data["slot"]
+    index = list(T.EMOJI_IDS.keys()).index(slot)
+    emoji_id = ""
+    entities = list(message.entities or []) + list(message.caption_entities or [])
+    for entity in entities:
+        if entity.type == "custom_emoji":
+            emoji_id = entity.custom_emoji_id
+            break
+    if not emoji_id and message.text and message.text.strip().isdigit():
+        emoji_id = message.text.strip()
+    if not emoji_id:
+        await message.answer("Не вижу кастомного эмодзи. Попробуй снова или /cancel.")
+        return
+    chars, ok_fetch = await fetch_characters(message.bot, [emoji_id])
+    if not ok_fetch or emoji_id not in chars:
+        await message.answer(
+            f"Telegram не подтвердил <code>{emoji_id}</code> — слот оставил прежним."
+        )
+        await state.clear()
+        return
+    await emoji_settings.set_override(slot, emoji_id, message.from_user.id)
+    await state.clear()
+    char = chars.get(emoji_id, ("", None))[0]
+    await message.answer(
+        f"Готово: слот «{T.label(slot, 'ru')}» — "
+        f'<tg-emoji emoji-id="{emoji_id}">{escape(char)}</tg-emoji> '
+        f"<code>{emoji_id}</code>. Превью кнопки:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[kb_button(slot, "ru")]], resize_keyboard=True
+        ),
+    )
+
+
+@admin_router.message(Command("cancel"), StateFilter(AdminEmojiPick.slot))
+async def cb_slot_pick_cancel(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Слот оставлен как был.")
+
+
+@admin_router.callback_query(F.data == "admin:icons:back")
+async def cb_icons_back(callback: CallbackQuery) -> None:
+    await callback.answer("Перешли /icons заново — карта соберётся пофрешу.")

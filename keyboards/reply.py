@@ -1,5 +1,6 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from keyboards import texts as T
+from services import emoji_settings
 import config
 
 
@@ -12,7 +13,7 @@ def kb_button(key, lang):
         # NOTE: KeyboardButton has no url field in the Bot API -- Telegram
         # would drop it silently and the tap would just send the label as a
         # message. The community chat is a plain button handled in menu.py.
-        icon_custom_emoji_id=T.EMOJI_IDS.get(key),
+        icon_custom_emoji_id=emoji_settings.effective_id(key),
         style="danger" if key in {T.STOP, T.REPORT, T.CANCEL} else "primary",
     )
 

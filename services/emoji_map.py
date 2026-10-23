@@ -6,8 +6,8 @@
 всегда описывает тот же код, который реально запущен на проде.
 """
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 TAG_RE = re.compile(r'<tg-emoji emoji-id="(\d+)">(.*?)</tg-emoji>')
@@ -94,17 +94,8 @@ async def fetch_characters(bot, emoji_ids: list[str]):
     return chars, ok
 
 
-def _where(refs: list[EmojiRef], limit: int = 3) -> str:
-    spots = [f"{ref.file}:{ref.line}" for ref in refs[:limit]]
-    rest = len(refs) - limit
-    text = "\n".join(spots)
-    if rest > 0:
-        text += f" … и ещё {rest}"
-    return text
-
-
-def build_map_pages(grouped, backmap, chars, fetch_ok, per_page: int = 14) -> list[str]:
-    """Карта страницами: каждый id - строка с живым рендером и местами в коде."""
+def build_map_pages(grouped, backmap, chars, fetch_ok) -> list[str]:
+    """Компактная карта: одна строка на иконку, живой тег + число мест."""
     from html import escape
 
     total_spots = sum(len(refs) for _, refs in grouped)
@@ -117,31 +108,36 @@ def build_map_pages(grouped, backmap, chars, fetch_ok, per_page: int = 14) -> li
             else "\n(<i>символы из тегов, Telegram недоступен</i>)\n\n"
         )
     )
-    pages = [head]
-    for no, (emoji_id, refs) in enumerate(grouped, 1):
+    lines = []
+    for emoji_id, refs in grouped:
         char = chars.get(emoji_id, (None, None))[0]
         if char is None:
             char = next((r.char for r in refs if r.char), "•")
         tag = f'<tg-emoji emoji-id="{emoji_id}">{escape(char)}</tg-emoji>'
         key = backmap.get(emoji_id)
-        label = f" · ключ <code>{escape(str(key))}</code>" if key else ""
+        slot_note = f" · слот: {escape(str(key))}" if key else ""
         buttons = sum(1 for r in refs if r.kind == "button")
         texts = len(refs) - buttons
         alive = "✅" if fetch_ok and emoji_id in chars else ("⚠️" if fetch_ok else "·")
-        # Заголовок с живым тегом сам и есть образец: как выглядит у юзеров.
-        line = (
-            f"{alive} <b>#{no}</b> {tag} <code>{emoji_id}</code>{label}\n"
-            f"кнопок: {buttons} · текстов: {texts}\n"
-            f"<pre>{escape(_where(refs))}</pre>\n"
+        lines.append(
+            f"{alive} {tag} <code>{emoji_id}</code> · "
+            f"кнопок {buttons} · текстов {texts}{slot_note}"
         )
-        if len(pages[-1]) + len(line) > 3600:
+    # Держим один наряд в пределах Telegram: партия≈45 иконок - одно сообщение.
+    pages, buf = [head], head
+    for line in lines:
+        if len(buf) + len(line) + 1 > 3800:
             pages.append("")
-        pages[-1] += line
+        pages[-1] += line + "\n"
+        buf = pages[-1]
     return pages
 
 
 def demo_inline_kb(grouped, chars, per_row: int = 4):
-    """Все иконки настоящими inline-кнопками:_owner видит рендер, не код."""
+    """Все иконки настоящими inline-кнопками: владелец видит рендер, не код.
+
+    Нажатие ведёт на карточку иконки (admin:icon:{id}) - там назначение на слот.
+    """
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     rows, row = [], []
@@ -152,7 +148,7 @@ def demo_inline_kb(grouped, chars, per_row: int = 4):
             InlineKeyboardButton(
                 text=f"{no} {char}",
                 icon_custom_emoji_id=emoji_id,
-                callback_data="admin:emoji:demo",
+                callback_data=f"admin:icon:{emoji_id}",
             )
         )
         if len(row) == per_row:
@@ -163,21 +159,114 @@ def demo_inline_kb(grouped, chars, per_row: int = 4):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def slots_overview() -> list[tuple[str, str | None]]:
+    """Слоты каталога reply-клавиатур: (ключ, действующая иконка)."""
+    from services import emoji_settings
+
+    return [(key, emoji_settings.effective_id(key)) for key in list(_slot_keys())]
+
+
+def _slot_keys() -> list[str]:
+    from keyboards import texts as T
+
+    return list(T.EMOJI_IDS.keys())
+
+
+def assign_slots_kb(emoji_id: str, chars):
+    """Кнопки-слоты, на которые можно назначить иконку emoji_id."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows, row = [], []
+    for key, _current in slots_overview():
+        label = _slot_label(key)
+        row.append(
+            InlineKeyboardButton(
+                text=label,
+                icon_custom_emoji_id=emoji_id,
+                callback_data=f"admin:set:{_slot_index(key)}:{emoji_id}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _slot_label(key) -> str:
+    from keyboards import texts as T
+
+    return T.label(key, "ru")
+
+
+def _slot_index(key) -> int:
+    return _slot_keys().index(key)
+
+
+def _slot_by_index(index: int):
+    keys = _slot_keys()
+    if 0 <= index < len(keys):
+        return keys[index]
+    return None
+
+
+def slots_kb(chars, per_row: int = 3):
+    """Все слоты каталога: каждая кнопка несёт действующую иконку слота."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows, row = [], []
+    for key, current in slots_overview():
+        char = chars.get(current, (None, None))[0] if current else None
+        mark = " ✏" if key in emoji_settings_overrides() else ""
+        suffix = "" if current else " —"
+        row.append(
+            InlineKeyboardButton(
+                text=f"{char or '—'} {_slot_label(key)}{mark}{suffix}",
+                icon_custom_emoji_id=current or None,
+                callback_data=f"admin:slot:{_slot_index(key)}",
+            )
+        )
+        if len(row) == per_row:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def emoji_settings_overrides() -> dict[str, str]:
+    from services import emoji_settings
+
+    return dict(emoji_settings._cache)
+
+
 async def send_emoji_map(message, backmap):
-    """Карта: страницы текста, демонстрационный инлайн-скрин, живое меню, подсказка."""
+    """Карта: компактный список, демо-инлайн с карточками, слоты, подсказка."""
+    from aiogram.types import InlineKeyboardButton
+
     refs = scan_emoji_refs(repo_root())
     grouped = group_by_id(refs)
-    chars, fetch_ok = await fetch_characters(message.bot, [i for i, _ in grouped])
-    for page in build_map_pages(grouped, backmap, chars, fetch_ok):
+    chars, ok_fetch = await fetch_characters(message.bot, [i for i, _ in grouped])
+    for page in build_map_pages(grouped, backmap, chars, ok_fetch):
         await message.answer(page)
+    demo = demo_inline_kb(grouped, chars)
+    demo.inline_keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="⚙️ Слоты меню (назначение иконок)",
+                callback_data="admin:slots",
+            )
+        ]
+    )
     await message.answer(
-        "🔬 <b>Живой образец</b> — каждая кнопка несёт свою иконку:",
-        reply_markup=demo_inline_kb(grouped, chars),
+        "🔬 <b>Живой образец</b> — нажми иконку, чтобы осмотреть/назначить её:",
+        reply_markup=demo,
     )
     from keyboards.reply import main_menu_kb
 
     await message.answer(
-        "⌨️ <b>Reply-клавиатура меню</b> — отправляет настоящий persistent-каркас,\n"
-        "вернуться к рабочему меню — кнопка «Меню» или любая из восьми:",
+        "⌨️ <b>Reply-клавиатура меню</b> — текущий каркас с иконками слотов.\n"
+        "Вернуться к рабочему меню — кнопка «Меню» или любая из восьми.",
         reply_markup=main_menu_kb(),
     )
