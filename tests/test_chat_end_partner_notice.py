@@ -9,7 +9,10 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from sqlalchemy import select
+
 from test_chat_duration import DatabaseCase
+from models.operations import Notification
 from models.user import User
 from keyboards import texts as T
 
@@ -40,17 +43,37 @@ class PartnerLeftNoticeTests(DatabaseCase):
     async def test_stop_notifies_the_partner_by_default_in_russian(self):
         message = await self._finish_stop()
         args = message.bot.send_message.await_args
-        self.assertEqual(args.args[0], 2)
-        self.assertEqual(args.args[1], T.tr(T.REPORT_TEXT, "ru")["partner_left"])
-        self.assertIsNotNone(args.kwargs["reply_markup"])
+        # С 78cc249 инстант-пуша нет: партнёра уведомляет outbox, строка
+        # chat_after пишется на языке получателя в момент enqueue.
+        message = await self._finish_stop()
+        direct = [c.args[0] for c in message.bot.send_message.await_args_list]
+        self.assertNotIn(2, direct)
+        async with self.factory() as s:
+            row = await s.scalar(
+                select(Notification).where(
+                    Notification.type == "chat_after",
+                    Notification.user_id == 2,
+                )
+            )
+        self.assertIsNotNone(row)
+        self.assertEqual(row.text, T.tr(T.CHAT_AFTER, "ru")["text"])
 
     async def test_stop_notifies_the_partner_in_their_own_language(self):
         async with self.factory.begin() as s:
             user = await s.get(User, 2)
             user.language = "uk"
         message = await self._finish_stop()
-        args = message.bot.send_message.await_args
-        self.assertEqual(args.args[1], T.tr(T.REPORT_TEXT, "uk")["partner_left"])
+        direct = [c.args[0] for c in message.bot.send_message.await_args_list]
+        self.assertNotIn(2, direct)
+        async with self.factory() as s:
+            row = await s.scalar(
+                select(Notification).where(
+                    Notification.type == "chat_after",
+                    Notification.user_id == 2,
+                )
+            )
+        self.assertIsNotNone(row)
+        self.assertEqual(row.text, T.tr(T.CHAT_AFTER, "uk")["text"])
 
 
 if __name__ == "__main__":

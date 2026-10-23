@@ -35,11 +35,14 @@ async def start_totals(s, now=None):
 
     Считаются запросами, а не хранимыми глобальными счётчиками -- глобальный
     счётчик расходится с таблицей после любого ручного вмешательства и врёт
-    молча."""
+    молча. Запуск -- первое нажатие /start человека, повторные заходы
+    не считают: иначе «запусков» всегда больше, чем людей."""
     day_start, day_end = kyiv_day_bounds(now)
+    first = StartEvent.event_type == "first_start"
     return {
         "total_users": await s.scalar(select(func.count(User.id))) or 0,
-        "total_starts": await s.scalar(select(func.count(StartEvent.id))) or 0,
+        "total_starts": await s.scalar(select(func.count(StartEvent.id)).where(first))
+        or 0,
         "new_today": await s.scalar(
             select(func.count(User.id)).where(
                 User.created_at >= day_start, User.created_at < day_end
@@ -48,7 +51,9 @@ async def start_totals(s, now=None):
         or 0,
         "starts_today": await s.scalar(
             select(func.count(StartEvent.id)).where(
-                StartEvent.created_at >= day_start, StartEvent.created_at < day_end
+                first,
+                StartEvent.created_at >= day_start,
+                StartEvent.created_at < day_end,
             )
         )
         or 0,

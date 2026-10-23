@@ -263,6 +263,26 @@ class StartRegistrationTests(DatabaseCase):
         # Январь -- EET (+2): 22:00 UTC = полночь по Киеву. 6101 -- 14-е, 6102 -- 15-е.
         self.assertEqual(totals["new_today"], 1)
 
+    # «Запусков» стоят первые нажатия людей: повторный /start и чужой
+    # repeat_start цифру не двигают, иначе запусков больше, чем людей.
+    async def test_totals_count_first_presses_only(self):
+        async with self.factory.begin() as s:
+            s.add(
+                StartEvent(
+                    telegram_user_id=5303,
+                    bot_id=999,
+                    update_id=43,
+                    event_type="repeat_start",
+                )
+            )
+        await register_start(5301, BOT, 40)
+        await register_start(5301, BOT, 41)  # повторный заход того же человека
+        await register_start(5302, BOT, 42)
+        async with self.factory() as s:
+            totals = await start_totals(s)
+        self.assertEqual(totals["total_starts"], 2)
+        self.assertEqual(totals["starts_today"], 2)
+
     # 12. После рестарта события и задачи на месте, очередь работает.
     async def test_after_a_restart_events_and_tasks_remain(self):
         await register_start(5010, BOT, 22)
