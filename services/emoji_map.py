@@ -124,12 +124,11 @@ def build_map_pages(grouped, backmap, chars, fetch_ok) -> list[str]:
             f"кнопок {buttons} · текстов {texts}{slot_note}"
         )
     # Держим один наряд в пределах Telegram: партия≈45 иконок - одно сообщение.
-    pages, buf = [head], head
+    pages = [head]
     for line in lines:
-        if len(buf) + len(line) + 1 > 3800:
+        if len(pages[-1]) + len(line) + 1 > 3800:
             pages.append("")
         pages[-1] += line + "\n"
-        buf = pages[-1]
     return pages
 
 
@@ -163,7 +162,29 @@ def slots_overview() -> list[tuple[str, str | None]]:
     """Слоты каталога reply-клавиатур: (ключ, действующая иконка)."""
     from services import emoji_settings
 
-    return [(key, emoji_settings.effective_id(key)) for key in list(_slot_keys())]
+    return [(key, emoji_settings.effective_id(key)) for key in _slot_keys()]
+
+
+def slot_payload(key: str, budget: int) -> str:
+    """Идентификатор слота для callback_data: сам лейбл, а не хрупкий индекс.
+
+    Лейбл кодируется в utf-8; если не влезает в бюджет байтов callback_data
+    (у Telegram максимум 64) - откатываемся на индекс каталога. Слот вне
+    каталога даёт пустую строку: разыменование вернёт None и ответ «не найден».
+    """
+    if len(key.encode("utf-8")) <= budget:
+        return key
+    keys = _slot_keys()
+    return str(keys.index(key)) if key in keys else ""
+
+
+def slot_from_payload(payload: str):
+    """Обратное к slot_payload: цифра - это индекс каталога, строка - лейбл."""
+    if payload.isdigit():
+        keys = _slot_keys()
+        index = int(payload)
+        return keys[index] if 0 <= index < len(keys) else None
+    return payload if payload in _slot_keys() else None
 
 
 def _slot_keys() -> list[str]:
@@ -172,18 +193,18 @@ def _slot_keys() -> list[str]:
     return list(T.EMOJI_IDS.keys())
 
 
-def assign_slots_kb(emoji_id: str, chars):
+def assign_slots_kb(emoji_id: str):
     """Кнопки-слоты, на которые можно назначить иконку emoji_id."""
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     rows, row = [], []
     for key, _current in slots_overview():
-        label = _slot_label(key)
+        payload = slot_payload(key, 64 - 14 - 20 - 2)  # prefix + ":" + id + запас
         row.append(
             InlineKeyboardButton(
-                text=label,
+                text=_slot_label(key),
                 icon_custom_emoji_id=emoji_id,
-                callback_data=f"admin:set:{_slot_index(key)}:{emoji_id}",
+                callback_data=f"admin:iconset:{payload}:{emoji_id}",
             )
         )
         if len(row) == 3:
@@ -220,11 +241,12 @@ def slots_kb(chars, per_row: int = 3):
         char = chars.get(current, (None, None))[0] if current else None
         mark = " ✏" if key in emoji_settings_overrides() else ""
         suffix = "" if current else " —"
+        payload = slot_payload(key, 64 - 11 - 2)  # префикс admin:slot: + запас
         row.append(
             InlineKeyboardButton(
                 text=f"{char or '—'} {_slot_label(key)}{mark}{suffix}",
                 icon_custom_emoji_id=current or None,
-                callback_data=f"admin:slot:{_slot_index(key)}",
+                callback_data=f"admin:slot:{payload}",
             )
         )
         if len(row) == per_row:

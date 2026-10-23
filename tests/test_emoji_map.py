@@ -162,10 +162,24 @@ class AdminKeyboardShapeTests(unittest.TestCase):
         self.assertIn("Предложить идею", texts)
 
     def test_assign_kb_targets_every_slot(self):
-        kb = assign_slots_kb("777", {})
+        kb = assign_slots_kb("777")
         flat = [b for row in kb.inline_keyboard for b in row]
         self.assertTrue(all(b.icon_custom_emoji_id == "777" for b in flat))
-        self.assertTrue(all(b.callback_data.startswith("admin:set:") for b in flat))
+        self.assertTrue(all(b.callback_data.startswith("admin:iconset:") for b in flat))
+
+    def test_slot_payload_roundtrip_label_and_index(self):
+        from services.emoji_map import (
+            _slot_keys,
+            slot_from_payload,
+            slot_payload,
+        )
+
+        for key in _slot_keys():
+            self.assertEqual(slot_from_payload(slot_payload(key, 64 - 11 - 2)), key)
+        # узкий бюджет выталкивает длинный лейбл в индексный фолбэк по каталогу
+        longest = max(_slot_keys(), key=lambda k: len(k.encode("utf-8")))
+        self.assertTrue(slot_from_payload(slot_payload(longest, 7)) is not None)
+        self.assertIsNone(slot_from_payload("пустой-вне-каталога"))
 
 
 if __name__ == "__main__":

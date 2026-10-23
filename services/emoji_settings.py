@@ -28,21 +28,24 @@ async def load_cache() -> None:
 
 
 async def set_override(key: str, emoji_id: str, by_user: int | None = None) -> None:
-    """Назначить слоту иконку: новый id, замена старого или "" (убрать иконку)."""
+    """Назначить слоту иконку: новый id, замена старого или "" (убрать иконку).
+
+    Двухфазная запись: чтение и объединение внутри блокировки строки
+    bot_settings, чтобы параллельные writers не топили правки друг друга.
+    """
     from models.operations import BotSetting
     from sqlalchemy import select
 
-    current = await bot_value(SETTING_KEY, {}) or {}
-    current[key] = emoji_id
     async with async_session.begin() as s:
-        await s.execute(
-            select(BotSetting).where(BotSetting.key == SETTING_KEY).with_for_update()
-        )
-        item = await s.get(BotSetting, SETTING_KEY, with_for_update=True)
+        row = await s.execute(select(BotSetting).where(BotSetting.key == SETTING_KEY))
+        item = row.scalar_one_or_none()
         if not item:
             item = BotSetting(key=SETTING_KEY)
             s.add(item)
+        current = dict((item.value_json or {}).get("value") or {})
+        current[key] = emoji_id
         item.value_json = {"value": current}
+        item.updated_by = by_user
     global _cache
     _cache = dict(current)
     logger.info(
@@ -55,20 +58,24 @@ async def clear_override(key: str) -> None:
     from models.operations import BotSetting
     from sqlalchemy import select
 
-    current = await bot_value(SETTING_KEY, {}) or {}
-    current.pop(key, None)
     async with async_session.begin() as s:
-        await s.execute(
-            select(BotSetting).where(BotSetting.key == SETTING_KEY).with_for_update()
-        )
-        item = await s.get(BotSetting, SETTING_KEY, with_for_update=True)
+        row = await s.execute(select(BotSetting).where(BotSetting.key == SETTING_KEY))
+        item = row.scalar_one_or_none()
         if not item:
             item = BotSetting(key=SETTING_KEY)
             s.add(item)
+        current = dict((item.value_json or {}).get("value") or {})
+        current.pop(key, None)
         item.value_json = {"value": current}
+        item.updated_by = None
     global _cache
     _cache = dict(current)
     logger.info("emoji override cleared", extra={"slot": key})
+
+
+def overrides() -> dict[str, str]:
+    """Действующие переопределения слотов (публичный доступ к кэшу)."""
+    return dict(_cache)
 
 
 def effective_id(key: str) -> str | None:
