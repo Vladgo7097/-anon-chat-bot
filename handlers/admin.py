@@ -2376,7 +2376,13 @@ async def idea_duplicate_text(message: Message, state: FSMContext):
 @admin_router.message(Command("icons"))
 async def cmd_emoji_map(message: Message) -> None:
     """Владелец видит каждую иконку: id, символ, места в коде, живой образец."""
+    from services import emoji_settings
+
     backmap = {str(v): k for k, v in T.EMOJI_IDS.items()}
+    # переопределённые слоты рисуют id, который несёт замена, а не старый
+    for slot, eid in emoji_settings.overrides().items():
+        if eid:
+            backmap[eid] = slot
     await send_emoji_map(message, backmap)
 
 
@@ -2508,22 +2514,27 @@ async def cb_assign_set(callback: CallbackQuery) -> None:
     )
 
 
+async def _slots_screen(bot) -> tuple[str, "InlineKeyboardMarkup"]:
+    """Единый builder экрана слотов: текст и клавиатура с действующими иконками."""
+    from services.emoji_map import fetch_characters, slots_overview, slots_kb
+
+    overview = slots_overview()
+    ids = sorted({eid for _key, eid in overview if eid})
+    chars, _ok = await fetch_characters(bot, ids)
+    text = "⚙️ <b>Слоты меню</b> — что стоит и что переопределено:\n" + "\n".join(
+        _slot_status_line(key) for key, _eid in overview
+    )
+    return text, slots_kb(chars)
+
+
 @admin_router.callback_query(F.data == "admin:slots")
 async def cb_slots(callback: CallbackQuery) -> None:
     """Экран всех слотов каталога с их действующими иконками."""
-    from services.emoji_map import fetch_characters, slots_overview, slots_kb
-
     await callback.answer()
     if callback.message is None:
         return
-    overview = slots_overview()
-    ids = sorted({eid for _key, eid in overview if eid})
-    chars, _ok = await fetch_characters(callback.bot, ids)
-    await callback.message.answer(
-        "⚙️ <b>Слоты меню</b> — что стоит и что переопределено:\n"
-        + "\n".join(_slot_status_line(key) for key, _eid in overview),
-        reply_markup=slots_kb(chars),
-    )
+    text, keyboard = await _slots_screen(callback.bot)
+    await callback.message.answer(text, reply_markup=keyboard)
 
 
 @admin_router.callback_query(F.data.startswith("admin:slot:"))
@@ -2614,17 +2625,10 @@ def get_slot_from_index(payload: str) -> str | None:
 
 async def _slots_refresh(callback: CallbackQuery) -> None:
     from aiogram.exceptions import TelegramBadRequest
-    from services.emoji_map import fetch_characters, slots_overview, slots_kb
 
     if callback.message is None:
         return
-    overview = slots_overview()
-    ids = sorted({eid for _key, eid in overview if eid})
-    chars, _ok = await fetch_characters(callback.bot, ids)
-    text = "⚙️ <b>Слоты меню</b> — актуально:\n" + "\n".join(
-        _slot_status_line(key) for key, _eid in overview
-    )
-    keyboard = slots_kb(chars)
+    text, keyboard = await _slots_screen(callback.bot)
     try:
         # Обновление инлайнит тот же экран — без пачки дубликатов в чате.
         await callback.message.edit_text(text, reply_markup=keyboard)

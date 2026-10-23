@@ -12,7 +12,7 @@ from pathlib import Path
 
 TAG_RE = re.compile(r'<tg-emoji emoji-id="(\d+)">(.*?)</tg-emoji>')
 ICON_RE = re.compile(r'icon_custom_emoji_id="(\d+)"')
-# Тестовое дерево и сторонние копии -- не часть работающего интерфейса.
+# Тестовое дерево, сторонние клоны и скрытые каталоги - не интерфейс бота.
 SKIP_DIRS = {
     "__pycache__",
     ".venv",
@@ -20,7 +20,14 @@ SKIP_DIRS = {
     "migrations",
     "fixtures",
     "anon-owner-notify-20260907",
+    "anon-chat-bot",
 }
+
+
+def _is_skipped(path: Path) -> bool:
+    return any(part in SKIP_DIRS or part.startswith(".") for part in path.parts)
+
+
 FETCH_CHUNK = 100  # лимит Bot API на один getCustomEmojiStickers
 
 
@@ -45,7 +52,7 @@ def repo_root() -> Path:
 def scan_emoji_refs(root: Path) -> list[EmojiRef]:
     refs: list[EmojiRef] = []
     for py in sorted(root.rglob("*.py")):
-        if any(part in SKIP_DIRS for part in py.parts):
+        if _is_skipped(py.relative_to(root)):
             continue
         try:
             lines = py.read_text(encoding="utf-8").splitlines()
@@ -203,7 +210,7 @@ def slots_for_id(emoji_id: str) -> list[tuple[str, str]]:
         eid = emoji_settings.effective_id(key)
         if eid != emoji_id:
             continue
-        origin = "переопределение" if key in emoji_settings.overrides() else " defолт"
+        origin = "переопределение" if key in emoji_settings.overrides() else "дефолт"
         found.append((key, origin))
     return found
 
@@ -262,9 +269,10 @@ def slots_kb(chars, per_row: int = 3):
 
 
 def emoji_settings_overrides() -> dict[str, str]:
+    """Действующие переопределения слотов (тонкая обёртка)."""
     from services import emoji_settings
 
-    return dict(emoji_settings._cache)
+    return emoji_settings.overrides()
 
 
 async def send_emoji_map(message, backmap):

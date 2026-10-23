@@ -173,7 +173,7 @@ class AdminKeyboardShapeTests(unittest.TestCase):
 
         emoji_settings._cache = {}
         slots = slots_for_id(IDEA_BUTTON_ID)
-        self.assertIn((T.IDEA, " defолт"), slots)
+        self.assertIn((T.IDEA, "дефолт"), slots)
         emoji_settings._cache = {T.IDEA: IDEA_BUTTON_ID}
         slots = slots_for_id(IDEA_BUTTON_ID)
         self.assertIn((T.IDEA, "переопределение"), slots)
