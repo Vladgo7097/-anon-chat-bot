@@ -80,9 +80,13 @@ def overrides() -> dict[str, str]:
 
 
 def effective_id(key: str) -> str | None:
-    """Иконка слота как она уйдёт в Telegram: переопределение > код > нет."""
+    """Иконка слота как она уйдёт в Telegram: переопределение > код > нет.
+
+    Пустая строка (в кэше или каталоге) нормализуется в None: Telegram не
+    считает пустую строку валидным id иконки.
+    """
     if key in _cache:
         return _cache[key] or None
     from keyboards import texts as T
 
-    return T.EMOJI_IDS.get(key)
+    return T.EMOJI_IDS.get(key) or None

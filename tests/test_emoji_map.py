@@ -109,8 +109,9 @@ class SlotOverviewTests(unittest.TestCase):
 
     def test_slots_mirror_catalog_without_overrides(self):
         overview = dict(slots_overview())
-        self.assertEqual(overview.get(T.IDEA), IDEA_BUTTON_ID)
-        self.assertEqual(effective_id(T.IDEA), IDEA_BUTTON_ID)
+        # IDEA перезапущена без иконки по правилу dj: слот жив, дефолт пуст.
+        self.assertIsNone(overview.get(T.IDEA))
+        self.assertIsNone(effective_id(T.IDEA))
 
     def test_menu_sample_is_real_reply_kb(self):
         kb = main_menu_kb("ru")
@@ -173,10 +174,12 @@ class AdminKeyboardShapeTests(unittest.TestCase):
 
         emoji_settings._cache = {}
         slots = slots_for_id(IDEA_BUTTON_ID)
-        self.assertIn((T.IDEA, "дефолт"), slots)
-        emoji_settings._cache = {T.IDEA: IDEA_BUTTON_ID}
+        # Иконка у Invite: IDEA без иконки, заимствования больше нет.
+        self.assertIn((T.INVITE, "дефолт"), slots)
+        self.assertNotIn(T.IDEA, [k for k, _ in slots])
+        emoji_settings._cache = {T.INVITE: IDEA_BUTTON_ID}
         slots = slots_for_id(IDEA_BUTTON_ID)
-        self.assertIn((T.IDEA, "переопределение"), slots)
+        self.assertIn((T.INVITE, "переопределение"), slots)
 
     def test_slot_payload_roundtrip_label_and_index(self):
         from services.emoji_map import (

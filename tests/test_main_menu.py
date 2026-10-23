@@ -86,10 +86,15 @@ class MenuKeyboardTests(unittest.TestCase):
         )
 
     def test_every_button_carries_an_icon(self):
-        # Six of the eight did; the last two read as an unfinished row.
+        # Правило (dj): IDEA стартует БЕЗ иконки, пока у неё свой doc-id.
+        # Остальные семь кнопок должны нести иконку.
+        iconless = {T.IDEA}
         for lang in LANGS:
             for row in main_menu_kb(lang).keyboard:
                 for button in row:
+                    if button.text in T.all_labels(T.IDEA):
+                        self.assertIsNone(button.icon_custom_emoji_id)
+                        continue
                     with self.subTest(lang=lang, button=button.text):
                         self.assertTrue(button.icon_custom_emoji_id, button.text)
 
