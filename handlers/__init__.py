@@ -3,6 +3,7 @@ from importlib import import_module
 
 start_router = Router(name="start")
 menu_router = Router(name="menu")
+ideas_router = Router(name="ideas")
 search_router = Router(name="search")
 chat_router = Router(name="chat")
 profile_router = Router(name="profile")
@@ -23,8 +24,24 @@ op_admin_router = Router(name="op_admin")
 def load_routers() -> tuple[Router, ...]:
     """Import handler modules so decorators populate routers before polling."""
     names = (
-        "premium", "help", "start", "menu", "search", "profile", "community", "settings", "report",
-        "admin", "op_admin", "stats", "reveal", "rating", "chat", "ads", "op",
+        "premium",
+        "help",
+        "start",
+        "menu",
+        "ideas",
+        "search",
+        "profile",
+        "community",
+        "settings",
+        "report",
+        "admin",
+        "op_admin",
+        "stats",
+        "reveal",
+        "rating",
+        "chat",
+        "ads",
+        "op",
     )
     for name in names:
         import_module(f"{__name__}.{name}")

@@ -64,6 +64,7 @@ class DatabaseCase(unittest.IsolatedAsyncioTestCase):
             "services.funnel_alert",
             "services.community",
             "services.moderation",
+            "services.ideas",
         ):
             p = patch(module + ".async_session", self.factory)
             p.start()

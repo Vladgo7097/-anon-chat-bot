@@ -1,4 +1,5 @@
 """Admin panel: section navigation, parameter catalog, audit trail, cancel flow."""
+
 import sys
 import unittest
 from datetime import timedelta
@@ -11,13 +12,29 @@ from sqlalchemy import select, func
 from test_chat_duration import DatabaseCase
 from models.operations import Broadcast, Notification, AdminAudit
 from models.user import User
-from services.admin import (AdminService, SETTING_KEYS, SETTING_LIMITS, SETTING_TITLES,
-                            SETTING_DEFAULTS, SETTING_PRESETS, SETTING_PAGE_SIZE)
+from services.admin import (
+    AdminService,
+    SETTING_KEYS,
+    SETTING_LIMITS,
+    SETTING_TITLES,
+    SETTING_DEFAULTS,
+    SETTING_PRESETS,
+    SETTING_PAGE_SIZE,
+)
 from services.notifications import NotificationService, enqueue
-from keyboards.inline import (admin_kb, admin_settings_kb, admin_setting_kb, admin_back_kb,
-                              admin_growth_kb, admin_analytics_kb, admin_users_section_kb,
-                              admin_moderation_kb, admin_broadcast_section_kb,
-                              admin_settings_section_kb, admin_system_kb)
+from keyboards.inline import (
+    admin_kb,
+    admin_settings_kb,
+    admin_setting_kb,
+    admin_back_kb,
+    admin_growth_kb,
+    admin_analytics_kb,
+    admin_users_section_kb,
+    admin_moderation_kb,
+    admin_broadcast_section_kb,
+    admin_settings_section_kb,
+    admin_system_kb,
+)
 from utils.time import utcnow
 
 
@@ -35,25 +52,41 @@ class AdminPanelServicesTests(DatabaseCase):
         self.assertTrue(confirmed.ok)
         job = confirmed.data["job"]
         async with self.factory() as s:
-            before = await s.scalar(select(func.count(Notification.id))
-                                    .where(Notification.broadcast_id == job.id))
+            before = await s.scalar(
+                select(func.count(Notification.id)).where(
+                    Notification.broadcast_id == job.id
+                )
+            )
         async with self.factory.begin() as s:
             for uid in (1, 2):
-                await enqueue(s, uid, "broadcast", f"broadcast:{job.id}:{uid}", "hi",
-                              marketing=True, broadcast_id=job.id)
+                await enqueue(
+                    s,
+                    uid,
+                    "broadcast",
+                    f"broadcast:{job.id}:{uid}",
+                    "hi",
+                    marketing=True,
+                    broadcast_id=job.id,
+                )
         result = await admin.cancel_broadcast(99, job.id)
         self.assertTrue(result.ok)
         self.assertEqual(result.code, "CANCELLED")
         self.assertEqual(result.data["dropped"], before + 2)
 
         async with self.factory() as s:
-            left = await s.scalar(select(func.count(Notification.id)).where(
-                Notification.broadcast_id == job.id,
-                Notification.status.in_(["queued", "sending"])))
+            left = await s.scalar(
+                select(func.count(Notification.id)).where(
+                    Notification.broadcast_id == job.id,
+                    Notification.status.in_(["queued", "sending"]),
+                )
+            )
             counts = await NotificationService().broadcast_counts(s, job.id)
             row = await s.get(Broadcast, job.id)
-            entries = (await s.scalars(select(AdminAudit)
-                                       .where(AdminAudit.action == "broadcast_cancel"))).all()
+            entries = (
+                await s.scalars(
+                    select(AdminAudit).where(AdminAudit.action == "broadcast_cancel")
+                )
+            ).all()
         self.assertEqual(left, 0)
         self.assertEqual(counts.get("skipped", 0), before + 2)
         self.assertEqual(row.status, "cancelled")
@@ -86,8 +119,14 @@ class AdminPanelServicesTests(DatabaseCase):
     async def test_audit_log_is_newest_first_and_pages(self):
         async with self.factory.begin() as s:
             for i in range(3):
-                s.add(AdminAudit(admin_id=99, action=f"act{i}",
-                                 target_type="user", target_id=str(i)))
+                s.add(
+                    AdminAudit(
+                        admin_id=99,
+                        action=f"act{i}",
+                        target_type="user",
+                        target_id=str(i),
+                    )
+                )
         service = AdminService()
         first = await service.audit_log(99, 0, 2)
         self.assertEqual([r.action for r in first], ["act2", "act1"])
@@ -98,15 +137,40 @@ class AdminPanelServicesTests(DatabaseCase):
 
     async def test_leaderboards_rank_spenders_and_newest_users(self):
         async with self.factory.begin() as s:
-            s.add(User(telegram_id=11, anon_id="#poor", gender="male", age=25,
-                       onboarding_completed=True, total_stars_spent=50,
-                       created_at=utcnow()-timedelta(days=2)))
-            s.add(User(telegram_id=12, anon_id="#whale", gender="female", age=25,
-                       onboarding_completed=True, total_stars_spent=500,
-                       created_at=utcnow()))
-            s.add(User(telegram_id=13, anon_id="#gone", gender="male", age=25,
-                       onboarding_completed=True, total_stars_spent=900,
-                       created_at=utcnow(), deleted_at=utcnow()))
+            s.add(
+                User(
+                    telegram_id=11,
+                    anon_id="#poor",
+                    gender="male",
+                    age=25,
+                    onboarding_completed=True,
+                    total_stars_spent=50,
+                    created_at=utcnow() - timedelta(days=2),
+                )
+            )
+            s.add(
+                User(
+                    telegram_id=12,
+                    anon_id="#whale",
+                    gender="female",
+                    age=25,
+                    onboarding_completed=True,
+                    total_stars_spent=500,
+                    created_at=utcnow(),
+                )
+            )
+            s.add(
+                User(
+                    telegram_id=13,
+                    anon_id="#gone",
+                    gender="male",
+                    age=25,
+                    onboarding_completed=True,
+                    total_stars_spent=900,
+                    created_at=utcnow(),
+                    deleted_at=utcnow(),
+                )
+            )
         service = AdminService()
         top = await service.top_spenders(99, 5)
         self.assertEqual([u.telegram_id for u in top], [12, 11])
@@ -118,8 +182,10 @@ class AdminPanelServicesTests(DatabaseCase):
 
     async def test_system_status_reports_live_health(self):
         pool = AsyncMock()
-        with patch("services.chat_manager.get_online_count", AsyncMock(return_value=7)), \
-             patch("services.chat_manager.get_redis", AsyncMock(return_value=pool)):
+        with (
+            patch("services.chat_manager.get_online_count", AsyncMock(return_value=7)),
+            patch("services.chat_manager.get_redis", AsyncMock(return_value=pool)),
+        ):
             live = await AdminService().system_status(99)
         self.assertTrue(live["db"])
         self.assertTrue(live["redis"])
@@ -140,7 +206,10 @@ class CatalogConsistencyTests(unittest.TestCase):
                 self.assertIn(key, SETTING_PRESETS)
                 low, high = SETTING_LIMITS[key]
                 self.assertTrue(low <= SETTING_DEFAULTS[key] <= high)
-                self.assertTrue(SETTING_PRESETS[key], "a setting without presets cannot be edited from the panel")
+                self.assertTrue(
+                    SETTING_PRESETS[key],
+                    "a setting without presets cannot be edited from the panel",
+                )
                 for preset in SETTING_PRESETS[key]:
                     self.assertTrue(low <= preset <= high)
 
@@ -154,10 +223,11 @@ class AdminPanelKeyboardsTests(unittest.TestCase):
     def callbacks(markup):
         return [b.callback_data for row in markup.inline_keyboard for b in row]
 
-    def test_root_offers_eight_sections_that_all_fit_the_payload_limit(self):
+    def test_root_offers_nine_sections_that_all_fit_the_payload_limit(self):
         data = self.callbacks(admin_kb())
-        self.assertEqual(len(data), 8)
-        self.assertEqual(len(set(data)), 8)
+        self.assertEqual(len(data), 9)
+        self.assertEqual(len(set(data)), 9)
+        self.assertIn("admin:sec:ideas", data)
         for callback in data:
             self.assertTrue(
                 callback.startswith("admin:sec:") or callback == "admin:op",
@@ -166,15 +236,27 @@ class AdminPanelKeyboardsTests(unittest.TestCase):
             self.assertLessEqual(len(callback.encode()), 64)
 
     def test_every_section_returns_to_the_root(self):
-        for build in (admin_analytics_kb, admin_users_section_kb, admin_moderation_kb,
-                      admin_broadcast_section_kb, admin_settings_section_kb, admin_system_kb):
+        for build in (
+            admin_analytics_kb,
+            admin_users_section_kb,
+            admin_moderation_kb,
+            admin_broadcast_section_kb,
+            admin_settings_section_kb,
+            admin_system_kb,
+        ):
             with self.subTest(section=build.__name__):
-                self.assertEqual(build().inline_keyboard[-1][0].callback_data, "admin:back")
+                self.assertEqual(
+                    build().inline_keyboard[-1][0].callback_data, "admin:back"
+                )
 
     def test_back_target_is_what_the_screen_asked_for(self):
-        self.assertEqual(admin_back_kb().inline_keyboard[0][0].callback_data, "admin:back")
-        self.assertEqual(admin_back_kb("admin:sec:users").inline_keyboard[0][0].callback_data,
-                         "admin:sec:users")
+        self.assertEqual(
+            admin_back_kb().inline_keyboard[0][0].callback_data, "admin:back"
+        )
+        self.assertEqual(
+            admin_back_kb("admin:sec:users").inline_keyboard[0][0].callback_data,
+            "admin:sec:users",
+        )
 
     def test_settings_list_pages_both_directions(self):
         entries = [(key, SETTING_TITLES[key], 1) for key in SETTING_KEYS[:3]]
@@ -188,12 +270,16 @@ class AdminPanelKeyboardsTests(unittest.TestCase):
             self.assertLessEqual(len(callback.encode()), 64)
 
     def test_setting_editor_marks_the_live_value_and_offers_an_escape_hatch(self):
-        kb = admin_setting_kb("chat_delay_next", 2, SETTING_PRESETS["chat_delay_next"], 7)
+        kb = admin_setting_kb(
+            "chat_delay_next", 2, SETTING_PRESETS["chat_delay_next"], 7
+        )
         data = self.callbacks(kb)
         self.assertIn("admin:set:chat_delay_next:7", data)
         self.assertIn("admin:setc:chat_delay_next", data)
         self.assertIn("admin:setlist:2", data)
-        marked = [b.text for row in kb.inline_keyboard for b in row if b.text.startswith("✓")]
+        marked = [
+            b.text for row in kb.inline_keyboard for b in row if b.text.startswith("✓")
+        ]
         self.assertEqual(marked, ["✓ 7"])
 
     def test_growth_kb_marks_the_active_period(self):
@@ -206,23 +292,39 @@ class AdminPanelKeyboardsTests(unittest.TestCase):
 
 class BroadcastCancelRenderTests(unittest.TestCase):
     def job(self, status):
-        return SimpleNamespace(id=5, segment="all", status=status, total=10, blocked=0,
-                               sent=3, failed=0, started_at=None, finished_at=None, kind="text")
+        return SimpleNamespace(
+            id=5,
+            segment="all",
+            status=status,
+            total=10,
+            blocked=0,
+            sent=3,
+            failed=0,
+            started_at=None,
+            finished_at=None,
+            kind="text",
+        )
 
     def test_card_names_the_cancelled_status(self):
         from handlers.admin import broadcast_card
+
         text = broadcast_card(self.job("cancelled"), {"sent": 3, "skipped": 7})
         self.assertIn("остановлена вручную", text)
         self.assertIn("Пропущено", text)
 
     def test_stop_button_only_appears_while_the_wave_is_moving(self):
         from handlers.admin import broadcast_card_kb
+
         for status in ("queued", "sending"):
             with self.subTest(status=status):
-                self.assertIn("admin:bcancel:5", self.callbacks(broadcast_card_kb(5, status)))
+                self.assertIn(
+                    "admin:bcancel:5", self.callbacks(broadcast_card_kb(5, status))
+                )
         for status in ("completed", "cancelled", "draft"):
             with self.subTest(status=status):
-                self.assertNotIn("admin:bcancel:5", self.callbacks(broadcast_card_kb(5, status)))
+                self.assertNotIn(
+                    "admin:bcancel:5", self.callbacks(broadcast_card_kb(5, status))
+                )
 
     @staticmethod
     def callbacks(markup):

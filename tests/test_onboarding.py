@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from services.onboarding import OnboardingService, step_for
 from keyboards import texts as T
@@ -13,9 +14,19 @@ import config
 
 class MemoryUsers:
     def __init__(self):
-        self.user = SimpleNamespace(gender=None, age=None, onboarding_step="WELCOME",
-            onboarding_completed=False, rules_version=None, rules_accepted_at=None,
-            is_banned=False, ban_expires=None, referrer_id=None, deleted_at=None, language="ru")
+        self.user = SimpleNamespace(
+            gender=None,
+            age=None,
+            onboarding_step="WELCOME",
+            onboarding_completed=False,
+            rules_version=None,
+            rules_accepted_at=None,
+            is_banned=False,
+            ban_expires=None,
+            referrer_id=None,
+            deleted_at=None,
+            language="ru",
+        )
         self.lock = asyncio.Lock()
 
     async def get_or_create(self, *args):
@@ -23,7 +34,9 @@ class MemoryUsers:
 
     async def transition(self, uid, operation):
         async with self.lock:
-            return await operation(self.user, SimpleNamespace(scalar=AsyncMock(return_value=None)))
+            return await operation(
+                self.user, SimpleNamespace(scalar=AsyncMock(return_value=None))
+            )
 
 
 class OnboardingTests(unittest.IsolatedAsyncioTestCase):
@@ -46,6 +59,7 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         repo.user.onboarding_completed = True
         repo.user.rules_version = 1
         from utils.time import utcnow
+
         repo.user.rules_accepted_at = utcnow()
         self.assertEqual(step_for(repo.user), "MENU")
 
@@ -101,8 +115,13 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(step_for(repo.user), "MENU")
 
     def test_age_pages_and_blue_menu(self):
-        ages = {int(b.text) for page in range(7) for row in onboarding_kb("AGE", page).keyboard
-                for b in row if b.text.isdigit()}
+        ages = {
+            int(b.text)
+            for page in range(7)
+            for row in onboarding_kb("AGE", page).keyboard
+            for b in row
+            if b.text.isdigit()
+        }
         self.assertEqual(ages, set(range(18, 100)))
         menu = main_menu_kb()
         self.assertTrue(menu.is_persistent)
@@ -111,15 +130,23 @@ class OnboardingTests(unittest.IsolatedAsyncioTestCase):
         # The community-chat button must exist exactly once. Bot API
         # KeyboardButton has no url field -- the link lives in the handler's
         # inline answer (tests/test_chat_link.py proves that path end to end).
-        chat_buttons = [b for row in menu.keyboard for b in row
-                        if b.text in T.all_labels(T.CHAT)]
+        chat_buttons = [
+            b for row in menu.keyboard for b in row if b.text in T.all_labels(T.CHAT)
+        ]
         self.assertEqual(len(chat_buttons), 1)
-        self.assertNotEqual(getattr(chat_buttons[0], "url", None), config.COMMUNITY_CHAT_URL)
-        # The referral button must be on the main menu too -- the program
-        # had zero activations precisely because it was invisible.
-        invite_buttons = [b for row in menu.keyboard for b in row
-                          if b.text in T.all_labels(T.INVITE)]
-        self.assertEqual(len(invite_buttons), 1)
+        self.assertNotEqual(
+            getattr(chat_buttons[0], "url", None), config.COMMUNITY_CHAT_URL
+        )
+        # The referral button left the main menu (the schedule rewards card
+        # carries the invitation now); the idea button took its slot.
+        invite_buttons = [
+            b for row in menu.keyboard for b in row if b.text in T.all_labels(T.INVITE)
+        ]
+        self.assertEqual(len(invite_buttons), 0)
+        idea_buttons = [
+            b for row in menu.keyboard for b in row if b.text in T.all_labels(T.IDEA)
+        ]
+        self.assertEqual(len(idea_buttons), 1)
         # Both labels join SYSTEM_TEXTS so a typed press is never relayed
         # into an active chat as a message to the partner.
         self.assertTrue(T.all_labels(T.CHAT) <= T.SYSTEM_TEXTS)

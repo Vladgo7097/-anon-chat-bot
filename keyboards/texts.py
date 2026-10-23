@@ -15,6 +15,7 @@ STATS = "Статистика"
 HELP = "Помощь"
 CHAT = "Наш чат"
 INVITE = "Пригласи друга"
+IDEA = "Предложить идею"
 MENU = "Меню"
 NEXT = "Следующий"
 STOP = "Стоп"
@@ -38,6 +39,7 @@ _ACTIONS = (
     HELP,
     CHAT,
     INVITE,
+    IDEA,
     MENU,
     NEXT,
     STOP,
@@ -78,6 +80,11 @@ LABELS = {
     HELP: {"ru": "Помощь", "en": "Help", "uk": "Допомога"},
     CHAT: {"ru": "Наш чат", "en": "Our chat", "uk": "Наш чат"},
     INVITE: {"ru": "Пригласи друга", "en": "Invite a friend", "uk": "Запроси друга"},
+    IDEA: {
+        "ru": "Предложить идею",
+        "en": "Suggest an idea",
+        "uk": "Запропонувати ідею",
+    },
     MENU: {"ru": "Меню", "en": "Menu", "uk": "Меню"},
     NEXT: {"ru": "Следующий", "en": "Next", "uk": "Наступний"},
     STOP: {"ru": "Стоп", "en": "Stop", "uk": "Стоп"},
@@ -140,6 +147,9 @@ EMOJI_IDS = {
     # than guessed values, which are what make a keyboard come back DOCUMENT_INVALID.
     CHAT: "5224455462178549802",
     INVITE: "5967432491684860012",
+    # Идея встаёт на месте Invite-кнопки в меню, иконку берёт у неё же:
+    # документ уже отрисован этим ботом, а угаданные id ломают клавиатуру.
+    IDEA: "5967432491684860012",
 }
 
 # Labels for the inline keyboards that sit behind the main-menu buttons. The menu
@@ -615,3 +625,165 @@ UPSELL_TEXT = {
 
 LANGUAGE_NAMES = {"ru": "Русский", "en": "English", "uk": "Українська"}
 LANGUAGE_FLAGS = {"ru": "🇷🇺", "en": "🇬🇧", "uk": "🇺🇦"}
+
+# ── Идеи («Предложить идею») ─────────────────────────────────────
+# Пользовательские экраны: HTML-разметка, пользовательский текст в них
+# вставляется только через html.escape в handler'е.
+IDEA_MENU = {
+    "ru": '<tg-emoji emoji-id="5345843457145453967">💡</tg-emoji> <b>Предложи идею для улучшения бота!</b>\n\nЕсть идея новой функции, полезное улучшение или предложение, которое сделает бота удобнее?\n\nРасскажи, что ты хотел бы добавить или изменить. Все предложения будут сохранены и переданы на рассмотрение владельцу.\n\nВыбирай действие ниже 👇',
+    "en": '<tg-emoji emoji-id="5345843457145453967">💡</tg-emoji> <b>Suggest an idea to improve the bot!</b>\n\nGot a feature idea, a useful improvement or a suggestion that would make the bot handier?\n\nTell us what you would add or change. Every suggestion is saved and passed to the owner for review.\n\nPick an action below 👇',
+    "uk": '<tg-emoji emoji-id="5345843457145453967">💡</tg-emoji> <b>Запропонуй ідею для покращення бота!</b>\n\nЄ ідея нової функції, корисне удосконалення чи пропозиція, яка зробить бота зручнішим?\n\nРозкажи, що ти хотів би додати чи змінити. Усі пропозиції збережуться і передадуться власнику на розгляд.\n\nВибирай дію нижче 👇',
+}
+IDEA_ASK = {
+    "ru": "Напиши свою идею одним сообщением.\n\nРасскажи, какую функцию ты хочешь видеть в боте, как она должна работать и какую пользу принесёт.\n\nПостарайся описать идею конкретно. Например: добавить возможность выбирать несколько параметров поиска собеседника или создать систему пользовательских достижений.",
+    "en": "Write your idea in one message.\n\nWhat feature do you want in the bot, how should it work and what good would it do?\n\nTry to be concrete. For example: multiple search filters, or a user achievements system.",
+    "uk": "Напиши свою ідею одним повідомленням.\n\nРозкажи, яку функцію ти хочеш бачити в боті, як вона має працювати і яку користь принесе.\n\nПостарайся описати ідею конкретно. Наприклад: можливість вибирати кілька параметрів пошуку співрозмовника чи систему користувацьких досягнень.",
+}
+IDEA_EDIT_ASK = {
+    "ru": "Пришли новый текст идеи — вместо прежнего.",
+    "en": "Send the new wording — it replaces the old one.",
+    "uk": "Надішли новий текст ідеї — замість попереднього.",
+}
+IDEA_PREVIEW = {
+    "ru": "📝 <b>Проверь своё предложение</b>\n\n<b>Тема:</b> Новая функция для бота\n\n<b>Описание:</b>\n{text}\n\nВсё правильно? После подтверждения идея будет передана владельцу на рассмотрение",
+    "en": "📝 <b>Check your suggestion</b>\n\n<b>Topic:</b> A new feature for the bot\n\n<b>Description:</b>\n{text}\n\nAll correct? Once confirmed, the idea goes to the owner for review",
+    "uk": "📝 <b>Перевір свою пропозицію</b>\n\n<b>Тема:</b> Нова функція для бота\n\n<b>Опис:</b>\n{text}\n\nВсе правильно? Після підтвердження ідея передасться власнику на розгляд",
+}
+IDEA_SUCCESS = {
+    "ru": "✅ <b>Идея успешно отправлена!</b>\n\nСпасибо за предложение. Оно передано на рассмотрение владельцу бота.\n\nНомер твоей идеи: <b>#{id}</b>\n\nТы сможешь посмотреть её статус в разделе «Мои предложения».\n\nСпасибо за помощь в развитии бота! 💙",
+    "en": "✅ <b>Idea sent!</b>\n\nThanks for the suggestion. It has been passed to the bot owner for review.\n\nYour idea number: <b>#{id}</b>\n\nYou can follow its status under “My suggestions”.\n\nThanks for helping the bot grow! 💙",
+    "uk": "✅ <b>Ідею успішно надіслано!</b>\n\nДякуємо за пропозицію. Вона передана на розгляд власнику бота.\n\nНомер твоєї ідеї: <b>#{id}</b>\n\nСтатус можна переглянути в розділі «Мої пропозиції».\n\nДякуємо за допомогу в розвитку бота! 💙",
+}
+IDEA_CANCELLED = {
+    "ru": "Черновик отменён, ничего не отправлено. Можно начать с чистого листа.",
+    "en": "Draft discarded, nothing was sent. A clean sheet whenever you're ready.",
+    "uk": "Чернетку скасовано, нічого не надіслано. Можна починати з чистого аркуша.",
+}
+IDEA_NOT_TEXT = {
+    "ru": "Файлы и стикеры не подходят — пришли идею обычным текстом одним сообщением.",
+    "en": "Files and stickers won't work — send the idea as a plain text message.",
+    "uk": "Файли та стикери не підходять — надішли ідею звичайним текстом одним повідомленням.",
+}
+IDEA_EMPTY = {
+    "ru": "Сообщение пустое. Напиши суть идеи текстом.",
+    "en": "The message is empty. Write the idea in plain text.",
+    "uk": "Повідомлення порожнє. Напиши суть ідеї текстом.",
+}
+IDEA_TOO_LONG = {
+    "ru": "Слишком длинно: {len} из {max} символов. Сократи идею до {max} символов — короткое предложение читают и рассматривают быстрее.",
+    "en": "Too long: {len} of {max} characters. Trim the idea to {max} — a short suggestion gets read and reviewed sooner.",
+    "uk": "Задовго: {len} із {max} символів. Скороти ідею до {max} символів — коротку пропозицію читають швидше.",
+}
+IDEA_LIMIT_DAY = {
+    "ru": "Лимит: не больше {max} идей в сутки на человека. Место освободится около {when} (Киев).",
+    "en": "Limit: at most {max} ideas per day per person. A slot frees up around {when} (Kyiv).",
+    "uk": "Ліміт: не більше {max} ідей на добу на людину. Місце звільниться біля {when} (Київ).",
+}
+IDEA_COOLDOWN = {
+    "ru": "Не спеши: следующую идею можно отправить через {min} мин.",
+    "en": "Not so fast: the next idea can go in {min} min.",
+    "uk": "Не поспішай: наступну ідею можна надіслати через {min} хв.",
+}
+IDEA_CALL_DONE = {
+    "ru": "⏱ Черновика больше нет: заявление уже обработано, ничего нового не создано.",
+    "en": "⏱ The draft is gone: it was already handled and nothing new was created.",
+    "uk": "⏱ Чернетки більше немає: заявку вже оброблено, нічого нового не створено.",
+}
+IDEA_DUP_TEXT = {
+    "ru": "Такую идею ты уже отправил за последние сутки — она в очереди на рассмотрение.",
+    "en": "You already sent this idea within the last 24 hours - it is awaiting review.",
+    "uk": "Таку ідею ти вже надсилав за останню добу — вона в черзі на розгляд.",
+}
+IDEA_MINE_HEADER = {
+    "ru": "📋 <b>Твои предложения</b>\n\n{list}\n\nВыбери предложение, чтобы посмотреть подробности.",
+    "en": "📋 <b>Your suggestions</b>\n\n{list}\n\nTap an entry to see the details.",
+    "uk": "📋 <b>Твої пропозиції</b>\n\n{list}\n\nВибери пропозицію, щоб побачити подробиці.",
+}
+IDEA_MINE_EMPTY = {
+    "ru": "У тебя пока нет предложений. Будь первым — поделись идеей!",
+    "en": "You have no suggestions yet. Be the first — share an idea!",
+    "uk": "У тебе ще немає пропозицій. Будь першим — поділись ідеєю!",
+}
+IDEA_CARD = {
+    "ru": "💡 <b>Твоя идея #{id}</b>\n\n{status}\n\n<b>Текст:</b>\n{text}\n\n📅 Отправлена: {created}\n🕒 Обновлена: {updated}{reply}",
+    "en": "💡 <b>Your idea #{id}</b>\n\n{status}\n\n<b>Text:</b>\n{text}\n\n📅 Sent: {created}\n🕒 Updated: {updated}{reply}",
+    "uk": "💡 <b>Твоя ідея #{id}</b>\n\n{status}\n\n<b>Текст:</b>\n{text}\n\n📅 Надіслано: {created}\n🕒 Оновлено: {updated}{reply}",
+}
+IDEA_CARD_REPLY = {
+    "ru": "\n\n💬 <b>Ответ владельца</b> ({date}):\n{reply}",
+    "en": "\n\n💬 <b>Owner's reply</b> ({date}):\n{reply}",
+    "uk": "\n\n💬 <b>Відповідь власника</b> ({date}):\n{reply}",
+}
+IDEA_STATUSES = {
+    "new": {"ru": "🆕 Новая", "en": "🆕 New", "uk": "🆕 Нова"},
+    "review": {
+        "ru": "🟡 На рассмотрении",
+        "en": "🟡 In review",
+        "uk": "🟡 На розгляді",
+    },
+    "planned": {"ru": "🔵 Запланирована", "en": "🔵 Planned", "uk": "🔵 Запланована"},
+    "in_progress": {
+        "ru": "🛠 В разработке",
+        "en": "🛠 In progress",
+        "uk": "🛠 У розробці",
+    },
+    "implemented": {
+        "ru": "✅ Реализована",
+        "en": "✅ Implemented",
+        "uk": "✅ Реалізована",
+    },
+    "rejected": {"ru": "❌ Отклонена", "en": "❌ Rejected", "uk": "❌ Відхилена"},
+    "duplicate": {"ru": "🔁 Дубликат", "en": "🔁 Duplicate", "uk": "🔁 Дублікат"},
+}
+# Статус отправляется автору воркером PLAIN-текстом (без HTML): поэтому
+# без тегов, emoji-литералы рендерятся сами.
+IDEA_STATUS_NOTIFY = {
+    "ru": "📌 Статус твоей идеи изменился\n\nНомер: #{id}\nНовый статус: {status}\n\nСпасибо за предложение!",
+    "en": "📌 The status of your idea changed\n\nNumber: #{id}\nNew status: {status}\n\nThanks for the suggestion!",
+    "uk": "📌 Статус твоєї ідеї змінився\n\nНомер: #{id}\nНовий статус: {status}\n\nДякуємо за пропозицію!",
+}
+IDEA_REPLY_NOTIFY = {
+    "ru": "✉️ Ответ владельца на твою идею:\n\nНомер: #{id}\n\n{reply}",
+    "en": "✉️ The owner replied to your idea:\n\nNumber: #{id}\n\n{reply}",
+    "uk": "✉️ Відповідь власника на твою ідею:\n\nНомер: #{id}\n\n{reply}",
+}
+# ── Идеи («Предложить идею») ─────────────────────────────────────
+IDEA_BUTTONS = {
+    "ru": {
+        "submit": "✍️ Отправить идею",
+        "mine": "📋 Мои предложения",
+        "back_menu": "⬅️ Назад в меню",
+        "send": "✅ Отправить",
+        "edit": "✏️ Изменить текст",
+        "cancel": "❌ Отменить",
+        "back_ideas": "⬅️ К идеям",
+        "back_list": "⬅️ К списку",
+        "more": "💡 Ещё идею",
+    },
+    "en": {
+        "submit": "✍️ Suggest an idea",
+        "mine": "📋 My suggestions",
+        "back_menu": "⬅️ Back to the menu",
+        "send": "✅ Send",
+        "edit": "✏️ Edit the text",
+        "cancel": "❌ Cancel",
+        "back_ideas": "⬅️ Back to ideas",
+        "back_list": "⬅️ Back to the list",
+        "more": "💡 Another idea",
+    },
+    "uk": {
+        "submit": "✍️ Надіслати ідею",
+        "mine": "📋 Мої пропозиції",
+        "back_menu": "⬅️ Назад до меню",
+        "send": "✅ Надіслати",
+        "edit": "✏️ Змінити текст",
+        "cancel": "❌ Скасувати",
+        "back_ideas": "⬅️ До ідей",
+        "back_list": "⬅️ До списку",
+        "more": "💡 Ще ідею",
+    },
+}
+
+IDEA_OWNER_NEW = {
+    "ru": "💡 Новое предложение #{id}\n\nОт: {author} · ТГ {author_id} · {bot_label}\n\nТекст:\n{text}\n\nСтатус: 🆕 Новая",
+}

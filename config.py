@@ -90,6 +90,14 @@ CURRENT_RULES_VERSION = 1
 AGE_PAGE_SIZE = 12
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "")
 
+# Идеи (кнопка «Предложить идею»): серверные лимиты спама,
+# переживают перезапуск, но досчитываются по базе, не в памяти.
+IDEA_MAX_PER_DAY = int(os.getenv("IDEA_MAX_PER_DAY", "3"))
+IDEA_MIN_INTERVAL_SEC = int(os.getenv("IDEA_MIN_INTERVAL_SEC", "60"))
+IDEA_MAX_LEN = int(os.getenv("IDEA_MAX_LEN", "2000"))
+IDEA_PAGE_SIZE = int(os.getenv("IDEA_PAGE_SIZE", "5"))
+IDEA_ADMIN_PAGE_SIZE = int(os.getenv("IDEA_ADMIN_PAGE_SIZE", "8"))
+
 # Сайт: доступ к /api/stats (просмотры/переходы в бота), пусто = эндпоинт выключен.
 STATS_ACCESS_KEY = os.getenv("STATS_ACCESS_KEY", "")
 
