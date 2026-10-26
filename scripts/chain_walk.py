@@ -316,10 +316,28 @@ async def main():
 
     async def logged_next(self):
         t0 = time.monotonic()
-        out = await _orig_next(self)
+        try:
+            out = await _orig_next(self)
+        except BaseException as error:
+            print(
+                f"   [worker] next() УПАЛ через {time.monotonic() - t0:.2f}с: "
+                f"{type(error).__name__}: {error}"
+            )
+            raise
+        # Что запрос видит прямо сейчас: очередь на месте?
+        from sqlalchemy import func as _func, select as _select
+
+        from models import operations as _ops
+
+        async with session_factory() as _s:
+            queued = await _s.scalar(
+                _select(_func.count())
+                .select_from(_ops.Notification)
+                .where(_ops.Notification.status.in_(["queued", "sending"]))
+            )
         print(
             f"   [worker] next() → {(out.id, out.type) if out else None} "
-            f"за {time.monotonic() - t0:.2f}с"
+            f"за {time.monotonic() - t0:.2f}с; строк в очереди: {queued}"
         )
         return out
 
