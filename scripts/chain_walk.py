@@ -80,7 +80,8 @@ class FakeMessage:
 
     next_id = 1000
 
-    def __init__(self, chat_id, text=""):
+    def __init__(self, bot, chat_id, text=""):
+        self.bot = bot
         self.chat = SimpleNamespace(id=chat_id)
         self.message_id = FakeMessage.next_id
         FakeMessage.next_id += 1
@@ -99,7 +100,7 @@ async def _record(*args, **kwargs):
         (time.monotonic(), kind, to, text, _labels(payload.get("reply_markup")))
     )
     if kind == "sendMessage":
-        return FakeMessage(payload.get("chat_id"), payload.get("text") or "")
+        return FakeMessage(args[0], payload.get("chat_id"), payload.get("text") or "")
     return True
 
 
