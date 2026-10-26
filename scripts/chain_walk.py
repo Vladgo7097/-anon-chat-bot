@@ -358,13 +358,27 @@ async def main():
     assert pair and pair[0] == sorted([_U1, _U2]), f"матч не состоялся: {pair}"
     print(f"   ◆ активная пара: {pair}")
     for uid in (_U1, _U2):
-        mails = await _wait_inbox(uid, t0, timeout=10)
-        assert mails, f"{uid} не увидел уведомление о матче (воркер молчит)"
-        _say(uid, f"получил: {mails[0][1][:76]!r}")
-        buttons = [b for m in mails for b in m[2]]
-        assert buttons, f"{uid} получил уведомление без клавиатуры чата"
-        preview = buttons[0].split(" [icon")[0]
-        _say(uid, f"клавиатура чата начинается с «{preview[:40]}»")
+        mails = await _wait_inbox(uid, t0, timeout=15)
+        # Матч-уведомление узнаём по чат-клавиатуре (Следующий/Next/Наступний):
+        # до него в ленту попадает и живая карточка поиска.
+        chat_note = next(
+            (
+                m
+                for m in mails
+                if any(
+                    "Следующий" in b or "Next" in b or "Наступний" in b for b in m[2]
+                )
+            ),
+            None,
+        )
+        assert chat_note, (
+            f"{uid} не получил матч-уведомление: {[m[1][:44] for m in mails]}"
+        )
+        _say(uid, f"матч-уведомление: {chat_note[1][:66]!r}")
+        _say(
+            uid,
+            f"клавиатура чата: {[b.split(' [icon')[0] for b in chat_note[2]][:2]}",
+        )
 
     t0 = time.monotonic()
     _say(_U1, "пишет собеседнику: «Привет! Как настроение?»")
