@@ -335,11 +335,17 @@ async def main():
         from workers.maintenance import notification_content
         from keyboards.reply import chat_kb_reply
 
+        print("   [outbox] цикл стартует")
+        idle_rounds = 0
         while True:
             notification = await _mail.next()
             if notification is None:
+                idle_rounds += 1
+                if idle_rounds % 10 == 1:
+                    print("   [outbox] очередь пуста")
                 await asyncio.sleep(0.3)
                 continue
+            print(f"   [outbox] забрал #{notification.id} {notification.type}")
             try:
                 target = await bots_mod.bot_for(notification.user_id, bot)
                 lang = await user_lang(notification.user_id, bots_mod.default_lang(target))
