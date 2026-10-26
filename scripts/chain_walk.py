@@ -73,6 +73,22 @@ def _labels(markup):
     return out
 
 
+class FakeMessage:
+    """Ответ перехвата на sendMessage: карточка статуса читает .chat и
+    .message_id, обновляет и стирает .edit_text/.delete. Счётчик общий с
+    феедовыми id не пересекается."""
+
+    next_id = 1000
+
+    def __init__(self, chat_id, text=""):
+        self.chat = SimpleNamespace(id=chat_id)
+        self.message_id = FakeMessage.next_id
+        FakeMessage.next_id += 1
+        self.text = text
+        self.edit_text = AsyncMock(return_value=None)
+        self.delete = AsyncMock(return_value=None)
+
+
 async def _record(*args, **kwargs):
     method = args[1]
     kind = getattr(method, "__api_method__", "?")
@@ -82,6 +98,8 @@ async def _record(*args, **kwargs):
     TRACE.append(
         (time.monotonic(), kind, to, text, _labels(payload.get("reply_markup")))
     )
+    if kind == "sendMessage":
+        return FakeMessage(payload.get("chat_id"), payload.get("text") or "")
     return True
 
 
