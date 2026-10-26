@@ -322,111 +322,45 @@ async def main():
     matching_module.MatchingService.find = logged_find
     chats_module.ChatRepository.match = logged_match
 
-    # Настоящий outbox-воркер: уведомления (матч, конец чата, прочее)
-    # доставляет он, а не мёртвая заглушка. Обёртки на next/run дают
-    # печатные метки: видно, жив ли цикл и что он забирает.
-    from services.notifications import NotificationService as _NS
+    # Доставщик outbox: тот же claim → send → mark, что в workers.maintenance,
+    # но без maintenance-цикла (reconcile/funnel/op в этой изоляции не осмыслены).
+    # Отправка ведётся тем же bots.bot_for и тем же notification_content.
+    from services.notifications import NotificationService
 
-    _orig_next = _NS.next
+    _mail = NotificationService()
 
-    async def logged_next(self):
-        t0 = time.monotonic()
-        try:
-            out = await _orig_next(self)
-        except BaseException as error:
-            print(
-                f"   [worker] next() УПАЛ через {time.monotonic() - t0:.2f}с: "
-                f"{type(error).__name__}: {error}"
-            )
-            raise
-        # Что запрос видит прямо сейчас: очередь на месте?
-        from sqlalchemy import func as _func, select as _select
+    async def drain_outbox():
+        from utils import bots as bots_mod
+        from utils.db import user_lang
+        from workers.maintenance import notification_content
+        from keyboards.reply import chat_kb_reply
 
-        from models import operations as _ops
+        while True:
+            notification = await _mail.next()
+            if notification is None:
+                await asyncio.sleep(0.3)
+                continue
+            try:
+                target = await bots_mod.bot_for(notification.user_id, bot)
+                lang = await user_lang(notification.user_id, bots_mod.default_lang(target))
+                markup = chat_kb_reply(lang) if notification.type == "match" else None
+                text, parse_mode = notification_content(notification)
+                await target.send_message(
+                    notification.user_id,
+                    text,
+                    reply_markup=markup,
+                    parse_mode=parse_mode,
+                )
+                await _mail.finish(notification.id, "sent")
+            except Exception as error:
+                print(
+                    f"   [outbox] доставка {notification.id} {notification.type} "
+                    f"сорвалась: {type(error).__name__}: {error}"
+                )
+                await _mail.finish(notification.id, "failed", str(error))
+            await asyncio.sleep(0.05)
 
-        async with session_factory() as _s:
-            queued = await _s.scalar(
-                _select(_func.count())
-                .select_from(_ops.Notification)
-                .where(_ops.Notification.status.in_(["queued", "sending"]))
-            )
-        print(
-            f"   [worker] next() → {(out.id, out.type) if out else None} "
-            f"за {time.monotonic() - t0:.2f}с; строк в очереди: {queued}"
-        )
-        return out
-
-    _NS.next = logged_next
-
-    # Куда именно замер цикл: печатаем вход/выход каждой вехи воркера.
-    for _name in ("expand_broadcast", "schedule"):
-        _orig_m = getattr(_NS, _name)
-
-        async def wnd(self, _name=_name, _orig_m=_orig_m):
-            t0 = time.monotonic()
-            out = await _orig_m(self)
-            print(f"   [worker] {_name}() done за {time.monotonic() - t0:.2f}с")
-            return out
-
-        setattr(_NS, _name, wnd)
-
-    from services.chats import ChatService as _CS
-    from services import op_schedule as _opsch
-
-    async def logged_reconcile(self):
-        t0 = time.monotonic()
-        out = await _orig_reconcile(self)
-        print(f"   [worker] reconcile() done за {time.monotonic() - t0:.2f}с")
-        return out
-
-    _orig_reconcile = _CS.reconcile
-    _CS.reconcile = logged_reconcile
-
-    async def logged_opsch():
-        t0 = time.monotonic()
-        out = await _orig_opsch()
-        print(f"   [worker] op_schedule.check() done за {time.monotonic() - t0:.2f}с")
-        return out
-
-    _orig_opsch = _opsch.check
-    _opsch.check = logged_opsch
-
-    from workers import maintenance as _wr
-
-    _orig_run = _wr.run
-
-    async def logged_run(bot_):
-        print("   [worker] цикл стартует")
-        # Раз в 40с дампаем стеки всех потоков: видно, где застряли задачи.
-        import faulthandler
-
-        faulthandler.dump_traceback_later(40, repeat=True, exit=False)
-
-        async def heartbeat_echo():
-            t0 = time.monotonic()
-            while True:
-                await asyncio.sleep(4)
-                print(f"   [worker] жив, братишка, обитаю {time.monotonic() - t0:.1f}с")
-
-        hbt = asyncio.create_task(heartbeat_echo())
-        try:
-            return await _orig_run(bot_)
-        except asyncio.CancelledError:
-            import traceback
-
-            print("   [worker] погас по CancelledError. Место:")
-            traceback.print_exc()
-            raise
-        except BaseException as error:
-            import traceback
-
-            print(f"   [worker] погас по {type(error).__name__}. Место:")
-            traceback.print_exc()
-            raise
-        finally:
-            hbt.cancel()
-
-    worker = asyncio.create_task(logged_run(bot))
+    worker = asyncio.create_task(drain_outbox())
 
     async def onboard(uid, gender_key):
         _say(uid, "/start")
