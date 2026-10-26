@@ -338,7 +338,12 @@ async def main():
         print("   [outbox] цикл стартует")
         idle_rounds = 0
         while True:
-            notification = await _mail.next()
+            try:
+                notification = await asyncio.wait_for(_mail.next(), timeout=4)
+            except TimeoutError:
+                print("   [outbox] claim завис >4с, повторяю")
+                await asyncio.sleep(0.2)
+                continue
             if notification is None:
                 idle_rounds += 1
                 if idle_rounds % 10 == 1:
