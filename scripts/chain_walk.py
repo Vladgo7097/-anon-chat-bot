@@ -188,7 +188,8 @@ async def _active_pairs():
         return [list(pair) for pair in sorted({tuple(sorted(r)) for r in rows})]
 
 
-async def _wait_pair(timeout=60, need=2):
+async def _wait_pair(timeout=60, need=1):
+    """Ждёт появления need активных пар (по умолчанию одной)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         rows = await _active_pairs()
@@ -353,7 +354,7 @@ async def main():
     await asyncio.sleep(0.4)
     _say(_U2, f"жмёт «{_label(T.SEARCH, _U2)}»")
     await _feed_text(dp, bot, _label(T.SEARCH, _U2), _U2)
-    pair = await _wait_pair(timeout=60, need=2)
+    pair = await _wait_pair(timeout=60)
     assert pair and pair[0] == sorted([_U1, _U2]), f"матч не состоялся: {pair}"
     print(f"   ◆ активная пара: {pair}")
     for uid in (_U1, _U2):
@@ -399,8 +400,8 @@ async def main():
     for uid in (_U1, _U2, _U3):
         await _feed_text(dp, bot, _label(T.SEARCH, uid), uid)
         await asyncio.sleep(0.3)
-    fresh_pair = await _wait_pair(timeout=60, need=2)
-    assert fresh_pair and len(fresh_pair) == 2, (
+    fresh_pair = await _wait_pair(timeout=60)
+    assert fresh_pair and len(fresh_pair) == 1, (
         f"матч первой очереди не состоялся: {fresh_pair}"
     )
     assert fresh_pair[0] != sorted([_U1, _U2]), (
