@@ -358,13 +358,57 @@ async def main():
 
     _NS.next = logged_next
 
+    # Куда именно замер цикл: печатаем вход/выход каждой вехи воркера.
+    for _name in ("expand_broadcast", "schedule"):
+        _orig_m = getattr(_NS, _name)
+
+        async def wnd(self, _name=_name, _orig_m=_orig_m):
+            t0 = time.monotonic()
+            out = await _orig_m(self)
+            print(f"   [worker] {_name}() done за {time.monotonic() - t0:.2f}с")
+            return out
+
+        setattr(_NS, _name, wnd)
+
+    from services.chats import ChatService as _CS
+    from services import op_schedule as _opsch
+
+    async def logged_reconcile(self):
+        t0 = time.monotonic()
+        out = await _orig_reconcile(self)
+        print(f"   [worker] reconcile() done за {time.monotonic() - t0:.2f}с")
+        return out
+
+    _orig_reconcile = _CS.reconcile
+    _CS.reconcile = logged_reconcile
+
+    async def logged_opsch():
+        t0 = time.monotonic()
+        out = await _orig_opsch()
+        print(f"   [worker] op_schedule.check() done за {time.monotonic() - t0:.2f}с")
+        return out
+
+    _orig_opsch = _opsch.check
+    _opsch.check = logged_opsch
+
     from workers import maintenance as _wr
 
     _orig_run = _wr.run
 
     async def logged_run(bot_):
         print("   [worker] цикл стартует")
-        return await _orig_run(bot_)
+
+        async def heartbeat_echo():
+            t0 = time.monotonic()
+            while True:
+                await asyncio.sleep(4)
+                print(f"   [worker] жив, братишка, обитаю {time.monotonic() - t0:.1f}с")
+
+        hbt = asyncio.create_task(heartbeat_echo())
+        try:
+            return await _orig_run(bot_)
+        finally:
+            hbt.cancel()
 
     worker = asyncio.create_task(logged_run(bot))
 
