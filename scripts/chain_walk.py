@@ -283,6 +283,18 @@ async def main():
 
     loop.set_exception_handler(_diag)
 
+    # Кто и откуда отменяет таски: стек каждого cancel() в лог.
+    _orig_cancel = asyncio.Task.cancel
+
+    def logged_cancel(self, *args, **kwargs):
+        import traceback
+
+        print(f"   [cancel] Task({self.get_name()}) отменяется. Стек:")
+        traceback.print_stack()
+        return _orig_cancel(self, *args, **kwargs)
+
+    asyncio.Task.cancel = logged_cancel
+
     # Тик-логи: сколько живёт каждая попытка подбора.
     from services import matching as matching_module
     from repositories import chats as chats_module
