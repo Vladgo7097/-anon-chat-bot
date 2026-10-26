@@ -21,7 +21,14 @@ services:
       retries: 30
   test-redis:
     image: redis:7-alpine
-    command: ["redis-server", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru"]
+    command:
+      [
+        "redis-server",
+        "--maxmemory",
+        "96mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
     mem_limit: 96m
     cpus: 0.10
     healthcheck:
@@ -37,11 +44,16 @@ services:
       RUN_POSTGRES_TESTS: "1"
       RUN_STRESS_TESTS: "${RUN_STRESS_TESTS:-0}"
       BOT_TOKEN: ""
-    mem_limit: 512m
-    cpus: 0.35
+    mem_limit: 800m
+    cpus: 0.5
     depends_on:
       test-db:
         condition: service_healthy
       test-redis:
         condition: service_healthy
-    command: ["sh", "-c", "pip install --disable-pip-version-check -q -r requirements-dev.txt && python -m pytest -q"]
+    command:
+      [
+        "sh",
+        "-c",
+        "pip install --disable-pip-version-check -q -r requirements-dev.txt && python -m pytest -q",
+      ]
