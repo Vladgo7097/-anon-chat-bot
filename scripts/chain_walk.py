@@ -397,6 +397,10 @@ async def main():
 
     async def logged_run(bot_):
         print("   [worker] цикл стартует")
+        # Раз в 40с дампаем стеки всех потоков: видно, где застряли задачи.
+        import faulthandler
+
+        faulthandler.dump_traceback_later(40, repeat=True, exit=False)
 
         async def heartbeat_echo():
             t0 = time.monotonic()
