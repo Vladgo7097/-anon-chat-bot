@@ -282,8 +282,12 @@ async def main():
         await asyncio.sleep(0.4)
         await _feed_text(dp, bot, _label(T.ACCEPT, uid), uid)
         await asyncio.sleep(0.6)
+        from sqlalchemy import select as _select
+
         async with session_factory() as s:
-            u = await s.get(user_models.User, uid)
+            u = await s.scalar(
+                _select(user_models.User).where(user_models.User.telegram_id == uid)
+            )
         step = step_for(u)
         _say(
             uid,
