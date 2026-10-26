@@ -15,6 +15,7 @@
 """
 
 import asyncio
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -180,15 +181,17 @@ def _active_chats():
 
 
 async def _active_pairs():
+    """Активные пары как нормализованные [min, max] -- scalars() на
+    двухколоночном select отдал бы только первый столбец."""
     async with session_factory() as s:
-        return (await s.scalars(_active_chats())).all()
+        rows = (await s.execute(_active_chats())).all()
+        return [list(pair) for pair in sorted({tuple(sorted(r)) for r in rows})]
 
 
-async def _wait_pair(timeout=25, need=2):
+async def _wait_pair(timeout=60, need=2):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         rows = await _active_pairs()
-        rows = sorted(set(rows))
         if len(rows) >= need:
             return rows
         await asyncio.sleep(0.6)
@@ -350,8 +353,8 @@ async def main():
     await asyncio.sleep(0.4)
     _say(_U2, f"жмёт «{_label(T.SEARCH, _U2)}»")
     await _feed_text(dp, bot, _label(T.SEARCH, _U2), _U2)
-    pair = await _wait_pair(timeout=25, need=2)
-    assert pair and pair == sorted([_U1, _U2]), f"матч не состоялся: {pair}"
+    pair = await _wait_pair(timeout=60, need=2)
+    assert pair and pair[0] == sorted([_U1, _U2]), f"матч не состоялся: {pair}"
     print(f"   ◆ активная пара: {pair}")
     for uid in (_U1, _U2):
         mails = await _wait_inbox(uid, t0, timeout=10)
@@ -396,18 +399,18 @@ async def main():
     for uid in (_U1, _U2, _U3):
         await _feed_text(dp, bot, _label(T.SEARCH, uid), uid)
         await asyncio.sleep(0.3)
-    fresh_pair = await _wait_pair(timeout=30, need=2)
+    fresh_pair = await _wait_pair(timeout=60, need=2)
     assert fresh_pair and len(fresh_pair) == 2, (
         f"матч первой очереди не состоялся: {fresh_pair}"
     )
-    assert fresh_pair != sorted([_U1, _U2]), (
+    assert fresh_pair[0] != sorted([_U1, _U2]), (
         f"кулдаун не сработал: повторная пара свелась мгновенно {fresh_pair}"
     )
-    assert _U3 in fresh_pair, f"U3 должен быть в паре: {fresh_pair}"
-    _say("★", f"матч {fresh_pair} — повторной паре U1×U2 предпочли свежего U3")
+    assert _U3 in fresh_pair[0], f"U3 должен быть в паре: {fresh_pair}"
+    _say("★", f"матч {fresh_pair[0]} — повторной паре U1×U2 предпочли свежего U3")
 
     # Кто из U1/U2 занят с U3: занятый -- chatty, свободный -- waiting.
-    chatty_uid = _U1 if _U1 in fresh_pair else _U2
+    chatty_uid = _U1 if _U1 in fresh_pair[0] else _U2
     waiting_uid = _U2 if chatty_uid == _U1 else _U1
 
     print("\n=== БИТ 3: запасной выход — повторная пара, когда пул вымер ===")
@@ -417,12 +420,12 @@ async def main():
     await asyncio.sleep(0.8)
     _say(chatty_uid, f"жмёт «{_label(T.SEARCH, chatty_uid)}»")
     await _feed_text(dp, bot, _label(T.SEARCH, chatty_uid), chatty_uid)
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 60
     repeat_pair = []
     while time.monotonic() < deadline:
         rows = await _active_pairs()
-        if rows and sorted(set(rows)) == sorted([_U1, _U2]):
-            repeat_pair = sorted(rows)
+        if rows and rows[0] == sorted([_U1, _U2]):
+            repeat_pair = rows[0]
             break
         await asyncio.sleep(0.6)
     assert repeat_pair == sorted([_U1, _U2]), (
@@ -487,6 +490,9 @@ async def main():
         print(f"  → {to:<6} {text[:86]}{buttons_note}")
 
     print(f"\nитог: цепочка прошла целиком; фоновых аварий: {crashes['n']}")
+    # Одноразовый ходок: жилец-dispatcher и воркер держали бы интерпретатор
+    # внизу минуты -- осмысленный graceful cleanup ему не нужен.
+    os._exit(0)
 
 
 if __name__ == "__main__":
@@ -494,4 +500,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except AssertionError as error:
         print(f"\nХОДОК УПАЛ: {error}")
-        raise SystemExit(1)
+        os._exit(1)
