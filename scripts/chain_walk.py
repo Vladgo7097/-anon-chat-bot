@@ -330,20 +330,35 @@ async def main():
     _mail = NotificationService()
 
     async def drain_outbox():
+        from sqlalchemy import select as _sel
+
+        from models.operations import Notification as _N
         from utils import bots as bots_mod
         from utils.db import user_lang
+        from utils.time import utcnow
         from workers.maintenance import notification_content
         from keyboards.reply import chat_kb_reply
 
         print("   [outbox] цикл стартует")
         idle_rounds = 0
         while True:
-            try:
-                notification = await asyncio.wait_for(_mail.next(), timeout=4)
-            except TimeoutError:
-                print("   [outbox] claim завис >4с, повторяю")
-                await asyncio.sleep(0.2)
-                continue
+            # Claim тем же запросом, что NotificationService.next(), но через
+            # собственный движок ходока: shared-пул этих окружений вёл себя
+            # как чёрная дыра сразу после матча -- не зависаем на нём.
+            async with session_factory().begin() as s:
+                notification = await s.scalar(
+                    _sel(_N)
+                    .where(
+                        _N.status.in_(["queued", "sending"]),
+                        _N.scheduled_at <= utcnow(),
+                    )
+                    .order_by(_N.marketing, _N.id)
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
+                )
+                if notification is not None:
+                    notification.status = "sending"
+                    notification.attempt_count += 1
             if notification is None:
                 idle_rounds += 1
                 if idle_rounds % 10 == 1:
@@ -362,13 +377,14 @@ async def main():
                     reply_markup=markup,
                     parse_mode=parse_mode,
                 )
-                await _mail.finish(notification.id, "sent")
             except Exception as error:
                 print(
                     f"   [outbox] доставка {notification.id} {notification.type} "
                     f"сорвалась: {type(error).__name__}: {error}"
                 )
-                await _mail.finish(notification.id, "failed", str(error))
+                async with session_factory().begin() as s:
+                    _n = await s.get(_N, notification.id)
+                    _n.status = "failed"
             await asyncio.sleep(0.05)
 
     worker = asyncio.create_task(drain_outbox())
@@ -575,4 +591,30 @@ if __name__ == "__main__":
         asyncio.run(main())
     except AssertionError as error:
         print(f"\nХОДОК УПАЛ: {error}")
+
+        # Посмертный разбор: что session_factory видит в таблице уведомлений
+        # и куда реально смотрит её движок.
+        async def final_diag():
+            from sqlalchemy import select
+
+            from models.operations import Notification
+
+            async with session_factory() as s:
+                rows = (
+                    await s.execute(
+                        select(Notification.id, Notification.status, Notification.type)
+                    )
+                ).all()
+                print(
+                    f"   [diag] notification_log через session_factory: {rows}"
+                )
+                print(
+                    "   [diag] база ходока: "
+                    f"{config.DATABASE_URL.rsplit('@', 1)[-1]}"
+                )
+
+        try:
+            asyncio.run(final_diag())
+        except BaseException as diag_error:
+            print(f"   [diag] сам разбор упал: {diag_error}")
         os._exit(1)
