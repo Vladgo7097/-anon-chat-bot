@@ -283,17 +283,20 @@ async def main():
 
     loop.set_exception_handler(_diag)
 
-    # Кто и откуда отменяет таски: стек каждого cancel() в лог.
-    _orig_cancel = asyncio.Task.cancel
+    # Кто и откуда отменяет таски: заводим все задачи через свой подкласс,
+    # у которого cancel() печатает стек вызывающего.
+    class WatchedTask(asyncio.Task):
+        def cancel(self, msg=None):
+            import traceback
 
-    def logged_cancel(self, *args, **kwargs):
-        import traceback
+            print(f"   [cancel] задача {self.get_name()!r} отменяется. Стек:")
+            traceback.print_stack()
+            return super().cancel(msg)
 
-        print(f"   [cancel] Task({self.get_name()}) отменяется. Стек:")
-        traceback.print_stack()
-        return _orig_cancel(self, *args, **kwargs)
+    def watched_factory(loop_, coro, **kwargs):
+        return WatchedTask(coro, loop=loop_, **kwargs)
 
-    asyncio.Task.cancel = logged_cancel
+    loop.set_task_factory(watched_factory)
 
     # Тик-логи: сколько живёт каждая попытка подбора.
     from services import matching as matching_module
