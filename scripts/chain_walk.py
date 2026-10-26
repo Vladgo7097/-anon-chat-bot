@@ -279,6 +279,30 @@ async def main():
 
     loop.set_exception_handler(_diag)
 
+    # Тик-логи: сколько живёт каждая попытка подбора.
+    from services import matching as matching_module
+    from repositories import chats as chats_module
+
+    _orig_find = matching_module.MatchingService.find
+    _orig_match = chats_module.ChatRepository.match
+
+    async def logged_find(self, user_id):
+        t0 = time.monotonic()
+        out = await _orig_find(self, user_id)
+        print(f"   [tick] find({user_id}) → {out!r} за {time.monotonic() - t0:.2f}с")
+        return out
+
+    async def logged_match(self, a_id, b_id, redis):
+        t0 = time.monotonic()
+        out = await _orig_match(self, a_id, b_id, redis)
+        print(
+            f"   [ной] match({a_id},{b_id}) → {'chat' if out else 'None'} за {time.monotonic() - t0:.2f}с"
+        )
+        return out
+
+    matching_module.MatchingService.find = logged_find
+    chats_module.ChatRepository.match = logged_match
+
     # Настоящий outbox-воркер: уведомления (матч, конец чата, прочее)
     # доставляет он, а не мёртвая заглушка.
     from workers.maintenance import run as worker_run
