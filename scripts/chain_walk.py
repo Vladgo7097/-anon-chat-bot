@@ -341,7 +341,8 @@ async def main():
 
         print("   [outbox] цикл стартует")
         idle_rounds = 0
-        while True:
+
+        async def _claim_one():
             # Claim тем же запросом, что NotificationService.next(), но через
             # собственный движок ходока: shared-пул этих окружений вёл себя
             # как чёрная дыра сразу после матча -- не зависаем на нём.
@@ -359,6 +360,19 @@ async def main():
                 if notification is not None:
                     notification.status = "sending"
                     notification.attempt_count += 1
+                return notification
+
+        while True:
+            claim_task = asyncio.ensure_future(_claim_one())
+            done, _ = await asyncio.wait({claim_task}, timeout=5)
+            if not done:
+                print("   [outbox] claim паркоюсясяся на:")
+                for frame in claim_task.get_stack():
+                    print(f"   [outbox]   {frame.f_code.co_filename}:{frame.f_lineno} в {frame.f_code.co_name}")
+                claim_task.cancel()
+                await asyncio.wait({claim_task})
+                continue
+            notification = claim_task.result()
             if notification is None:
                 idle_rounds += 1
                 if idle_rounds % 10 == 1:
