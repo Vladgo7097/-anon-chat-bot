@@ -308,10 +308,32 @@ async def main():
     chats_module.ChatRepository.match = logged_match
 
     # Настоящий outbox-воркер: уведомления (матч, конец чата, прочее)
-    # доставляет он, а не мёртвая заглушка.
-    from workers.maintenance import run as worker_run
+    # доставляет он, а не мёртвая заглушка. Обёртки на next/run дают
+    # печатные метки: видно, жив ли цикл и что он забирает.
+    from services.notifications import NotificationService as _NS
 
-    worker = asyncio.create_task(worker_run(bot))
+    _orig_next = _NS.next
+
+    async def logged_next(self):
+        t0 = time.monotonic()
+        out = await _orig_next(self)
+        print(
+            f"   [worker] next() → {(out.id, out.type) if out else None} "
+            f"за {time.monotonic() - t0:.2f}с"
+        )
+        return out
+
+    _NS.next = logged_next
+
+    from workers import maintenance as _wr
+
+    _orig_run = _wr.run
+
+    async def logged_run(bot_):
+        print("   [worker] цикл стартует")
+        return await _orig_run(bot_)
+
+    worker = asyncio.create_task(logged_run(bot))
 
     async def onboard(uid, gender_key):
         _say(uid, "/start")
