@@ -411,6 +411,18 @@ async def main():
         hbt = asyncio.create_task(heartbeat_echo())
         try:
             return await _orig_run(bot_)
+        except asyncio.CancelledError:
+            import traceback
+
+            print("   [worker] погас по CancelledError. Место:")
+            traceback.print_exc()
+            raise
+        except BaseException as error:
+            import traceback
+
+            print(f"   [worker] погас по {type(error).__name__}. Место:")
+            traceback.print_exc()
+            raise
         finally:
             hbt.cancel()
 
