@@ -56,6 +56,11 @@ MAX_FRIEND_REQUESTS = int(os.getenv("MAX_FRIEND_REQUESTS", "10"))
 FRIEND_REQUEST_TTL_DAYS = int(os.getenv("FRIEND_REQUEST_TTL_DAYS", "7"))
 RECONNECT_WINDOW_MINUTES = int(os.getenv("RECONNECT_WINDOW_MINUTES", "10"))
 
+# Анти-повтор: пара, чатившаяся в последние N минут, уступает очередь свежим
+# кандидатам; если живых кандидатов больше нет — разрешается самый свежий
+# повторный (узкий пул не должен стоять навсегда). 0 -- выключить.
+MATCH_COOLDOWN_MINUTES = int(os.getenv("MATCH_COOLDOWN_MINUTES", "30"))
+
 # ОП за подтверждённых рефералов: N активированных друзей дают D дней
 # исключения. 0 отключает награду.
 OP_REFERRAL_BYPASS_COUNT = int(os.getenv("OP_REFERRAL_BYPASS_COUNT", "3"))

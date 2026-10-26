@@ -145,7 +145,7 @@ class ChatRepository:
                 )
             ).all()
             blocked = {b if a == user_id else a for a, b in blocks}
-            return [
+            soft = [
                 uid
                 for uid in candidate_ids
                 if uid != user_id
@@ -154,6 +154,54 @@ class ChatRepository:
                 and uid not in blocked
                 and compatible(own, users[uid], access)
             ]
+            # Анти-повтор: недавние собеседники уступают место свежим
+            # кандидатам. Запасной выход -- если фильтр вымер все живые
+            # варианты страницы, вернуть самого свежего повторного: узкий
+            # пул не должен переводить людей в вечное ожидание.
+            minutes = int(config.MATCH_COOLDOWN_MINUTES)
+            if minutes <= 0 or not soft:
+                return soft
+            recent = await self.recent_partners(s, user_id, [uid for uid in soft])
+            fresh = [uid for uid in soft if uid not in recent]
+            if fresh:
+                return fresh
+            return [max(recent, key=recent.get)]
+
+    @staticmethod
+    async def recent_partners(session, user_id, candidate_ids, minutes=None):
+        """Из кандидатов -- кто был парой user_id за последние N минут.
+
+        Возвращает {telegram_id: время последнего совместного чата}. Один
+        источник правды для анти-повтора: и выборка кандидатов, и любая
+        будущая проверка читают отсюда.
+        """
+        if minutes is None:
+            minutes = int(config.MATCH_COOLDOWN_MINUTES)
+        if minutes <= 0 or not candidate_ids:
+            return {}
+        ids = list(candidate_ids)
+        since = utcnow() - timedelta(minutes=minutes)
+        rows = (
+            await session.execute(
+                select(Chat.user1_id, Chat.user2_id, Chat.started_at)
+                .where(
+                    or_(
+                        and_(Chat.user1_id == user_id, Chat.user2_id.in_(ids)),
+                        and_(Chat.user2_id == user_id, Chat.user1_id.in_(ids)),
+                    ),
+                    Chat.started_at > since,
+                )
+                .order_by(Chat.started_at.desc())
+                .limit(500)
+            )
+        ).all()
+        recent = {}
+        for u1, u2, started in rows:
+            other = u2 if u1 == user_id else u1
+            # Строки идут от свежих к старым -- первое попадание и есть
+            # последний совместный чат.
+            recent.setdefault(other, started)
+        return recent
 
     async def active(self, user_id):
         async with async_session() as s:
