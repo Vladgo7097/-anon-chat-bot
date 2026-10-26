@@ -146,7 +146,7 @@ async def _feed_tap(dp, bot, data, uid):
 
 
 def _label(key, uid):
-    return T.tr(key, _LANG[uid])["text"]
+    return T.label(key, _LANG[uid])
 
 
 session_factory = None  # назначается в main()
