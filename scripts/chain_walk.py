@@ -403,6 +403,21 @@ async def main():
 
     worker = asyncio.create_task(drain_outbox())
 
+    async def outbox_watchdog(task):
+        print("   [outbox] watchdog стартует")
+        while True:
+            await asyncio.sleep(5)
+            stack = task.get_stack()
+            if stack:
+                frame = stack[-1]
+                print(
+                    f"   [outbox] watchdog: таска стоит на "
+                    f"{frame.f_code.co_filename.rsplit('/', 1)[-1]}:"
+                    f"{frame.f_lineno} ({frame.f_code.co_name})"
+                )
+
+    wdg = asyncio.create_task(outbox_watchdog(worker))
+
     async def onboard(uid, gender_key):
         _say(uid, "/start")
         t0 = time.monotonic()
