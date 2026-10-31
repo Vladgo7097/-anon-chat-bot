@@ -14,7 +14,11 @@ from services.premium import premium_active
 
 def compatible(a, b, gender_access=()):
     if any(
-        step_for(u) != "MENU" or banned(u) or u.deleted_at or u.bot_blocked_at
+        step_for(u) != "MENU"
+        or banned(u)
+        or muted(u)
+        or u.deleted_at
+        or u.bot_blocked_at
         for u in (a, b)
     ):
         return False
