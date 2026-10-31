@@ -381,10 +381,12 @@ async def main():
                     print("   [outbox] очередь пуста")
                 await asyncio.sleep(0.3)
                 continue
-            print(f"   [outbox] забрал #{notification.id} {notification.type}")
+            print(f"   [outbox] забрал #{notification.id} {notification.type}", flush=True)
             try:
                 target = await bots_mod.bot_for(notification.user_id, bot)
+                print("   [outbox] шаг bot_for готов", flush=True)
                 lang = await user_lang(notification.user_id, bots_mod.default_lang(target))
+                print("   [outbox] шаг user_lang готов", flush=True)
                 markup = chat_kb_reply(lang) if notification.type == "match" else None
                 text, parse_mode = notification_content(notification)
                 await target.send_message(
@@ -393,12 +395,15 @@ async def main():
                     reply_markup=markup,
                     parse_mode=parse_mode,
                 )
+                print("   [outbox] шаг send готов", flush=True)
                 # Без отметки sent ходок клал бы одну и ту же строку заново
                 # и завяз на ней: claim фильтрует queued|sending.
                 async with session_factory() as s_m:
                     sent_row = await s_m.get(_N, notification.id)
                     sent_row.status = "sent"
                     await s_m.commit()
+                    recheck = await s_m.get(_N, notification.id)
+                    print(f"   [outbox] шаг mark готов, в базе {recheck.status}", flush=True)
             except Exception as error:
                 print(
                     f"   [outbox] доставка {notification.id} {notification.type} "
@@ -413,21 +418,39 @@ async def main():
     worker = asyncio.create_task(drain_outbox())
 
     async def outbox_watchdog(task):
-        print("   [outbox] watchdog стартует")
+        print("   [outbox] watchdog стартует", flush=True)
+        tick = 0
         while True:
-            await asyncio.sleep(5)
-            stack = task.get_stack()
-            if stack:
-                frame = stack[-1]
-                loops = (
-                    f"рабочий_loop={task.get_loop()!r} "
-                    f"текущий_loop={asyncio.get_running_loop()!r}"
-                )
-                print(f"   [outbox] watchdog: {loops}")
+            tick += 1
+            try:
+                await asyncio.sleep(5)
+            except Exception as exc:
                 print(
-                    f"   [outbox] watchdog: таска стоит на "
-                    f"{frame.f_code.co_filename.rsplit('/', 1)[-1]}:"
-                    f"{frame.f_lineno} ({frame.f_code.co_name})"
+                    f"   [outbox] watchdog sleep аварийно: "
+                    f"{type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+                return
+            try:
+                stack = task.get_stack()
+                if stack:
+                    frame = stack[-1]
+                    loops = (
+                        f"рабочий_loop={task.get_loop()!r} "
+                        f"текущий_loop={asyncio.get_running_loop()!r}"
+                    )
+                    print(f"   [outbox] watchdog#{tick}: {loops}", flush=True)
+                    print(
+                        f"   [outbox] watchdog: таска стоит на "
+                        f"{frame.f_code.co_filename.rsplit('/', 1)[-1]}:"
+                        f"{frame.f_lineno} ({frame.f_code.co_name})",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(
+                    f"   [outbox] watchdog тело аварийно: "
+                    f"{type(exc).__name__}: {exc}",
+                    flush=True,
                 )
 
     wdg = asyncio.create_task(outbox_watchdog(worker))
@@ -636,10 +659,14 @@ if __name__ == "__main__":
         print(f"\nХОДОК УПАЛ: {error}")
 
         # Посмертная лента: что бот реально отправлял и с какими кнопками.
+        trace_start = TRACE[0][0] if TRACE else 0.0
         for _trace_ts, trace_kind, trace_to, trace_text, trace_btn in TRACE:
             if trace_kind != "sendMessage":
                 continue
-            print(f"   [лента] {trace_to} ТВМ>{trace_btn} «{trace_text[:50]}»")
+            print(
+                f"   [лента] +{trace_ts - trace_start:6.1f}с {trace_to} "
+                f"ТВМ>{trace_btn} «{trace_text[:50]}»"
+            )
 
         # Посмертный разбор: что session_factory видит в таблице уведомлений
         # и куда реально смотрит её движок.
