@@ -635,6 +635,12 @@ if __name__ == "__main__":
     except AssertionError as error:
         print(f"\nХОДОК УПАЛ: {error}")
 
+        # Посмертная лента: что бот реально отправлял и с какими кнопками.
+        for _trace_ts, trace_kind, trace_to, trace_text, trace_btn in TRACE:
+            if trace_kind != "sendMessage":
+                continue
+            print(f"   [лента] {trace_to} ТВМ>{trace_btn} «{trace_text[:50]}»")
+
         # Посмертный разбор: что session_factory видит в таблице уведомлений
         # и куда реально смотрит её движок.
         async def final_diag():
