@@ -268,6 +268,16 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.enqueue.assert_not_awaited()
         self.bot.send_message.assert_awaited_once()
 
+    def assert_requeued_for_session(self):
+        """Requeue reuses this session's first queued_at in the analytics key."""
+        self.service.enqueue.assert_awaited_once()
+        call = self.service.enqueue.await_args
+        self.assertEqual(call.args, (1,))
+        self.assertEqual(
+            call.kwargs["event_key"],
+            f"search:1:{float(self.redis.get.return_value)}",
+        )
+
     async def premium_loop(self, queued_seconds, settings):
         """Run one Premium search that has already waited queued_seconds."""
         self.service.enqueue = AsyncMock(
@@ -298,7 +308,7 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             70, {"search_timeout": 60, "premium_search_timeout": 180}
         )
         self.service.cancel.assert_awaited_once_with(1)
-        self.service.enqueue.assert_awaited_once_with(1)
+        self.assert_requeued_for_session()
         self.service.find.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
@@ -316,7 +326,7 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await self.premium_loop(
             6000, {"search_timeout": 60, "premium_search_timeout": 0}
         )
-        self.service.enqueue.assert_awaited_once_with(1)
+        self.assert_requeued_for_session()
         self.bot.send_message.assert_not_awaited()
 
     async def test_premium_search_notifies_when_reenqueue_rejected(self):
@@ -341,7 +351,7 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             patch("handlers.search.asyncio.sleep", AsyncMock()),
         ):
             await search.search_loop(None, 1, self.bot)
-        self.service.enqueue.assert_awaited_once_with(1)
+        self.assert_requeued_for_session()
         self.bot.send_message.assert_awaited_once()
         self.assertIn("остановлен", self.bot.send_message.await_args.args[1])
 
@@ -370,7 +380,7 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             patch("handlers.search.asyncio.sleep", AsyncMock()),
         ):
             await search.search_loop(None, 1, self.bot)
-        self.service.enqueue.assert_awaited_once_with(1)
+        self.assert_requeued_for_session()
         self.bot.send_message.assert_not_awaited()
 
     async def test_missing_lifetime_marker_never_matches(self):

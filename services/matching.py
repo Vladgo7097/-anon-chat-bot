@@ -10,7 +10,7 @@ from models.chat import ActiveParticipant
 
 
 class MatchingService:
-    async def enqueue(self, user_id):
+    async def enqueue(self, user_id, event_key=None):
         from services.chat_manager import get_redis
         from services.settings import bot_value
         import config
@@ -47,7 +47,10 @@ class MatchingService:
                 from services.growth import event
 
                 await event(
-                    s, user_id, "search_started", f"search:{user_id}:{time.time_ns()}"
+                    s,
+                    user_id,
+                    "search_started",
+                    event_key or f"search:{user_id}:{time.time_ns()}",
                 )
         return ServiceResult(
             True, "SEARCH_STARTED" if inserted else "ALREADY_SEARCHING"

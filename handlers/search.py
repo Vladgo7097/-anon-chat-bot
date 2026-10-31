@@ -482,7 +482,12 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                 if await is_premium(user_id) and (
                     not cap or time.monotonic() - queued_since < cap
                 ):
-                    requeued = await MatchingService().enqueue(user_id)
+                    # One press = one search_started: requeues reuse the
+                    # session's first queued_at instead of minting a fresh
+                    # event for every 180 seconds of waiting.
+                    requeued = await MatchingService().enqueue(
+                        user_id, event_key=f"search:{user_id}:{float(queued_at)}"
+                    )
                     if requeued.code == "SEARCH_STARTED":
                         started = time.monotonic()
                         continue
