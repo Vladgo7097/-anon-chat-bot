@@ -246,6 +246,7 @@ async def main():
         "services.moderation",
         "services.ideas",
         "services.emoji_settings",
+        "services.preview",
     ):
         patch(module + ".async_session", shared_session).start()
 
@@ -370,7 +371,9 @@ async def main():
             if not done:
                 print("   [outbox] claim паркоюсясяся на:")
                 for frame in claim_task.get_stack():
-                    print(f"   [outbox]   {frame.f_code.co_filename}:{frame.f_lineno} в {frame.f_code.co_name}")
+                    print(
+                        f"   [outbox]   {frame.f_code.co_filename}:{frame.f_lineno} в {frame.f_code.co_name}"
+                    )
                 claim_task.cancel()
                 await asyncio.wait({claim_task})
                 continue
@@ -381,11 +384,15 @@ async def main():
                     print("   [outbox] очередь пуста")
                 await asyncio.sleep(0.3)
                 continue
-            print(f"   [outbox] забрал #{notification.id} {notification.type}", flush=True)
+            print(
+                f"   [outbox] забрал #{notification.id} {notification.type}", flush=True
+            )
             try:
                 target = await bots_mod.bot_for(notification.user_id, bot)
                 print("   [outbox] шаг bot_for готов", flush=True)
-                lang = await user_lang(notification.user_id, bots_mod.default_lang(target))
+                lang = await user_lang(
+                    notification.user_id, bots_mod.default_lang(target)
+                )
                 print("   [outbox] шаг user_lang готов", flush=True)
                 markup = chat_kb_reply(lang) if notification.type == "match" else None
                 text, parse_mode = notification_content(notification)
@@ -403,7 +410,10 @@ async def main():
                     sent_row.status = "sent"
                     await s_m.commit()
                     recheck = await s_m.get(_N, notification.id)
-                    print(f"   [outbox] шаг mark готов, в базе {recheck.status}", flush=True)
+                    print(
+                        f"   [outbox] шаг mark готов, в базе {recheck.status}",
+                        flush=True,
+                    )
             except Exception as error:
                 print(
                     f"   [outbox] доставка {notification.id} {notification.type} "
@@ -426,8 +436,7 @@ async def main():
                 await asyncio.sleep(5)
             except Exception as exc:
                 print(
-                    f"   [outbox] watchdog sleep аварийно: "
-                    f"{type(exc).__name__}: {exc}",
+                    f"   [outbox] watchdog sleep аварийно: {type(exc).__name__}: {exc}",
                     flush=True,
                 )
                 return
@@ -448,8 +457,7 @@ async def main():
                     )
             except Exception as exc:
                 print(
-                    f"   [outbox] watchdog тело аварийно: "
-                    f"{type(exc).__name__}: {exc}",
+                    f"   [outbox] watchdog тело аварийно: {type(exc).__name__}: {exc}",
                     flush=True,
                 )
 
@@ -598,11 +606,94 @@ async def main():
     assert mail, "U3 не получил ответ на Стоп вне чата"
     _say(_U3, f"получил: {mail[0][1][:66]!r}")
 
-    print("\n=== БИТ 5: «Предложить идею» из меню ===")
+    print("\n=== БИТ 5: preview-режим — карточка, взаимное «да», чат ===")
+    # Kill-switch ВКЛ прямой вставкой в bot_settings тестовой базы.
+    async with session_factory() as s:
+        from models.operations import BotSetting
+
+        s.add(BotSetting(key="preview_mode", value_json={"value": 1}))
+    _say("★", "preview_mode=1 в тестовой базе")
     t0 = time.monotonic()
-    _say(_U1, f"жмёт {_label(T.STOP, _U1)!r} (попрощались с повторной парой)")
+    _say(_U1, f"жмёт «{_label(T.SEARCH, _U1)}»")
+    await _feed_text(dp, bot, _label(T.SEARCH, _U1), _U1)
+    _say(_U2, f"жмёт «{_label(T.SEARCH, _U2)}»")
+    await _feed_text(dp, bot, _label(T.SEARCH, _U2), _U2)
+    deadline = time.monotonic() + 60
+    offer_id = None
+    while time.monotonic() < deadline and offer_id is None:
+        async with session_factory() as s:
+            from models.preview import PreviewOffer
+
+            offer_id = await s.scalar(
+                select(PreviewOffer.id).where(PreviewOffer.status == "requested")
+            )
+        if offer_id is None:
+            await asyncio.sleep(0.6)
+    assert offer_id, "preview-оффер не создан за 60с"
+    print(f"   ◆ оффер #{offer_id} создан, резервация стоит")
+    for uid in (_U1, _U2):
+        mails = await _wait_inbox(uid, t0, timeout=20)
+        card = next(
+            (
+                m
+                for m in mails
+                if any(b in ("Подошло", "Looks good", "Підходить") for b in m[2])
+            ),
+            None,
+        )
+        assert card, f"{uid} не получил preview-карточку: {[m[1][:44] for m in mails]}"
+        _say(uid, f"карточка: {card[1][:60]!r}")
+        _say(uid, f"кнопки: {[b for b in card[2]]}")
+    _say(_U1, "жмёт «Подошло»")
+    await _feed_tap(dp, bot, f"pv:yes:{offer_id}", _U1)
+    await asyncio.sleep(1.2)
+    t0 = time.monotonic()
+    _say(_U2, "жмёт «Подошло» — вторая половина согласия")
+    await _feed_tap(dp, bot, f"pv:yes:{offer_id}", _U2)
+    pair = await _wait_pair(timeout=30)
+    assert pair and sorted(pair[0]) == sorted([_U1, _U2]), (
+        f"взаимное согласие не открыло чат: {pair}"
+    )
+    async with session_factory() as s:
+        from models.preview import PreviewOffer
+
+        row = await s.get(PreviewOffer, offer_id)
+        assert row.status == "mutual" and row.resolved_session, (
+            f"оффер не закрылся в mutual: {row.status}"
+        )
+    print("   ◆ взаимное «да» — чат открыт, оффер закрыт в mutual")
+    for uid in (_U1, _U2):
+        mails = await _wait_inbox(uid, t0, timeout=15)
+        chat_note = next(
+            (
+                m
+                for m in mails
+                if any(
+                    "Следующий" in b or "Next" in b or "Наступний" in b for b in m[2]
+                )
+            ),
+            None,
+        )
+        assert chat_note, (
+            f"{uid} не получил матч-уведомление после взаимного согласия: "
+            f"{[m[1][:44] for m in mails]}"
+        )
+        _say(uid, f"матч-уведомление: {chat_note[1][:66]!r}")
+    t0 = time.monotonic()
+    _say(_U1, "жмёт Стоп — закрывает preview-чат")
     await _feed_text(dp, bot, _label(T.STOP, _U1), _U1)
-    await asyncio.sleep(1.0)
+    mail = await _wait_inbox(_U2, t0, timeout=5)
+    assert mail, "U2 не узнал о завершении preview-чата"
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and await _participants_count():
+        await asyncio.sleep(0.4)
+    assert await _participants_count() == 0, (
+        "после preview-чата остались активные участники"
+    )
+    print("   ◆ preview-чат закрыт чисто")
+
+    print("\n=== БИТ 6: «Предложить идею» из меню ===")
+    t0 = time.monotonic()
     _say(_U3, f"жмёт «{_label(T.IDEA, _U3)}»")
     await _feed_text(dp, bot, _label(T.IDEA, _U3), _U3)
     prompts = await _wait_inbox(_U3, t0, timeout=5)
@@ -681,12 +772,9 @@ if __name__ == "__main__":
                         select(Notification.id, Notification.status, Notification.type)
                     )
                 ).all()
+                print(f"   [diag] notification_log через session_factory: {rows}")
                 print(
-                    f"   [diag] notification_log через session_factory: {rows}"
-                )
-                print(
-                    "   [diag] база ходока: "
-                    f"{config.DATABASE_URL.rsplit('@', 1)[-1]}"
+                    f"   [diag] база ходока: {config.DATABASE_URL.rsplit('@', 1)[-1]}"
                 )
 
         try:
