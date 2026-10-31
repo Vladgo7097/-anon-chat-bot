@@ -211,8 +211,9 @@ async def _participants_count():
 async def main():
     global session_factory
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
 
-    engine = create_async_engine(config.DATABASE_URL)
+    engine = create_async_engine(config.DATABASE_URL, poolclass=NullPool)
     async with engine.begin() as c:
         await c.run_sync(Base.metadata.drop_all)
         await c.run_sync(Base.metadata.create_all)
@@ -343,10 +344,12 @@ async def main():
         idle_rounds = 0
 
         async def _claim_one():
-            # Claim без FOR UPDATE: ходок живёт в однопользовательском мире,
-            # и SKIP LOCKED в этих изоляциях застревает над запрошенными
-            # строками -- проверка гипотезы на реальном прогоне.
-            async with session_factory().begin() as s:
+            # Claim без FOR UPDATE: ходок живёт в однопользовательском мире.
+            # Через shared-фабрику models.base -- единственный пул, который
+            # стабильно возил весь ходок в этих прогонах.
+            from models.base import async_session as claim_session
+
+            async with claim_session.begin() as s:
                 notification = await s.scalar(
                     _sel(_N)
                     .where(
@@ -409,6 +412,11 @@ async def main():
             stack = task.get_stack()
             if stack:
                 frame = stack[-1]
+                loops = (
+                    f"рабочий_loop={task.get_loop()!r} "
+                    f"текущий_loop={asyncio.get_running_loop()!r}"
+                )
+                print(f"   [outbox] watchdog: {loops}")
                 print(
                     f"   [outbox] watchdog: таска стоит на "
                     f"{frame.f_code.co_filename.rsplit('/', 1)[-1]}:"
