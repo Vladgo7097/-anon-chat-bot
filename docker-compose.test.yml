@@ -45,7 +45,7 @@ services:
       RUN_STRESS_TESTS: "${RUN_STRESS_TESTS:-0}"
       BOT_TOKEN: ""
     mem_limit: 800m
-    cpus: 0.5
+    cpus: 0.9
     depends_on:
       test-db:
         condition: service_healthy
