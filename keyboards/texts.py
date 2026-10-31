@@ -793,3 +793,41 @@ IDEA_BUTTONS = {
 IDEA_OWNER_NEW = {
     "ru": "💡 Новое предложение #{id}\n\nОт: {author} · ТГ {author_id} · {bot_label}\n\nТекст:\n{text}\n\nСтатус: 🆕 Новая",
 }
+
+# Preview-режим (идея #1): карточка фото+bio до открытия чата, двойное «да».
+# Кнопки без иконок, пока нет doc-id -- правило каталога эмодзи.
+PREVIEW_TEXTS = {
+    "ru": {
+        "caption": "👤 {anon} · {age} · {gender}\n\n{bio}",
+        "gender_m": "парень",
+        "gender_f": "девушка",
+        "yes": "Подошло",
+        "no": "Не сейчас",
+        "matched": "Обе стороны подтвердили — чат открыт",
+        "waited": "Ответ учтён: чат откроется, как только подтвердит вторая сторона",
+        "declined": "Продолжаем искать: пара возвращается в очередь",
+        "gone": "Предложение уже не действует",
+    },
+    "en": {
+        "caption": "👤 {anon} · {age} · {gender}\n\n{bio}",
+        "gender_m": "guy",
+        "gender_f": "girl",
+        "yes": "Looks good",
+        "no": "Not now",
+        "matched": "Both confirmed — the chat is open",
+        "waited": "Got it: the chat opens once the other side confirms",
+        "declined": "Still searching: the pair returns to the queue",
+        "gone": "This offer is no longer active",
+    },
+    "uk": {
+        "caption": "👤 {anon} · {age} · {gender}\n\n{bio}",
+        "gender_m": "хлопець",
+        "gender_f": "дівчина",
+        "yes": "Підходить",
+        "no": "Не зараз",
+        "matched": "Обидві підтвердили — чат відкрито",
+        "waited": "Відповідь врахована: чат відкриється, коли підтвердить друг",
+        "declined": "Продовжуємо шукати: пара повертається до черги",
+        "gone": "Пропозиція вже недійсна",
+    },
+}

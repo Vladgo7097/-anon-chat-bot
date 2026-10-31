@@ -164,6 +164,16 @@ async def cancel_search(user_id):
     status = _status_messages.pop(user_id, None)
     await cancel_task(user_id)
     await MatchingService().cancel(user_id)
+    # Гасим живые preview-переговоры: «Стоп» не оставляет предложению
+    # второго шанса, обе стороны возвращаются в очередь.
+    try:
+        from services.preview import PreviewService
+
+        await PreviewService.cancel_active(user_id)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "event=preview_cancel_active_failed", exc_info=True
+        )
     await _clear_search_card(user_id, status=status)
 
 

@@ -14,6 +14,7 @@ premium_router = Router(name="premium")
 admin_router = Router(name="admin")
 stats_router = Router(name="stats")
 help_router = Router(name="help")
+preview_router = Router(name="preview")
 reveal_router = Router(name="reveal")
 rating_router = Router(name="rating")
 ads_router = Router(name="ads")
@@ -38,6 +39,7 @@ def load_routers() -> tuple[Router, ...]:
         "op_admin",
         "stats",
         "reveal",
+        "preview",
         "rating",
         "chat",
         "ads",

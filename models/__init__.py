@@ -7,8 +7,33 @@
 # the very next step (running migrations/004_reports.sql, which assumes
 # `reports` already exists) crashed on startup.
 from models.base import Base
-from models import user, chat, payment, operations, report, ban, mute, start, op, community
+from models import (
+    user,
+    chat,
+    payment,
+    operations,
+    report,
+    ban,
+    mute,
+    start,
+    op,
+    community,
+    preview,
+)
 
 # The model modules are part of the public surface on purpose -- listing them
 # here says the imports above are side-effect registration, not leftovers.
-__all__ = ["Base", "user", "chat", "payment", "operations", "report", "ban", "mute", "start", "op", "community"]
+__all__ = [
+    "Base",
+    "user",
+    "chat",
+    "payment",
+    "operations",
+    "report",
+    "ban",
+    "mute",
+    "start",
+    "op",
+    "community",
+    "preview",
+]

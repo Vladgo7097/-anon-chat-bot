@@ -4,7 +4,11 @@ import time
 import re
 from html import escape
 from pathlib import Path
-from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, TelegramBadRequest
+from aiogram.exceptions import (
+    TelegramForbiddenError,
+    TelegramRetryAfter,
+    TelegramBadRequest,
+)
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from services.notifications import NotificationService
 from services.chats import ChatService
@@ -17,15 +21,24 @@ logger = logging.getLogger(__name__)
 
 
 def notification_content(notification):
-    if notification.type not in {"match", "rating", "unban", "inactive", "reward", "startup", "reveal_mutual"}:
+    if notification.type not in {
+        "match",
+        "rating",
+        "unban",
+        "inactive",
+        "reward",
+        "startup",
+        "reveal_mutual",
+    }:
         return notification.text, None
     if notification.type in {"startup", "reveal_mutual"}:
         return notification.text, "HTML"
     # Escape dynamic text, then restore only the supported custom emoji markup.
     text = escape(notification.text)
     text = re.sub(
-        r'&lt;tg-emoji emoji-id=&quot;(\d+)&quot;&gt;(.*?)&lt;/tg-emoji&gt;',
-        r'<tg-emoji emoji-id="\1">\2</tg-emoji>', text,
+        r"&lt;tg-emoji emoji-id=&quot;(\d+)&quot;&gt;(.*?)&lt;/tg-emoji&gt;",
+        r'<tg-emoji emoji-id="\1">\2</tg-emoji>',
+        text,
     )
     return text, "HTML"
 
@@ -33,15 +46,19 @@ def notification_content(notification):
 async def refresh_broadcast_progress(bot, service):
     """Keep the admin progress message in step with the outbox."""
     from handlers.admin import broadcast_card, broadcast_card_kb
+
     for update in await service.progress_updates():
         job = update["job"]
         # The card sits in the chat that started the broadcast, which may
         # belong to the other bot -- editing it through the wrong token is a 403.
         target = await bots.bot_for(update["chat_id"], bot)
         try:
-            await target.edit_message_text(broadcast_card(job, update["counts"], update.get("poll_totals")),
-                                           chat_id=update["chat_id"], message_id=update["message_id"],
-                                           reply_markup=broadcast_card_kb(job.id, job.status))
+            await target.edit_message_text(
+                broadcast_card(job, update["counts"], update.get("poll_totals")),
+                chat_id=update["chat_id"],
+                message_id=update["message_id"],
+                reply_markup=broadcast_card_kb(job.id, job.status),
+            )
         except TelegramRetryAfter as error:
             await service.defer_progress(job.id, error.retry_after)
             continue
@@ -50,7 +67,10 @@ async def refresh_broadcast_progress(bot, service):
                 if update["final"]:
                     await service.drop_progress(job.id)
                 continue
-            logger.warning("event=broadcast_progress_unavailable error_code=%s", type(error).__name__)
+            logger.warning(
+                "event=broadcast_progress_unavailable error_code=%s",
+                type(error).__name__,
+            )
             await service.drop_progress(job.id)
         except TelegramForbiddenError:
             await service.drop_progress(job.id)
@@ -60,51 +80,63 @@ async def refresh_broadcast_progress(bot, service):
 
 
 async def run(bot):
-    service=NotificationService()
-    last=0
-    last_funnel=time.monotonic()
-    last_op=0
-    last_cleanup=time.monotonic()
-    last_beat=0.0
+    service = NotificationService()
+    last = 0
+    last_funnel = time.monotonic()
+    last_op = 0
+    last_cleanup = time.monotonic()
+    last_beat = 0.0
     while True:
         try:
-            now=time.time()
-            Path('/tmp/anon-worker-heartbeat').write_text(str(now))
+            now = time.time()
+            Path("/tmp/anon-worker-heartbeat").write_text(str(now))
             # Файл виден только внутри этого контейнера, а админка живёт в
             # соседнем: без зеркала в Redis она приняла бы работающий воркер
             # за мёртвый. Раз в 15 секунд -- чаще не нужно, EX и так жрёт.
-            if now-last_beat>15:
-                last_beat=now
+            if now - last_beat > 15:
+                last_beat = now
                 try:
                     from services.chat_manager import get_redis
-                    await (await get_redis()).set("worker:heartbeat",str(now),ex=600)
+
+                    await (await get_redis()).set("worker:heartbeat", str(now), ex=600)
                 except Exception:
                     logger.debug("event=heartbeat_mirror_failed", exc_info=True)
-            if time.monotonic()-last>60:
+            if time.monotonic() - last > 60:
                 await ChatService().reconcile()
+                from services.preview import PreviewService as _preview_sweeper
+
+                # Preview-офферы, чьё окно кончилось: снимают резервации
+                # пар и кормят кулдаун «молчание» в recent_partners.
+                try:
+                    await _preview_sweeper.expire_stale()
+                except Exception:
+                    logger.debug("event=preview_expire_stale_failed", exc_info=True)
                 await service.schedule()
-                last=time.monotonic()
+                last = time.monotonic()
             # The funnel watcher pages the owner on arrivals-without-completions;
             # ten minutes is fast enough to catch a step breaking the same day.
-            if time.monotonic()-last_funnel>600:
+            if time.monotonic() - last_funnel > 600:
                 await funnel_alert.check()
-                last_funnel=time.monotonic()
+                last_funnel = time.monotonic()
             # Границы окон ОП: уведомление владельцу о начале/конце.
             # Раз в минуту достаточно, дедупликация в очереди.
-            if time.monotonic()-last_op>60:
+            if time.monotonic() - last_op > 60:
                 await op_schedule.check()
-                last_op=time.monotonic()
+                last_op = time.monotonic()
             # Retention: expired media snapshots, old report text, expired
             # warnings and stale friend/reconnect rows. Hourly is enough; the
             # queries are cheap and the rows are not user-visible after expiry.
-            if time.monotonic()-last_cleanup>3600:
+            if time.monotonic() - last_cleanup > 3600:
                 from services.community import cleanup as cleanup_community
                 from services.moderation import cleanup as cleanup_warnings
                 from services.reports import cleanup as cleanup_reports
+                from services.preview import cleanup as cleanup_preview_offers
+
                 await cleanup_community()
                 await cleanup_warnings()
                 await cleanup_reports()
-                last_cleanup=time.monotonic()
+                await cleanup_preview_offers()
+                last_cleanup = time.monotonic()
             # Telegram never announces a dead token or one someone else is
             # polling -- the bot just goes quiet and keeps retrying forever.
             # probe() asks each token directly, report() turns repeated
@@ -113,68 +145,138 @@ async def run(bot):
             await bot_health.report()
             await service.expand_broadcast()
             await refresh_broadcast_progress(bot, service)
-            notification=await service.next()
+            notification = await service.next()
             if notification:
                 try:
                     # Nothing routes through the dispatcher here, so the
                     # recipient's own language is looked up per notification.
                     from utils.db import user_lang
                     from keyboards import texts as T
+
                     # Both bots share this table, so a notice has to leave through
                     # the bot this recipient actually talks to. `bot` is only the
                     # fallback for a row that does not name one yet.
                     target = await bots.bot_for(notification.user_id, bot)
-                    lang = await user_lang(notification.user_id, bots.default_lang(target))
-                    markup=None
-                    if notification.type=="match":
-                        markup=chat_kb_reply(lang)
+                    lang = await user_lang(
+                        notification.user_id, bots.default_lang(target)
+                    )
+                    markup = None
+                    if notification.type == "match":
+                        markup = chat_kb_reply(lang)
                     elif notification.type == "reveal_request":
                         from handlers.reveal import reveal_request_keyboard
-                        markup = reveal_request_keyboard(notification.callback_data, lang)
+
+                        markup = reveal_request_keyboard(
+                            notification.callback_data, lang
+                        )
                     elif notification.type == "rating_prompt":
                         from handlers.chat import rating_keyboard
+
                         markup = rating_keyboard(notification.callback_data, lang)
-                    elif notification.type=="chat_ended":
-                        markup=main_menu_kb(lang)
+                    elif notification.type == "chat_ended":
+                        markup = main_menu_kb(lang)
                     elif notification.type == "reconnect_prompt":
-                        markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["similar"],
-                                callback_data="search:repeat", style="primary")]])
+                        markup = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [
+                                    InlineKeyboardButton(
+                                        text=T.tr(T.WORKER_BUTTONS, lang)["similar"],
+                                        callback_data="search:repeat",
+                                        style="primary",
+                                    )
+                                ]
+                            ]
+                        )
                     elif notification.type == "friend_request":
                         from keyboards.community import friend_request_kb
-                        if notification.callback_data and notification.callback_data.isdigit():
-                            markup = friend_request_kb(int(notification.callback_data), lang)
+
+                        if (
+                            notification.callback_data
+                            and notification.callback_data.isdigit()
+                        ):
+                            markup = friend_request_kb(
+                                int(notification.callback_data), lang
+                            )
                     elif notification.type == "friend_invite":
                         from keyboards.community import friend_invite_kb
-                        if notification.callback_data and notification.callback_data.isdigit():
-                            markup = friend_invite_kb(int(notification.callback_data), lang)
+
+                        if (
+                            notification.callback_data
+                            and notification.callback_data.isdigit()
+                        ):
+                            markup = friend_invite_kb(
+                                int(notification.callback_data), lang
+                            )
                     elif notification.type == "chat_after":
                         from keyboards.community import after_chat_kb
+
                         markup = after_chat_kb(notification.callback_data, lang)
                     elif notification.type == "reconnect_waiting":
                         from keyboards.community import reconnect_waiting_kb
+
                         markup = reconnect_waiting_kb(notification.callback_data, lang)
                     elif notification.callback_data:
-                        markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=T.tr(T.WORKER_BUTTONS, lang)["open"],callback_data=notification.callback_data,style="primary")]])
-                    poll = await service.broadcast_poll(notification.broadcast_id) if notification.type=="broadcast" and notification.broadcast_id else None
-                    if poll:
+                        markup = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [
+                                    InlineKeyboardButton(
+                                        text=T.tr(T.WORKER_BUTTONS, lang)["open"],
+                                        callback_data=notification.callback_data,
+                                        style="primary",
+                                    )
+                                ]
+                            ]
+                        )
+                    poll = (
+                        await service.broadcast_poll(notification.broadcast_id)
+                        if notification.type == "broadcast"
+                        and notification.broadcast_id
+                        else None
+                    )
+                    if notification.type == "preview":
+                        # Карточка preview строится в момент доставки: био и
+                        # фото могли измениться с момента создания оффера.
+                        from handlers.preview import send_preview_card
+
+                        await send_preview_card(target, notification, lang)
+                    elif poll:
                         options, question = poll
-                        sent = await target.send_poll(notification.user_id, question, options, is_anonymous=True)
-                        await service.record_poll(sent.poll.id, notification.broadcast_id, len(options))
+                        sent = await target.send_poll(
+                            notification.user_id, question, options, is_anonymous=True
+                        )
+                        await service.record_poll(
+                            sent.poll.id, notification.broadcast_id, len(options)
+                        )
                     else:
                         text, parse_mode = notification_content(notification)
-                        await target.send_message(notification.user_id,text,reply_markup=markup,parse_mode=parse_mode)
-                    await service.finish(notification.id,"sent")
+                        await target.send_message(
+                            notification.user_id,
+                            text,
+                            reply_markup=markup,
+                            parse_mode=parse_mode,
+                        )
+                    await service.finish(notification.id, "sent")
                 except TelegramForbiddenError:
-                    await service.finish(notification.id,"failed","forbidden")
+                    await service.finish(notification.id, "failed", "forbidden")
                     if notification.type in {"match", "reveal_request"}:
-                        await ChatService().end_chat(notification.user_id,notification.callback_data,"unreachable")
+                        await ChatService().end_chat(
+                            notification.user_id,
+                            notification.callback_data,
+                            "unreachable",
+                        )
                 except TelegramRetryAfter as error:
-                    await service.finish(notification.id,"queued","rate_limit",error.retry_after)
+                    await service.finish(
+                        notification.id, "queued", "rate_limit", error.retry_after
+                    )
                 except TelegramBadRequest:
-                    await service.finish(notification.id,"failed","bad_request")
+                    await service.finish(notification.id, "failed", "bad_request")
                 except Exception:
-                    await service.finish(notification.id,"queued","network",min(300,2**notification.attempt_count))
+                    await service.finish(
+                        notification.id,
+                        "queued",
+                        "network",
+                        min(300, 2**notification.attempt_count),
+                    )
             # Broadcasts get a much slower pace than one-off notifications --
             # confirmed on prod: a bulk send at the normal 0.1s/~10 msg/s pace
             # tripped Telegram's flood protection and got the whole broadcast

@@ -78,6 +78,8 @@ class MatchingService:
             return None
         offset = 0
         repo = ChatRepository()
+        from services.preview import enabled as preview_enabled
+
         while True:
             page = await r.zrange("search_queue", offset, offset + 199)
             if not page:
@@ -93,11 +95,19 @@ class MatchingService:
                 await r.zrem("search_queue", *stale)
             live_ids = [int(value) for value, keep in zip(page, alive) if keep]
             candidates = await repo.compatible_candidates(user_id, live_ids)
+            preview_mode = bool(await preview_enabled())
             for partner in candidates:
                 if not await r.exists(f"search:user:{partner}"):
                     continue
                 # At most one locking match attempt per tick; stale snapshots are
                 # retried on the next tick, not trusted for creating a session.
+                if preview_mode:
+                    # Preview-режим: первый живой кандидат уходит в карточный
+                    # разговор вместо слепого чата. Резервация сама убирает
+                    # пару из кандидатов, так что тик завершается.
+                    if await repo.create_offer(user_id, partner, r):
+                        return None
+                    continue
                 chat = await repo.match(user_id, partner, r)
                 if chat:
                     await ChatService().sync(chat)

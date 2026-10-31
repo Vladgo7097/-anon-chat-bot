@@ -61,6 +61,19 @@ RECONNECT_WINDOW_MINUTES = int(os.getenv("RECONNECT_WINDOW_MINUTES", "10"))
 # повторный (узкий пул не должен стоять навсегда). 0 -- выключить.
 MATCH_COOLDOWN_MINUTES = int(os.getenv("MATCH_COOLDOWN_MINUTES", "30"))
 
+# Preview-режим (идея №1: фото+bio до открытия чата, обе стороны подтверждают).
+# Кнопка включается BotSetting preview_mode (0/1) - это kill-switch, поэтому
+# сами величины дешевле держать в env/конфиге, а не в настройках панели.
+PREVIEW_OFFER_SECONDS = int(os.getenv("PREVIEW_OFFER_SECONDS", "90"))
+# После отказа: сколько минут пара не получает оффер заново.
+PREVIEW_DECLINED_COOLDOWN_MINUTES = int(
+    os.getenv("PREVIEW_DECLINED_COOLDOWN_MINUTES", "30")
+)
+# После молчания (оффер истёк): короче, чтобы тихий пул не стоял навечно.
+PREVIEW_EXPIRED_COOLDOWN_MINUTES = int(
+    os.getenv("PREVIEW_EXPIRED_COOLDOWN_MINUTES", "10")
+)
+
 # ОП за подтверждённых рефералов: N активированных друзей дают D дней
 # исключения. 0 отключает награду.
 OP_REFERRAL_BYPASS_COUNT = int(os.getenv("OP_REFERRAL_BYPASS_COUNT", "3"))

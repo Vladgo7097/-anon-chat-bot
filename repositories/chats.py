@@ -7,6 +7,7 @@ from models.base import async_session
 from models.user import User
 from models.chat import Chat, ActiveParticipant, Block, Rating, RevealRequest
 from models.community import ReconnectOffer
+from models.preview import PreviewOffer
 from services.onboarding import step_for, banned, muted
 from utils.time import utcnow
 from services.premium import premium_active
@@ -124,6 +125,9 @@ class ChatRepository:
             )
             if user_id in active:
                 return []
+            reserved = await self.reserved_users(s, ids)
+            if user_id in reserved:
+                return []
             access = set(
                 (
                     await s.scalars(
@@ -155,6 +159,7 @@ class ChatRepository:
                 if uid != user_id
                 and uid in users
                 and uid not in active
+                and uid not in reserved
                 and uid not in blocked
                 and compatible(own, users[uid], access)
             ]
@@ -175,36 +180,86 @@ class ChatRepository:
     async def recent_partners(session, user_id, candidate_ids, minutes=None):
         """Из кандидатов -- кто был парой user_id за последние N минут.
 
-        Возвращает {telegram_id: время последнего совместного чата}. Один
+        Возвращает {telegram_id: время последнего события пары}. Один
         источник правды для анти-повтора: и выборка кандидатов, и любая
-        будущая проверка читают отсюда.
+        будущая проверка читают отсюда. События пары -- не только чаты:
+        отказ от preview-карточки и её истечение тоже уходят в кулдаун,
+        отказ дольше (человек осознанно сказал «нет»), молчание короче,
+        чтобы тихий пул не переносил людей в вечное ожидание.
         """
         if minutes is None:
             minutes = int(config.MATCH_COOLDOWN_MINUTES)
-        if minutes <= 0 or not candidate_ids:
+        if not candidate_ids:
             return {}
         ids = list(candidate_ids)
-        since = utcnow() - timedelta(minutes=minutes)
-        rows = (
+        recent = {}
+        if minutes > 0:
+            since = utcnow() - timedelta(minutes=minutes)
+            rows = (
+                await session.execute(
+                    select(Chat.user1_id, Chat.user2_id, Chat.started_at)
+                    .where(
+                        or_(
+                            and_(Chat.user1_id == user_id, Chat.user2_id.in_(ids)),
+                            and_(Chat.user2_id == user_id, Chat.user1_id.in_(ids)),
+                        ),
+                        Chat.started_at > since,
+                    )
+                    .order_by(Chat.started_at.desc())
+                    .limit(500)
+                )
+            ).all()
+            for u1, u2, started in rows:
+                other = u2 if u1 == user_id else u1
+                # Строки идут от свежих к старым -- первое попадание и есть
+                # последний совместный чат.
+                recent.setdefault(other, started)
+        declined_minutes = int(config.PREVIEW_DECLINED_COOLDOWN_MINUTES)
+        expired_minutes = int(config.PREVIEW_EXPIRED_COOLDOWN_MINUTES)
+        if declined_minutes <= 0 and expired_minutes <= 0:
+            return recent
+        cutoffs = {}
+        for status, minutes_value in (
+            ("declined", declined_minutes),
+            ("expired", expired_minutes),
+        ):
+            if minutes_value > 0:
+                cutoffs[status] = utcnow() - timedelta(minutes=minutes_value)
+        if not cutoffs:
+            return recent
+        window = utcnow() - timedelta(minutes=max(declined_minutes, expired_minutes))
+        offer_rows = (
             await session.execute(
-                select(Chat.user1_id, Chat.user2_id, Chat.started_at)
+                select(
+                    PreviewOffer.user1_id,
+                    PreviewOffer.user2_id,
+                    PreviewOffer.status,
+                    PreviewOffer.resolved_at,
+                )
                 .where(
                     or_(
-                        and_(Chat.user1_id == user_id, Chat.user2_id.in_(ids)),
-                        and_(Chat.user2_id == user_id, Chat.user1_id.in_(ids)),
+                        and_(
+                            PreviewOffer.user1_id == user_id,
+                            PreviewOffer.user2_id.in_(ids),
+                        ),
+                        and_(
+                            PreviewOffer.user2_id == user_id,
+                            PreviewOffer.user1_id.in_(ids),
+                        ),
                     ),
-                    Chat.started_at > since,
+                    PreviewOffer.status.in_(tuple(cutoffs)),
+                    PreviewOffer.resolved_at.is_not(None),
+                    PreviewOffer.resolved_at > window,
                 )
-                .order_by(Chat.started_at.desc())
+                .order_by(PreviewOffer.resolved_at.desc())
                 .limit(500)
             )
         ).all()
-        recent = {}
-        for u1, u2, started in rows:
-            other = u2 if u1 == user_id else u1
-            # Строки идут от свежих к старым -- первое попадание и есть
-            # последний совместный чат.
-            recent.setdefault(other, started)
+        for u1, u2, status, resolved in offer_rows:
+            cutoff = cutoffs.get(status)
+            if cutoff is not None and resolved > cutoff:
+                other = u2 if u1 == user_id else u1
+                recent.setdefault(other, resolved)
         return recent
 
     async def active(self, user_id):
@@ -229,86 +284,216 @@ class ChatRepository:
     async def match(self, a_id, b_id, redis):
         async with async_session.begin() as s:
             await lock_matching(s)
-            if (
-                await redis.zscore("search_queue", str(a_id)) is None
-                or await redis.zscore("search_queue", str(b_id)) is None
-            ):
+            pair = await self.load_pair(s, redis, a_id, b_id)
+            if pair is None:
                 return None
-            if not await redis.exists(f"search:user:{a_id}") or not await redis.exists(
-                f"search:user:{b_id}"
-            ):
-                return None
-            if await s.scalar(
-                select(ActiveParticipant)
-                .where(ActiveParticipant.user_id.in_([a_id, b_id]))
-                .limit(1)
-            ):
-                return None
-            users = list(
-                (
-                    await s.scalars(
-                        select(User).where(User.telegram_id.in_([a_id, b_id]))
-                    )
-                ).all()
-            )
-            from services.payments import available_entitlement
-
-            filters = {}
-            for uid in (a_id, b_id):
-                entitlement = await available_entitlement(s, uid, ["gender_filter_1m"])
-                if not entitlement:
-                    entitlement = await available_entitlement(
-                        s, uid, ["gender_filter_one_match"]
-                    )
-                if entitlement:
-                    filters[uid] = entitlement
-            if len(users) != 2 or not compatible(*users, gender_access=filters):
-                return None
-            blocked = await s.scalar(
-                select(Block).where(
-                    or_(
-                        and_(Block.blocker_id == a_id, Block.blocked_id == b_id),
-                        and_(Block.blocker_id == b_id, Block.blocked_id == a_id),
-                    )
-                )
-            )
-            if blocked:
-                return None
-            chat = Chat(
-                session_id=uuid.uuid4().hex,
-                user1_id=a_id,
-                user2_id=b_id,
-                status="active",
-                started_at=utcnow(),
-                last_activity_at=utcnow(),
-            )
-            s.add(chat)
-            await s.flush()
-            s.add_all(
-                [
-                    ActiveParticipant(user_id=uid, session_id=chat.session_id)
-                    for uid in (a_id, b_id)
-                ]
-            )
-            await _notify_match(s, chat, users)
-            for user in users:
-                entitlement = filters.get(user.telegram_id)
-                if (
-                    entitlement
-                    and entitlement.kind == "gender_filter_one_match"
-                    and not premium_active(user)
-                    and user.settings_gender_filter != "a"
-                ):
-                    entitlement.remaining_uses -= 1
-                priority = await available_entitlement(
-                    s, user.telegram_id, ["instant_search"]
-                )
-                if priority and not premium_active(user):
-                    priority.remaining_uses -= 1
+            users, filters = pair
+            chat = await self.finalize_chat(s, a_id, b_id, users, filters)
         logging.getLogger(__name__).info(
             "chat_matched", extra={"chat_session_id": chat.session_id, "user_id": a_id}
         )
         return chat
+
+    @staticmethod
+    async def reserved_users(session, user_ids):
+        """Все, кто живёт в активных preview-переговорах.
+
+        Оффер резервирует пару так же, как ActiveParticipant резервирует
+        чат: зарезервированный кандидат не выдаётся другим, пока
+        status='requested'. Условие expires_at -- страховка на случай
+        падения sweeper'а. Возвращает множество id обеих сторон.
+        """
+        if not user_ids:
+            return set()
+        rows = (
+            await session.execute(
+                select(PreviewOffer.user1_id, PreviewOffer.user2_id).where(
+                    PreviewOffer.status == "requested",
+                    PreviewOffer.expires_at > utcnow(),
+                    or_(
+                        PreviewOffer.user1_id.in_(user_ids),
+                        PreviewOffer.user2_id.in_(user_ids),
+                    ),
+                )
+            )
+        ).all()
+        reserved = set()
+        for u1, u2 in rows:
+            reserved.update((u1, u2))
+        return reserved
+
+    @staticmethod
+    async def load_pair(s, redis, a_id, b_id):
+        """Всё, что пара обязана пройти перед чатом ИЛИ preview-оффером.
+
+        Один источник правды для match(), create_offer() и preview-согласия:
+        проверка, surfacing только в одной ветке, сделала бы режим preview
+        обходом фильтров и банов. Внутри: очередь/marker в Redis (live),
+        ActiveParticipant, чужие живые офферы, профили с фильтрами,
+        взаимные блокировки. Возвращает (users, filters) или None.
+        """
+        if (
+            await redis.zscore("search_queue", str(a_id)) is None
+            or await redis.zscore("search_queue", str(b_id)) is None
+        ):
+            return None
+        if not await redis.exists(f"search:user:{a_id}") or not await redis.exists(
+            f"search:user:{b_id}"
+        ):
+            return None
+        if await s.scalar(
+            select(ActiveParticipant)
+            .where(ActiveParticipant.user_id.in_([a_id, b_id]))
+            .limit(1)
+        ):
+            return None
+        # Одна из сторон уже в живых переговорах preview с кем-то: резервация
+        # живёт до expires_at или перевода строки в конечный статус.
+        if await s.scalar(
+            select(PreviewOffer.id)
+            .where(
+                PreviewOffer.status == "requested",
+                PreviewOffer.expires_at > utcnow(),
+                or_(
+                    PreviewOffer.user1_id.in_([a_id, b_id]),
+                    PreviewOffer.user2_id.in_([a_id, b_id]),
+                ),
+            )
+            .limit(1)
+        ):
+            return None
+        users = list(
+            (
+                await s.scalars(select(User).where(User.telegram_id.in_([a_id, b_id])))
+            ).all()
+        )
+        from services.payments import available_entitlement
+
+        filters = {}
+        for uid in (a_id, b_id):
+            entitlement = await available_entitlement(s, uid, ["gender_filter_1m"])
+            if not entitlement:
+                entitlement = await available_entitlement(
+                    s, uid, ["gender_filter_one_match"]
+                )
+            if entitlement:
+                filters[uid] = entitlement
+        if len(users) != 2 or not compatible(*users, gender_access=filters):
+            return None
+        blocked = await s.scalar(
+            select(Block).where(
+                or_(
+                    and_(Block.blocker_id == a_id, Block.blocked_id == b_id),
+                    and_(Block.blocker_id == b_id, Block.blocked_id == a_id),
+                )
+            )
+        )
+        if blocked:
+            return None
+        return users, filters
+
+    @staticmethod
+    async def finalize_chat(s, a_id, b_id, users, filters):
+        """Чат + участники + уведомления + обжиг платных опций.
+
+        Единственная точка гибели gender_filter_one_match -- фактическое
+        открытие чата: слепой матч и preview-согласие ведут себя тут
+        одинаково. Работает внутри уже открытой транзакции s.
+        """
+        from services.payments import available_entitlement
+
+        chat = Chat(
+            session_id=uuid.uuid4().hex,
+            user1_id=a_id,
+            user2_id=b_id,
+            status="active",
+            started_at=utcnow(),
+            last_activity_at=utcnow(),
+        )
+        s.add(chat)
+        await s.flush()
+        s.add_all(
+            [
+                ActiveParticipant(user_id=uid, session_id=chat.session_id)
+                for uid in (a_id, b_id)
+            ]
+        )
+        await _notify_match(s, chat, users)
+        for user in users:
+            entitlement = filters.get(user.telegram_id)
+            if (
+                entitlement
+                and entitlement.kind == "gender_filter_one_match"
+                and not premium_active(user)
+                and user.settings_gender_filter != "a"
+            ):
+                entitlement.remaining_uses -= 1
+            priority = await available_entitlement(
+                s, user.telegram_id, ["instant_search"]
+            )
+            if priority and not premium_active(user):
+                priority.remaining_uses -= 1
+        return chat
+
+    async def create_offer(self, a_id, b_id, redis):
+        """Preview-ветка match(): вместо чата обеим сторонам уходят карточки.
+
+        Оффер создаёт меньший telegram_id (канонизация снимает встречные
+        офферы без отдельного гонщика); partial unique индекс резервирует
+        пару от чужих матчей до исхода переговоров, маркеры переговорного
+        окна шинуются заново, карточки и события ставятся той же
+        транзакцией -- откат не оставит одинокой карточки без пары.
+        Возвращает PreviewOffer или None.
+        """
+        if a_id == b_id:
+            return None
+        u1, u2 = sorted((a_id, b_id))
+        async with async_session.begin() as s:
+            await lock_matching(s)
+            pair = await self.load_pair(s, redis, a_id, b_id)
+            if pair is None:
+                return None
+            offer = PreviewOffer(
+                user1_id=u1,
+                user2_id=u2,
+                expires_at=utcnow()
+                + timedelta(seconds=max(10, int(config.PREVIEW_OFFER_SECONDS))),
+            )
+            s.add(offer)
+            await s.flush()
+            from services.settings import bot_value
+
+            timeout = max(
+                1, int(await bot_value("search_timeout", config.SEARCH_TIMEOUT))
+            )
+            await redis.set(
+                f"search:user:{a_id}", str(utcnow().timestamp()), ex=timeout
+            )
+            await redis.set(
+                f"search:user:{b_id}", str(utcnow().timestamp()), ex=timeout
+            )
+            from services.growth import event
+            from services.notifications import enqueue
+
+            await event(s, a_id, "preview_shown", f"preview:{offer.id}:{a_id}")
+            await event(s, b_id, "preview_shown", f"preview:{offer.id}:{b_id}")
+            await enqueue(
+                s,
+                a_id,
+                "preview",
+                f"preview:{offer.id}:{a_id}",
+                "",
+                callback=str(offer.id),
+            )
+            await enqueue(
+                s,
+                b_id,
+                "preview",
+                f"preview:{offer.id}:{b_id}",
+                "",
+                callback=str(offer.id),
+            )
+        return offer
 
     async def start_direct(self, a_id, b_id):
         """Open a chat between two friends without touching the search queue.
