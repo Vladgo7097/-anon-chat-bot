@@ -5,7 +5,17 @@ from sqlalchemy.types import TypeDecorator
 from datetime import timezone
 import config
 
-engine = create_async_engine(config.DATABASE_URL, echo=False, pool_size=20, max_overflow=10)
+# pre_ping сбрасывает мёртвые соединения пула на каждом acquire: если
+# сокет протух между использованиями, пинг заметит это и выдаст свежую
+# линию вместо зависания на мёртвом сокете.
+engine = create_async_engine(
+    config.DATABASE_URL,
+    echo=False,
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,
+    pool_use_lifo=True,
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -26,4 +36,8 @@ class UTCDateTime(TypeDecorator):
         return value
 
     def process_result_value(self, value, dialect):
-        return value.replace(tzinfo=timezone.utc) if value is not None and value.tzinfo is None else value
+        return (
+            value.replace(tzinfo=timezone.utc)
+            if value is not None and value.tzinfo is None
+            else value
+        )
