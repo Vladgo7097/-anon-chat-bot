@@ -395,17 +395,19 @@ async def main():
                 )
                 # Без отметки sent ходок клал бы одну и ту же строку заново
                 # и завяз на ней: claim фильтрует queued|sending.
-                async with session_factory().begin() as s_m:
+                async with session_factory() as s_m:
                     sent_row = await s_m.get(_N, notification.id)
                     sent_row.status = "sent"
+                    await s_m.commit()
             except Exception as error:
                 print(
                     f"   [outbox] доставка {notification.id} {notification.type} "
                     f"сорвалась: {type(error).__name__}: {error}"
                 )
-                async with session_factory().begin() as s:
-                    _n = await s.get(_N, notification.id)
-                    _n.status = "failed"
+                async with session_factory() as s:
+                    failed_row = await s.get(_N, notification.id)
+                    failed_row.status = "failed"
+                    await s.commit()
             await asyncio.sleep(0.05)
 
     worker = asyncio.create_task(drain_outbox())
