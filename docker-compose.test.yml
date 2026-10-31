@@ -37,7 +37,9 @@ services:
       timeout: 2s
       retries: 30
   tests:
-    build: .
+    build:
+      context: .
+      target: tests
     environment:
       DATABASE_URL: postgresql+asyncpg://test:isolated_test_only@test-db/anon_chat_test
       REDIS_URL: redis://test-redis:6379/0
@@ -51,9 +53,4 @@ services:
         condition: service_healthy
       test-redis:
         condition: service_healthy
-    command:
-      [
-        "sh",
-        "-c",
-        "pip install --disable-pip-version-check -q -r requirements-dev.txt && python -m pytest -q",
-      ]
+    command: ["sh", "-c", "python -m pytest -q"]
