@@ -664,7 +664,7 @@ if __name__ == "__main__":
             if trace_kind != "sendMessage":
                 continue
             print(
-                f"   [лента] +{trace_ts - trace_start:6.1f}с {trace_to} "
+                f"   [лента] +{_trace_ts - trace_start:6.1f}с {trace_to} "
                 f"ТВМ>{trace_btn} «{trace_text[:50]}»"
             )
 
