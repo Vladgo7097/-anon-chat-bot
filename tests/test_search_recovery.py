@@ -254,6 +254,26 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.service.cancel.assert_awaited_once_with(1)
         self.bot.send_message.assert_not_awaited()
 
+    async def test_queue_entry_lost_to_stale_scan_sends_nobody_yet(self):
+        self.redis.zscore.return_value = None
+        with patch(
+            "handlers.search.has_active_participation", AsyncMock(return_value=False)
+        ):
+            await search.search_loop(None, 1, self.bot)
+        self.service.cancel.assert_awaited_once_with(1)
+        self.service.find.assert_not_awaited()
+        self.bot.send_message.assert_awaited_once()
+        self.assertIn("Пока никого нет", self.bot.send_message.await_args.args[1])
+
+    async def test_queue_loss_after_concurrent_match_stays_silent(self):
+        self.redis.zscore.return_value = None
+        with patch(
+            "handlers.search.has_active_participation", AsyncMock(return_value=True)
+        ):
+            await search.search_loop(None, 1, self.bot)
+        self.service.cancel.assert_awaited_once_with(1)
+        self.bot.send_message.assert_not_awaited()
+
     async def test_timeout_ends_search_for_free_user(self):
         self.redis.get.return_value = str(time.time() - 120)
         with (

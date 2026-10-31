@@ -461,6 +461,22 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         while True:
             r = await get_redis()
             if await r.zscore("search_queue", str(user_id)) is None:
+                # Same wrap-up as the timeout below: cancel() takes the
+                # matching lock first, so an in-flight match has committed
+                # and is visible in the check that follows. Without this the
+                # silent exit left the card animating "searching" forever
+                # after another searcher's stale scan dropped the entry.
+                await MatchingService().cancel(user_id)
+                if await has_active_participation(user_id):
+                    return
+                try:
+                    await bot.send_message(
+                        user_id,
+                        T.tr(NOBODY_YET, lang),
+                        reply_markup=nobody_keyboard(lang),
+                    )
+                except (TelegramForbiddenError, TelegramBadRequest):
+                    pass
                 return
             elapsed = int(time.monotonic() - started)
             from services.settings import bot_value
