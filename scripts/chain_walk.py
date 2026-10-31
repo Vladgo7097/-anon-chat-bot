@@ -393,6 +393,11 @@ async def main():
                     reply_markup=markup,
                     parse_mode=parse_mode,
                 )
+                # Без отметки sent ходок клал бы одну и ту же строку заново
+                # и завяз на ней: claim фильтрует queued|sending.
+                async with session_factory().begin() as s_m:
+                    sent_row = await s_m.get(_N, notification.id)
+                    sent_row.status = "sent"
             except Exception as error:
                 print(
                     f"   [outbox] доставка {notification.id} {notification.type} "
