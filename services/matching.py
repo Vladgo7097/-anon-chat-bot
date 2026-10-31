@@ -44,6 +44,10 @@ class MatchingService:
             inserted = await r.zadd("search_queue", {str(user_id): score}, nx=True)
             if inserted:
                 await r.set(f"search:user:{user_id}", str(time.time()), ex=timeout)
+                # A searcher is no longer a waiter: without this the next
+                # newcomer's enqueue pinged them about their own search.
+                await r.delete(f"search:waiting_alert:{user_id}")
+                await r.srem("search:waiting_alerts", str(user_id))
                 from services.growth import event
 
                 await event(
