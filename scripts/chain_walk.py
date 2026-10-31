@@ -343,9 +343,9 @@ async def main():
         idle_rounds = 0
 
         async def _claim_one():
-            # Claim тем же запросом, что NotificationService.next(), но через
-            # собственный движок ходока: shared-пул этих окружений вёл себя
-            # как чёрная дыра сразу после матча -- не зависаем на нём.
+            # Claim без FOR UPDATE: ходок живёт в однопользовательском мире,
+            # и SKIP LOCKED в этих изоляциях застревает над запрошенными
+            # строками -- проверка гипотезы на реальном прогоне.
             async with session_factory().begin() as s:
                 notification = await s.scalar(
                     _sel(_N)
@@ -354,7 +354,6 @@ async def main():
                         _N.scheduled_at <= utcnow(),
                     )
                     .order_by(_N.marketing, _N.id)
-                    .with_for_update(skip_locked=True)
                     .limit(1)
                 )
                 if notification is not None:
