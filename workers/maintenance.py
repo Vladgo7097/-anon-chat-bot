@@ -19,6 +19,71 @@ from utils import bots
 
 logger = logging.getLogger(__name__)
 
+# Периодические задачи вне горячего пути. Синхронный прогон schedule() по
+# всем пользователям внутри цикла outbox останавливал выдачу на десятки
+# секунд и до десятков минут: за это время чат успевал закончиться, и
+# «Собеседник найден» молча уходил в skipped вместо доставки. Теперь
+# тяжёлое живёт рядом: уведомления едут непрерывно, периодика -- параллельно.
+_PERIODIC: dict[str, asyncio.Task] = {}
+
+
+async def _sweep():
+    """Один проход: reconcile, подметание preview-офферов и schedule()."""
+    await ChatService().reconcile()
+    from services.preview import PreviewService as _preview_sweeper
+
+    # Preview-офферы, чьё окно кончилось: снимают резервации
+    # пар и кормят кулдаун «молчание» в recent_partners.
+    try:
+        await _preview_sweeper.expire_stale()
+    except Exception:
+        logger.debug("event=preview_expire_stale_failed", exc_info=True)
+    await NotificationService().schedule()
+
+
+async def _funnel_watch():
+    await funnel_alert.check()
+
+
+async def _op_check():
+    await op_schedule.check()
+
+
+async def _cleanup():
+    """Retention: медиаснапшоты, старый текст отчётов, просроченные
+    предупреждения и зажившие friend/reconnect-строки."""
+    from services.community import cleanup as cleanup_community
+    from services.moderation import cleanup as cleanup_warnings
+    from services.reports import cleanup as cleanup_reports
+    from services.preview import cleanup as cleanup_preview_offers
+
+    await cleanup_community()
+    await cleanup_warnings()
+    await cleanup_reports()
+    await cleanup_preview_offers()
+
+
+def _spawn_periodic(name, factory):
+    """Запустить проход, если предыдущий такой же уже закончил.
+
+    Летящего экземпляра на имя ровно один: schedule() на проде может идти
+    дольше минуты, и наложение проходов лишь удлиняет очередь без пользы.
+    Тик, настигший живой проход, просто пропускается.
+    """
+    alive = _PERIODIC.get(name)
+    if alive and not alive.done():
+        return
+    task = asyncio.create_task(factory(), name=f"maintenance:{name}")
+
+    def _done(done):
+        _PERIODIC.pop(name, None)
+        error = done.exception()
+        if error is not None:
+            logger.error("event=periodic_failed job=%s", name, exc_info=error)
+
+    task.add_done_callback(_done)
+    _PERIODIC[name] = task
+
 
 def notification_content(notification):
     if notification.type not in {
@@ -102,40 +167,27 @@ async def run(bot):
                 except Exception:
                     logger.debug("event=heartbeat_mirror_failed", exc_info=True)
             if time.monotonic() - last > 60:
-                await ChatService().reconcile()
-                from services.preview import PreviewService as _preview_sweeper
-
-                # Preview-офферы, чьё окно кончилось: снимают резервации
-                # пар и кормят кулдаун «молчание» в recent_partners.
-                try:
-                    await _preview_sweeper.expire_stale()
-                except Exception:
-                    logger.debug("event=preview_expire_stale_failed", exc_info=True)
-                await service.schedule()
+                # Тяжёлый проход идёт рядом с outbox, а не вместо него:
+                # пока schedule() шагает по пользователям, карточки матча
+                # выдаются без пауз. Тик, настигший живой проход,
+                # пропускается -- наложение проходов лишь удлиняет очередь.
+                _spawn_periodic("sweep", _sweep)
                 last = time.monotonic()
             # The funnel watcher pages the owner on arrivals-without-completions;
             # ten minutes is fast enough to catch a step breaking the same day.
             if time.monotonic() - last_funnel > 600:
-                await funnel_alert.check()
+                _spawn_periodic("funnel", _funnel_watch)
                 last_funnel = time.monotonic()
-            # Границы окон ОП: уведомление владельцу о начале/конце.
+            # Границы окон ОП: уведомление владельцу о начале/конце окна.
             # Раз в минуту достаточно, дедупликация в очереди.
             if time.monotonic() - last_op > 60:
-                await op_schedule.check()
+                _spawn_periodic("op", _op_check)
                 last_op = time.monotonic()
             # Retention: expired media snapshots, old report text, expired
             # warnings and stale friend/reconnect rows. Hourly is enough; the
             # queries are cheap and the rows are not user-visible after expiry.
             if time.monotonic() - last_cleanup > 3600:
-                from services.community import cleanup as cleanup_community
-                from services.moderation import cleanup as cleanup_warnings
-                from services.reports import cleanup as cleanup_reports
-                from services.preview import cleanup as cleanup_preview_offers
-
-                await cleanup_community()
-                await cleanup_warnings()
-                await cleanup_reports()
-                await cleanup_preview_offers()
+                _spawn_periodic("cleanup", _cleanup)
                 last_cleanup = time.monotonic()
             # Telegram never announces a dead token or one someone else is
             # polling -- the bot just goes quiet and keeps retrying forever.
@@ -286,7 +338,13 @@ async def run(bot):
             else:
                 await asyncio.sleep(0.1 if notification else 1)
         except asyncio.CancelledError:
+            # Уборка фоновых проходов до закрытия Redis и engine в on_shutdown:
+            # иначе они доигрались бы в закрываемую базу и зафлудили логи.
+            for task in list(_PERIODIC.values()):
+                task.cancel()
+            if _PERIODIC:
+                await asyncio.gather(*_PERIODIC.values(), return_exceptions=True)
+                _PERIODIC.clear()
             raise
         except Exception:
             logger.exception("event=worker_error")
-            await asyncio.sleep(5)
