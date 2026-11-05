@@ -11,6 +11,8 @@ this is what made pressing "Найти собеседника" hang with no erro
 way out -- the per-user asyncio.Lock in handlers/search.py stayed held, so
 even retrying hung again.
 """
+
+import asyncio
 import sys
 import unittest
 from pathlib import Path
@@ -21,23 +23,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 class MainRedisPoolTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         from services import chat_manager
+
         await chat_manager.close_redis()
 
     async def test_the_shared_pool_cannot_block_forever(self):
         from services.chat_manager import get_redis
+
         r = await get_redis()
         kwargs = r.connection_pool.connection_kwargs
-        self.assertIsNotNone(kwargs.get("socket_connect_timeout"),
-                             "a dead Redis host would hang the connection attempt forever")
-        self.assertIsNotNone(kwargs.get("socket_timeout"),
-                             "a stalled connection would hang every command forever")
+        self.assertIsNotNone(
+            kwargs.get("socket_connect_timeout"),
+            "a dead Redis host would hang the connection attempt forever",
+        )
+        self.assertIsNotNone(
+            kwargs.get("socket_timeout"),
+            "a stalled connection would hang every command forever",
+        )
 
     async def test_stale_pooled_connections_are_detected_proactively(self):
         from services.chat_manager import get_redis
+
         r = await get_redis()
         # A connection reused from the pool without a health check can be a
         # half-dead TCP socket that only fails (or hangs) on the next command.
-        self.assertGreater(r.connection_pool.connection_kwargs.get("health_check_interval", 0), 0)
+        self.assertGreater(
+            r.connection_pool.connection_kwargs.get("health_check_interval", 0), 0
+        )
+
+
+BOT_PY = Path(__file__).resolve().parents[1] / "bot.py"
+
+
+def _read_bot_py() -> str:
+    return BOT_PY.read_text(encoding="utf-8")
 
 
 class FsmStorageTests(unittest.IsolatedAsyncioTestCase):
@@ -45,17 +63,26 @@ class FsmStorageTests(unittest.IsolatedAsyncioTestCase):
         # Reads bot.py's own source rather than hardcoding the call here, so
         # this fails if that call is ever edited back to a bare from_url().
         import re
-        source = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8")
-        call = re.search(r"AvailableRedisStorage\.from_url\((.*?)\)\)", source, re.S).group(1)
+
+        source = await asyncio.to_thread(_read_bot_py)
+        call = re.search(
+            r"AvailableRedisStorage\.from_url\((.*?)\)\)", source, re.S
+        ).group(1)
         self.assertIn("connection_kwargs", call)
         self.assertIn("socket_connect_timeout", call)
         self.assertIn("socket_timeout", call)
 
     async def test_the_fsm_redis_client_actually_gets_them(self):
         from utils.storage import AvailableRedisStorage
+
         storage = AvailableRedisStorage.from_url(
             "redis://localhost:6379/0",
-            connection_kwargs={"socket_connect_timeout": 3, "socket_timeout": 5, "health_check_interval": 30})
+            connection_kwargs={
+                "socket_connect_timeout": 3,
+                "socket_timeout": 5,
+                "health_check_interval": 30,
+            },
+        )
         try:
             kwargs = storage.redis.connection_pool.connection_kwargs
             self.assertIsNotNone(kwargs.get("socket_connect_timeout"))
@@ -64,19 +91,6 @@ class FsmStorageTests(unittest.IsolatedAsyncioTestCase):
             await storage.redis.aclose()
 
 
-class WebLandingRedisTests(unittest.IsolatedAsyncioTestCase):
-    async def test_the_landing_page_counters_also_time_out(self):
-        import web.app as web_app
-        web_app._redis = None
-        try:
-            r = web_app._get_redis()
-            kwargs = r.connection_pool.connection_kwargs
-            self.assertIsNotNone(kwargs.get("socket_connect_timeout"))
-            self.assertIsNotNone(kwargs.get("socket_timeout"))
-        finally:
-            if web_app._redis is not None:
-                await web_app._redis.aclose()
-            web_app._redis = None
 
 
 if __name__ == "__main__":

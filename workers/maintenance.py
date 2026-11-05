@@ -158,7 +158,11 @@ async def run(bot):
     while True:
         try:
             now = time.time()
-            Path("/tmp/anon-worker-heartbeat").write_text(str(now))
+            # Синхронный I/O вынесен из event-loop: «задумавшийся» диск
+            # больше не стопорит цикл воркера на время записи.
+            await asyncio.to_thread(
+                Path("/tmp/anon-worker-heartbeat").write_text, str(now)
+            )
             # Файл виден только внутри этого контейнера, а админка живёт в
             # соседнем: без зеркала в Redis она приняла бы работающий воркер
             # за мёртвый. Раз в 15 секунд -- чаще не нужно, EX и так жрёт.

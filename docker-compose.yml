@@ -15,13 +15,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - '127.0.0.1:5432:5432'
+      - "127.0.0.1:5432:5432"
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - '127.0.0.1:6379:6379'
+      - "127.0.0.1:6379:6379"
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
 
   bot:
@@ -34,37 +34,12 @@ services:
       - db
       - redis
     extra_hosts:
-      - 'host.docker.internal:host-gateway'
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python", "-m", "utils.healthcheck"]
       interval: 30s
       timeout: 10s
       start_period: 45s
-      retries: 3
-
-  web:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      - ./.env:/app/.env:ro
-    # List form so nothing depends on how the string would be re-lexed.
-    # --forwarded-allow-ips is what makes uvicorn trust nginx's
-    # X-Forwarded-Proto; its default of 127.0.0.1 never matches, because in
-    # Docker nginx arrives as the bridge gateway. The port is published on
-    # 127.0.0.1 only, so nginx is the sole possible client.
-    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8080",
-              "--proxy-headers", "--forwarded-allow-ips", "*"]
-    depends_on:
-      - db
-      - redis
-    ports:
-      - '127.0.0.1:8080:8080'
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
-      interval: 30s
-      timeout: 10s
-      start_period: 20s
       retries: 3
 
 volumes:

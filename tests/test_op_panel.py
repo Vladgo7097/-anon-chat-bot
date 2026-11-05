@@ -12,7 +12,14 @@ from sqlalchemy import select
 from test_op import BOT, USER, OpCase as _OpCase
 
 import models.op  # noqa: F401
-from models.op import OpAuditLog, OpErrorLog, OpPolicy, OpRuleGroup, OpRuleTarget, OpSettings
+from models.op import (
+    OpAuditLog,
+    OpErrorLog,
+    OpPolicy,
+    OpRuleGroup,
+    OpRuleTarget,
+    OpSettings,
+)
 from services import op_admin as panel
 from utils.time import utcnow
 
@@ -226,9 +233,7 @@ class RuleEditorTests(_OpCase):
         self.assertIsNotNone(group)
         self.assertTrue(await panel.toggle_group_target(BOT, USER, group.id, first))
         self.assertTrue(await panel.toggle_group_target(BOT, USER, group.id, second))
-        self.assertEqual(
-            await panel.group_target_ids(group.id), {first, second}
-        )
+        self.assertEqual(await panel.group_target_ids(group.id), {first, second})
         self.assertEqual(await panel.group_counts(policy.id), {group.id: 2})
         self.assertFalse(await panel.toggle_group_target(BOT, USER, group.id, first))
         self.assertEqual(await panel.group_target_ids(group.id), {second})
@@ -270,9 +275,7 @@ class RuleEditorTests(_OpCase):
 
 class ScheduleEditorTests(_OpCase):
     def test_parse_full_window(self):
-        starts_at, ends_at = panel.parse_window(
-            "01.11.2026 09:00 — 07.11.2026 23:00"
-        )
+        starts_at, ends_at = panel.parse_window("01.11.2026 09:00 — 07.11.2026 23:00")
         # Ноябрь — зимнее время Киева, UTC+2.
         self.assertEqual(starts_at.hour, 7)
         self.assertEqual(starts_at.tzinfo is not None, True)
@@ -299,16 +302,12 @@ class ScheduleEditorTests(_OpCase):
             panel.parse_window("07.11.2026 23:00 — 01.11.2026 09:00")
 
     async def test_schedule_settings_policy_target(self):
-        starts_at, ends_at = panel.parse_window(
-            "01.11.2026 09:00 — 07.11.2026 23:00"
-        )
+        starts_at, ends_at = panel.parse_window("01.11.2026 09:00 — 07.11.2026 23:00")
         policy = await panel.create_policy(BOT, USER, "*")
         target_id = await self.add_target()
         await panel.schedule_settings(BOT, USER, starts_at, ends_at)
         await panel.schedule_policy(BOT, USER, policy.id, starts_at, ends_at)
-        target = await panel.set_target_window(
-            BOT, USER, target_id, starts_at, ends_at
-        )
+        target = await panel.set_target_window(BOT, USER, target_id, starts_at, ends_at)
         self.assertEqual(target.starts_at, starts_at)
         async with self.factory() as s:
             stored = await s.get(OpSettings, BOT)
@@ -361,9 +360,7 @@ class DiagnosticsIssuesTests(_OpCase):
         self.assertTrue(any("права бота не подтверждены" in issue for issue in issues))
 
     async def test_policy_without_groups_and_empty_group(self):
-        target_id = await self.add_target(
-            link="https://t.me/a", setup_status="verified"
-        )
+        await self.add_target(link="https://t.me/a", setup_status="verified")
         await self.add_policy(groups=[("and", [])])
         await self.add_policy(feature_key="premium", groups=[])
         issues = await panel.config_issues(await panel.overview(BOT))
@@ -406,9 +403,7 @@ class TargetAutoRuleTests(_OpCase):
         )
         policy = (await panel.list_policies(BOT))[0]
         group = (await panel.list_groups(policy.id))[0]
-        self.assertEqual(
-            await panel.group_target_ids(group.id), {first.id, second.id}
-        )
+        self.assertEqual(await panel.group_target_ids(group.id), {first.id, second.id})
 
     async def test_or_group_is_left_alone(self):
         first, _ = await panel.add_target(
@@ -453,7 +448,7 @@ class BootstrapOnEnableTests(_OpCase):
         self.assertEqual(await panel.group_target_ids(groups[0].id), {first, second})
 
     async def test_enabling_keeps_existing_rule(self):
-        target = await self.add_target(chat_id=-403)
+        await self.add_target(chat_id=-403)
         policy = await panel.create_policy(BOT, USER, "*")
         await panel.set_flag(BOT, USER, "enabled", True)
         policies = await panel.list_policies(BOT)

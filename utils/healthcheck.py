@@ -1,4 +1,5 @@
 """Container liveness and dependency checks; never calls Telegram."""
+
 import asyncio
 import time
 from pathlib import Path
@@ -10,8 +11,19 @@ from utils import bot_health
 
 
 async def check():
-    heartbeat = Path("/tmp/anon-worker-heartbeat")
-    if not heartbeat.exists() or time.time() - heartbeat.stat().st_mtime > 120:
+    import asyncio
+
+    def heartbeat():
+        beat_path = Path("/tmp/anon-worker-heartbeat")
+        if not beat_path.exists():
+            return None
+        try:
+            return beat_path.stat().st_mtime
+        except OSError:
+            return None
+
+    mtime = await asyncio.to_thread(heartbeat)
+    if mtime is None or time.time() - mtime > 120:
         raise RuntimeError("Worker heartbeat expired")
     # Heartbeat держит воркер, а не поллинг: опрос способен зависнуть на
     # мёртвом сокете, пока воркер крутится и метку обновляет. Метки живости

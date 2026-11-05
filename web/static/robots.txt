@@ -1,8 +1,0 @@
-User-agent: *
-Allow: /
-
-# JSON endpoints, not pages: /api/online and /api/visits answer anyone who
-# asks, and would otherwise be indexed as thin, contentless URLs.
-Disallow: /api/
-
-Sitemap: https://anonimchat.pp.ua/sitemap.xml

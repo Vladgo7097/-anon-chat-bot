@@ -71,7 +71,8 @@ SESSION_MODULES = (
     "services.matching",
     "services.profile",
     "services.settings",
-    "services.ads", "services.op",
+    "services.ads",
+    "services.op",
 )
 
 
@@ -412,7 +413,7 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             f"admin:dismiss:{report_id}",
             f"admin:doban:{VICTIM}:24",
             f"admin:uban:{VICTIM}",
-            f"admin:reports:0",
+            "admin:reports:0",
             "admin:bans",
         ):
             await self._tap(data, uid=ATTACKER)
@@ -472,9 +473,7 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
                 await self._tap(f"v1:report:{session_id}:spam")
             # Первый тап в окне проходит, остальные держатся локальным
             # слайдером: без Redis флуд-контроль больше не выключается.
-            self.assertEqual(
-                submit.await_count, 1, "без Redis лимит обязан остаться"
-            )
+            self.assertEqual(submit.await_count, 1, "без Redis лимит обязан остаться")
 
     async def test_thousand_report_flood_is_capped_by_the_victim_quota(self):
         """Защита: флуд из 1000 разных аккаунтов на одну жертву упирается
@@ -692,9 +691,7 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             [],
             "гонка вырвалась мимо обёртки IntegrityError в submit",
         )
-        self.assertEqual(
-            len(ok), 1, "ровно один отчёт из25 параллельных дублей"
-        )
+        self.assertEqual(len(ok), 1, "ровно один отчёт из25 параллельных дублей")
 
     async def test_identical_update_id_is_processed_once(self):
         """Дедупликация: WeakValueDictionary-лок держит одинаковый update_id."""

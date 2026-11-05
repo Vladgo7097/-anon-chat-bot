@@ -145,9 +145,19 @@ async def worker_heartbeat():
     from pathlib import Path
 
     try:
-        beat = Path("/tmp/anon-worker-heartbeat")
-        if beat.exists():
-            return round(_time.time() - float(beat.read_text().strip() or 0), 1)
+
+        def read_beat():
+            beat_path = Path("/tmp/anon-worker-heartbeat")
+            if not beat_path.exists():
+                return None
+            try:
+                return beat_path.read_text().strip()
+            except OSError:
+                return None
+
+        raw = await asyncio.to_thread(read_beat)
+        if raw is not None:
+            return round(_time.time() - float(raw or 0), 1)
     except (OSError, ValueError):
         pass
     try:

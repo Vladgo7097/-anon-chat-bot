@@ -88,7 +88,6 @@ class MenuKeyboardTests(unittest.TestCase):
     def test_every_button_carries_an_icon(self):
         # Правило (dj): IDEA стартует БЕЗ иконки, пока у неё свой doc-id.
         # Остальные семь кнопок должны нести иконку.
-        iconless = {T.IDEA}
         for lang in LANGS:
             for row in main_menu_kb(lang).keyboard:
                 for button in row:

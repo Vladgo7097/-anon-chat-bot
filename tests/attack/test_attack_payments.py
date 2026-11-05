@@ -83,7 +83,8 @@ class PaymentAttackCase(unittest.IsolatedAsyncioTestCase):
             "services.reveal",
             "services.reports",
             "services.admin",
-            "services.ads", "services.op",
+            "services.ads",
+            "services.op",
             "services.funnel_alert",
             "services.relay",
         ):
@@ -514,10 +515,14 @@ class PendingStateTests(PaymentAttackCase):
             row2 = await s.get(Payment, stale.payment_id)
             expires2 = row2.expires_at
         self.assertTrue(
-            await self._precheckout(ATTACKER, stale.payload, stale.amount, query_id="q2")
+            await self._precheckout(
+                ATTACKER, stale.payload, stale.amount, query_id="q2"
+            )
         )
         with self._freeze(expires2 + timedelta(hours=25)):
-            reply2 = await self._pay(ATTACKER, stale.payload, stale.amount, charge="late-2")
+            reply2 = await self._pay(
+                ATTACKER, stale.payload, stale.amount, charge="late-2"
+            )
         self.assertNotIn("Оплата получена", reply2)
         row2 = await self._payment(stale.payment_id)
         self.assertEqual(row2.status, "precheckout_ok")
@@ -766,9 +771,6 @@ class RaceTests(PaymentAttackCase):
         for item in replies:
             if isinstance(item, BaseException):
                 escaped.append(item)
-        credited = sum(
-            1 for r in replies if isinstance(r, str) and "Оплата получена" in r
-        )
         self.assertEqual(await self._count(PremiumSubscription), 1)
         user = await self._user(ATTACKER)
         self.assertEqual(user.total_stars_spent, inv.amount)

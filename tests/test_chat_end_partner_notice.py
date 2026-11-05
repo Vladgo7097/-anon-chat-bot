@@ -42,7 +42,6 @@ class PartnerLeftNoticeTests(DatabaseCase):
 
     async def test_stop_notifies_the_partner_by_default_in_russian(self):
         message = await self._finish_stop()
-        args = message.bot.send_message.await_args
         # С 78cc249 инстант-пуша нет: партнёра уведомляет outbox, строка
         # chat_after пишется на языке получателя в момент enqueue.
         message = await self._finish_stop()
