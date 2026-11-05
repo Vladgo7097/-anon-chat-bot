@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 
 from aiogram import F
 from aiogram.filters import Command
+from aiogram.methods import SendMessageDraft
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -120,7 +122,9 @@ async def search_lock(user_id, ttl=10, retry_delay=0.05):
     r = await get_redis()
     key, token = f"search:lock:{user_id}", secrets.token_hex(8)
     while not await r.set(key, token, nx=True, ex=ttl):
-        await asyncio.sleep(retry_delay)
+        # Случайная добавка разворачивает параллельных ожидающих --
+        # фиксированный шаг собрал бы их в очередь повторов.
+        await asyncio.sleep(retry_delay * random.uniform(0.5, 1.5))
     try:
         yield
     finally:
@@ -335,6 +339,28 @@ def search_status_text(template, lang="ru", dots="", online=None):
     return text
 
 
+async def _stream_draft(bot, user_id, text, draft_id):
+    """Bot API 9.5/10.x: «живое» превью поиска.
+
+    Драйфт рендерится в клиенте как всплывающий черновик и исчезает через
+    ~30 секунд или с первым настоящим сообщением — поэтому между
+    редактированиями карточки (которые ловили TelegramRetryAfter) юзер
+    всё равно видит пульсацию поиска. Сбой драйфта — косметика: лимит,
+    старый клиент, волна 403 — и не имеет права ронять поисковый цикл.
+    """
+    try:
+        await bot(SendMessageDraft(chat_id=user_id, draft_id=draft_id, text=text))
+    except TelegramRetryAfter:
+        pass
+    except TelegramForbiddenError:
+        pass
+    except TelegramBadRequest:
+        # Клиент не понимает метод (до 10.x) — карточка его покрывает.
+        pass
+    except Exception:
+        logger.debug("event=search_draft_skipped user_id=%s", user_id, exc_info=True)
+
+
 def nobody_keyboard(lang="ru"):
     # The referral button lives in the persistent main menu only. This screen
     # keeps the contextual "notify me" action; duplicating the invite here
@@ -468,6 +494,9 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         queued_since = started
         offer_tracked = False
         status_retry_at = 0.0
+        # Один стабильный draft_id на прогон: правки одного драфта клиент
+        # анимирует как эволюцию одного превью, а не мигание нового.
+        draft_id = secrets.randbits(30) | 1
         while True:
             r = await get_redis()
             if await r.zscore("search_queue", str(user_id)) is None:
@@ -584,6 +613,15 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                 status_retry_at = time.monotonic() + error.retry_after
             except TelegramBadRequest:
                 pass
+            # Драйфт идёт и когда карточка стоит на retry-паузе: точки в
+            # превью и есть живой прогресс между редкими правками карточки.
+            dots = "." * (elapsed // 2 % 3 + 1)
+            await _stream_draft(
+                bot,
+                user_id,
+                search_status_text(SEARCHING_PROGRESS, lang, dots=dots),
+                draft_id,
+            )
             await asyncio.sleep(2)
     except asyncio.CancelledError:
         raise

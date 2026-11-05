@@ -108,6 +108,7 @@ async def _record(*args, **kwargs):
 _U1, _U2, _U3 = 70001, 70002, 70003
 _LANG = {_U1: "ru", _U2: "uk", _U3: "en"}
 _STATE = {"update_id": 1}
+_back_tasks: list[asyncio.Task] = []
 
 
 def _say(uid, action):
@@ -461,7 +462,9 @@ async def main():
                     flush=True,
                 )
 
-    wdg = asyncio.create_task(outbox_watchdog(worker))
+    # Ссылка должна жить: create_task без сильной ссылки позволяет GC собрать
+    # ещё не стартовавший таск, и watchdog умолкает без единого вывода.
+    _back_tasks.append(asyncio.create_task(outbox_watchdog(worker)))
 
     async def onboard(uid, gender_key):
         _say(uid, "/start")
@@ -576,7 +579,6 @@ async def main():
 
     # Кто из U1/U2 занят с U3: занятый -- chatty, свободный -- waiting.
     chatty_uid = _U1 if _U1 in fresh_pair[0] else _U2
-    waiting_uid = _U2 if chatty_uid == _U1 else _U1
 
     print("\n=== БИТ 3: запасной выход — повторная пара, когда пул вымер ===")
     t0 = time.monotonic()
@@ -623,6 +625,7 @@ async def main():
     while time.monotonic() < deadline and offer_id is None:
         async with session_factory() as s:
             from models.preview import PreviewOffer
+            from sqlalchemy import select
 
             offer_id = await s.scalar(
                 select(PreviewOffer.id).where(PreviewOffer.status == "requested")

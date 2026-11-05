@@ -48,6 +48,22 @@ async def cb_friend_request(callback: CallbackQuery, lang: str = "ru"):
     session_id = callback.data.removeprefix("friend:req:")
     result = await FriendService().request(callback.from_user.id, session_id)
     await _answer(callback, result, lang, alert=not result.ok)
+    # Заявка отправлена или уже висит — кнопка перестаёт «работать»: состояние
+    # видно по серой кнопке, а не по тосту на каждый повторный тап.
+    if (
+        result.code in {"SENT", "ALREADY_PENDING"}
+        and callback.message
+        and callback.message.reply_markup
+    ):
+        from keyboards.community import with_disabled
+
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=with_disabled(callback.message.reply_markup, "friend:req:")
+            )
+        except TelegramBadRequest:
+            # Карточка могла схлопнуться до правки или не принадлежать этому боту.
+            pass
 
 
 @community_router.callback_query(F.data.startswith("friend:ok:"))

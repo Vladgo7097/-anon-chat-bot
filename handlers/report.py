@@ -3,12 +3,13 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
+    DisabledButton,
     Message,
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from handlers import report_router
 from services.chats import ChatService
 from services.reports import ReportService, REASONS
@@ -74,7 +75,22 @@ async def cb_report(callback: CallbackQuery, state: FSMContext, lang: str = "ru"
         await state.set_state(ReportFlow.DETAILS)
         await state.update_data(report_session=parts[2])
         await callback.answer()
-        await callback.message.answer(text["describe"])
+        # Bot API 10.3: force_reply сразу цепляет ответ на это сообщение,
+        # а disabled-кнопка — видимый «якорь» шага, мимо которого не промахнёшься.
+        await callback.message.answer(
+            text["describe"],
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✍️",
+                            disabled=DisabledButton(),
+                        )
+                    ]
+                ],
+                force_reply=True,
+            ),
+        )
         return
     result = await ReportService().submit(callback.from_user.id, parts[2], parts[3])
     await callback.answer()

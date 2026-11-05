@@ -1,13 +1,12 @@
 """Keyboards for the post-chat window, friend requests and the friends list."""
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import DisabledButton, InlineKeyboardButton, InlineKeyboardMarkup
 
 from keyboards import texts as T
 
 
 def after_chat_kb(session_id: str, lang: str = "ru") -> InlineKeyboardMarkup:
     labels = T.tr(T.CHAT_AFTER, lang)
-    buttons = T.tr(T.COMMUNITY_BUTTONS, lang)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -23,6 +22,27 @@ def after_chat_kb(session_id: str, lang: str = "ru") -> InlineKeyboardMarkup:
                 )
             ],
             [InlineKeyboardButton(text=labels["menu"], callback_data="menu")],
+        ]
+    )
+
+
+def with_disabled(
+    markup: InlineKeyboardMarkup, callback_prefix: str
+) -> InlineKeyboardMarkup:
+    """Bot API 10.3: отключить кнопки с данным prefix callback_data.
+
+    Отключённая кнопка не нажимается вовсе — она честно показывает состояние
+    («заявка уже отправлена») вместо тоста «уже в очереди» на каждый тап.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                button.model_copy(update={"disabled": DisabledButton()})
+                if (button.callback_data or "").startswith(callback_prefix)
+                else button
+                for button in row
+            ]
+            for row in markup.inline_keyboard
         ]
     )
 

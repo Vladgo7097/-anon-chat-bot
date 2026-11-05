@@ -85,6 +85,10 @@ def _spawn_periodic(name, factory):
     _PERIODIC[name] = task
 
 
+# Стандартный ID эффекта «🔥» из документации Bot API (message effects).
+_EFFECT_FIRE = "5159385139981059251"
+
+
 def notification_content(notification):
     if notification.type not in {
         "match",
@@ -301,12 +305,35 @@ async def run(bot):
                         )
                     else:
                         text, parse_mode = notification_content(notification)
-                        await target.send_message(
-                            notification.user_id,
-                            text,
-                            reply_markup=markup,
-                            parse_mode=parse_mode,
-                        )
+                        # Bot API 9.3+: косметический эффект на огонь «собеседник
+                        # найден». Telegram может отклонить его BadRequest'ом
+                        # (старые клиенты встречаются редко, эффект не всегда
+                        # валиден) — тогда один повтор без эффекта, она не
+                        # маскирует настоящую ошибку разметки текста.
+                        effect = _EFFECT_FIRE if notification.type == "match" else None
+                        if effect is None:
+                            await target.send_message(
+                                notification.user_id,
+                                text,
+                                reply_markup=markup,
+                                parse_mode=parse_mode,
+                            )
+                        else:
+                            try:
+                                await target.send_message(
+                                    notification.user_id,
+                                    text,
+                                    reply_markup=markup,
+                                    parse_mode=parse_mode,
+                                    message_effect_id=effect,
+                                )
+                            except TelegramBadRequest:
+                                await target.send_message(
+                                    notification.user_id,
+                                    text,
+                                    reply_markup=markup,
+                                    parse_mode=parse_mode,
+                                )
                     await service.finish(notification.id, "sent")
                 except TelegramForbiddenError:
                     await service.finish(notification.id, "failed", "forbidden")

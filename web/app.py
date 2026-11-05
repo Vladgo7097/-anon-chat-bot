@@ -13,6 +13,7 @@ ever stored. The one exception is a one-way hash of the visitor's IP, kept
 under a day, used only to stop a script from inflating the counters by
 hammering /api/track/*; the address itself is never written anywhere.
 """
+
 import hashlib
 import mimetypes
 from pathlib import Path
@@ -29,9 +30,11 @@ import config
 STATIC_DIR = Path(__file__).parent / "static"
 # Every directory that has its own index.html, as a rooted path without
 # the trailing slash: "/vozmozhnosti", "/en/faq", and so on.
-PAGE_DIRECTORIES = {"/" + page.parent.relative_to(STATIC_DIR).as_posix()
-                    for page in (Path(__file__).parent / "static").rglob("index.html")
-                    if page.parent != STATIC_DIR}
+PAGE_DIRECTORIES = {
+    "/" + page.parent.relative_to(STATIC_DIR).as_posix()
+    for page in (Path(__file__).parent / "static").rglob("index.html")
+    if page.parent != STATIC_DIR
+}
 mimetypes.add_type("image/webp", ".webp")
 
 
@@ -39,10 +42,18 @@ mimetypes.add_type("image/webp", ".webp")
 # revalidated on each page load -- cheap 304s, but a round trip each.
 # Filenames are not content-hashed, so the lifetimes are deliberately modest:
 # a stale asset can only linger this long after a deploy.
-CACHE_SECONDS = ((".html", 0), (".xml", 3600), (".txt", 3600),
-                 (".css", 86400), (".js", 86400),
-                 (".webp", 2592000), (".jpg", 2592000), (".png", 2592000),
-                 (".ico", 2592000), (".svg", 2592000))
+CACHE_SECONDS = (
+    (".html", 0),
+    (".xml", 3600),
+    (".txt", 3600),
+    (".css", 86400),
+    (".js", 86400),
+    (".webp", 2592000),
+    (".jpg", 2592000),
+    (".png", 2592000),
+    (".ico", 2592000),
+    (".svg", 2592000),
+)
 
 
 def cache_control(name: str) -> str:
@@ -83,7 +94,7 @@ async def permanent_trailing_slash(request: Request, call_next):
         # Read the forwarded scheme here rather than relying on uvicorn's
         # --forwarded-allow-ips: the redirect then stays on https however the
         # process happens to be started, and it can be tested without a proxy.
-        target = request.url.replace(path=path+"/")
+        target = request.url.replace(path=path + "/")
         forwarded = request.headers.get("x-forwarded-proto")
         if forwarded in ("http", "https"):
             target = target.replace(scheme=forwarded)
@@ -108,8 +119,9 @@ async def not_found(request: Request, exc: StarletteHTTPException):
             page = "404-uk.html"
         else:
             page = "404-ru.html"
-        return FileResponse(STATIC_DIR / page, status_code=404,
-                            headers={"Cache-Control": "no-cache"})
+        return FileResponse(
+            STATIC_DIR / page, status_code=404, headers={"Cache-Control": "no-cache"}
+        )
     return await http_exception_handler(request, exc)
 
 
@@ -120,8 +132,13 @@ def _get_redis():
         # without a socket timeout a stalled connection hangs the request
         # forever instead of raising, which the RedisError handlers below
         # already expect to catch.
-        _redis = aioredis.from_url(config.REDIS_URL, decode_responses=True,
-                                    socket_connect_timeout=3, socket_timeout=5, health_check_interval=30)
+        _redis = aioredis.from_url(
+            config.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=5,
+            health_check_interval=30,
+        )
     return _redis
 
 
@@ -130,6 +147,7 @@ async def _bump(counter: str, days: int = 90):
     a visitor -- losing a day of stats is fine, a broken landing page isn't."""
     from utils.time import utcnow
     from redis.exceptions import RedisError
+
     key = f"landing:{counter}:{utcnow():%Y-%m-%d}"
     try:
         r = _get_redis()
@@ -158,6 +176,7 @@ async def _first_today(kind: str, request: Request) -> bool:
     """
     from utils.time import utcnow
     from redis.exceptions import RedisError
+
     key = f"landing:seen:{kind}:{utcnow():%Y-%m-%d}:{_visitor_hash(request)}"
     try:
         r = _get_redis()
@@ -179,6 +198,7 @@ async def health():
 @app.post("/api/track/view")
 async def track_view(request: Request):
     from redis.exceptions import RedisError
+
     if not await _first_today("view", request):
         return {"ok": True}
     await _bump("views")
@@ -195,6 +215,7 @@ async def visits():
     """Public, honest running total of page loads since the counter was
     added -- not unique visitors (we don't fingerprint anyone), just views."""
     from redis.exceptions import RedisError
+
     try:
         r = _get_redis()
         total = int(await r.get("landing:views:total") or 0)
@@ -216,6 +237,7 @@ async def online():
     """Real online-user count, same source the bot itself uses -- not a
     made-up marketing number."""
     from services.chat_manager import get_online_count
+
     return {"online": await get_online_count()}
 
 
@@ -227,13 +249,16 @@ async def stats(request: Request):
     # Постоянное по времени сравнение -- контрастная точка != на строках
     # (L2); _guard в web/admin.py уже работает через compare_digest.
     import hmac
+
     supplied = request.query_params.get("key", "").encode("utf-8", "replace")
     if not config.STATS_ACCESS_KEY or not hmac.compare_digest(
-            supplied, config.STATS_ACCESS_KEY.encode("utf-8", "replace")):
+        supplied, config.STATS_ACCESS_KEY.encode("utf-8", "replace")
+    ):
         raise HTTPException(status_code=404)
     from datetime import timedelta
     from redis.exceptions import RedisError
     from utils.time import utcnow
+
     today = utcnow()
     try:
         r = _get_redis()
@@ -244,8 +269,8 @@ async def stats(request: Request):
             clicks = int(await r.get(f"landing:bot_clicks:{day}") or 0)
             days.append({"date": day, "views": views, "bot_clicks": clicks})
         return {"days": days}
-    except RedisError:
-        raise HTTPException(status_code=503, detail="REDIS_UNAVAILABLE")
+    except RedisError as e:
+        raise HTTPException(status_code=503, detail="REDIS_UNAVAILABLE") from e
 
 
 # Локальная админка: регистрируется до mount("/"), иначе Mount перехватит
