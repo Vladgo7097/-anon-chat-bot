@@ -38,7 +38,11 @@ services:
     healthcheck:
       test: ["CMD", "python", "-m", "utils.healthcheck"]
       interval: 30s
-      timeout: 10s
+      # Импорт aiogram.types на холодном контейнере ~15-16с: потолок 10с
+      # гарантированно клал probes в timeout -- бот выглядел мёртвым при
+      # живом опросе. 35с держит запас и не маскирует зависания: сам check
+      # внутри ещё упирается в asyncio.wait_for(8).
+      timeout: 35s
       start_period: 45s
       retries: 3
 
