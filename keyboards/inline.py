@@ -65,6 +65,7 @@ def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarku
             InlineKeyboardButton(
                 text=labels["fill"],
                 icon_custom_emoji_id="5301173701323028420",
+                style="primary",
                 callback_data="profile:edit",
             )
         ],
@@ -72,6 +73,7 @@ def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarku
             InlineKeyboardButton(
                 text=labels["photo"],
                 icon_custom_emoji_id="5258254475386167466",
+                style="secondary",
                 callback_data="profile:photo",
             )
         ],
@@ -82,6 +84,7 @@ def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarku
                 InlineKeyboardButton(
                     text=labels["photo_delete"],
                     icon_custom_emoji_id="5312229088876847138",
+                    style="danger",
                     callback_data="profile:photo:delete",
                 )
             ]
@@ -91,6 +94,7 @@ def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarku
             InlineKeyboardButton(
                 text=labels["privacy"],
                 icon_custom_emoji_id="5350491749926058609",
+                style="secondary",
                 callback_data="profile:privacy",
             )
         ],
@@ -106,18 +110,22 @@ def profile_kb(has_photo: bool = False, lang: str = "ru") -> InlineKeyboardMarku
             InlineKeyboardButton(
                 text=labels["friends"],
                 icon_custom_emoji_id="5215522595922779944",
+                style="secondary",
                 callback_data="profile:friends",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🌐 Язык / Language", callback_data="language:menu:profile"
+                text="🌐 Язык / Language",
+                style="secondary",
+                callback_data="language:menu:profile",
             )
         ],
         [
             InlineKeyboardButton(
                 text=labels["delete"],
                 icon_custom_emoji_id="5337131193294938034",
+                style="danger",
                 callback_data="profile:delete",
             )
         ],
@@ -133,6 +141,7 @@ def profile_edit_kb(lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=labels["gender"],
                     icon_custom_emoji_id="5366121041426922772",
+                    style="primary",
                     callback_data="profile:set_gender",
                 )
             ],
@@ -140,6 +149,7 @@ def profile_edit_kb(lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=labels["age"],
                     icon_custom_emoji_id="5452055425690123301",
+                    style="primary",
                     callback_data="profile:set_age",
                 )
             ],
@@ -147,6 +157,7 @@ def profile_edit_kb(lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=labels["bio"],
                     icon_custom_emoji_id="5301173701323028420",
+                    style="secondary",
                     callback_data="profile:set_bio",
                 )
             ],
@@ -154,6 +165,7 @@ def profile_edit_kb(lang: str = "ru") -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=labels["back"],
                     icon_custom_emoji_id="5258236805890710909",
+                    style="secondary",
                     callback_data="profile",
                 )
             ],
