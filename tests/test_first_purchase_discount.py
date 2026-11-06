@@ -5,7 +5,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -65,10 +65,28 @@ class FirstPurchaseDiscountTests(DatabaseCase):
     async def test_screen_quotes_the_same_discounted_prices_as_the_invoice(self):
         from tests.rich_helpers import button_texts, rich_text
 
+        import config
+        from types import SimpleNamespace as NS
+
+        class Product:
+            def __init__(self, code, price):
+                self.code, self.price_stars, self.title = code, price, code
+
+        products = [
+            Product("premium_1m", config.STARS_PREMIUM_1M),
+            Product("premium_3m", config.STARS_PREMIUM_3M),
+            Product("premium_12m", config.STARS_PREMIUM_12M),
+        ]
         message = SimpleNamespace(
             answer=AsyncMock(), bot=AsyncMock(), chat=SimpleNamespace(id=1)
         )
-        await show_premium(message, 1, "ru")
+        with patch(
+            "handlers.premium.PaymentService",
+            MagicMock(
+                return_value=SimpleNamespace(products=AsyncMock(return_value=products))
+            ),
+        ):
+            await show_premium(message, 1, "ru")
         method = message.bot.await_args.args[0]
         text = rich_text(method, hidden=True)
         labels = button_texts(method)

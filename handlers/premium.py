@@ -19,7 +19,7 @@ from models.payment import Payment, PremiumSubscription
 
 logger = logging.getLogger(__name__)
 from handlers import premium_router
-from utils.rich_messages import details_block, html_blocks, rich_buttons, send_rich
+from utils.rich_messages import html_blocks, rich_buttons, send_rich
 from services.payments import PaymentService
 from keyboards import texts as T
 
@@ -27,35 +27,70 @@ PREMIUM_TITLE = '<tg-emoji emoji-id="5920281855378068765">⭐</tg-emoji> <b>Prem
 PREMIUM_BENEFITS = {
     "ru": (
         PREMIUM_TITLE + "\n"
-        "Разовый платёж. Автопродления нет.\n\n"
+        "Разовый платёж, без автопродления.\n\n"
+        "Всё сразу:\n"
         "🚫 Без рекламы\n"
         "🎯 Фильтры: пол и возраст\n"
         "⚡ Приоритет в очереди\n"
         "🔄 «Следующий» без паузы\n"
-        "❤️ Приоритетные запросы — без доплаты\n"
-        "🖼 3 фото вместо 1"
+        "❤️ Приоритетные запросы на раскрытие анкеты — без доплаты\n"
+        "🖼 3 фото вместо 1\n\n"
+        "Отдельные покупки (есть в каталоге кнопкой ниже):\n"
+        "🔍 Приоритет поиска — пропустить очередь (разово)\n"
+        "🚻 Фильтр по полу — на один диалог или на месяц\n"
+        "❤️ Приоритетный запрос на раскрытие — разово\n"
+        "🔁 Статус взаимного запроса — разово\n"
+        "⏭ «Следующий» без задержки — разово\n"
+        "🖼 Дополнительное фото к анкете\n\n"
+        "Фильтры и Premium не действуют во время активного диалога: смена применяется к новому поиску."
     ),
     "en": (
         PREMIUM_TITLE + "\n"
-        "One-time payment. No auto-renewal.\n\n"
+        "One-time payment, no auto-renewal.\n\n"
+        "All together:\n"
         "🚫 No ads\n"
         "🎯 Gender and age filters\n"
         "⚡ Priority in the queue\n"
         "🔄 “Next” without the wait\n"
-        "❤️ Priority requests — no extra charge\n"
-        "🖼 3 photos instead of 1"
+        "❤️ Priority reveal requests — no extra charge\n"
+        "🖼 3 photos instead of 1\n\n"
+        "Single purchases (each has a button in the catalog below):\n"
+        "🔍 Search priority — skip the queue (one-time)\n"
+        "🚻 Gender filter — for one chat or for a month\n"
+        "❤️ Priority reveal request — one-time\n"
+        "🔁 Mutual-request status — one-time\n"
+        "⏭ “Next” without the delay — one-time\n"
+        "🖼 An extra photo for the profile\n\n"
+        "Filters and Premium do not affect an active chat: the change applies to the next search."
     ),
     "uk": (
         PREMIUM_TITLE + "\n"
-        "Разовий платіж. Автопродовження немає.\n\n"
+        "Разовий платіж, без автопродовження.\n\n"
+        "Все одразу:\n"
         "🚫 Без реклами\n"
         "🎯 Фільтри: стать і вік\n"
         "⚡ Пріоритет у черзі\n"
         "🔄 «Наступний» без паузи\n"
-        "❤️ Пріоритетні запити — без доплати\n"
-        "🖼 3 фото замість 1"
+        "❤️ Пріоритетні запити на розкриття анкети — без доплати\n"
+        "🖼 3 фото замість 1\n\n"
+        "Окремі покупки (кожна — кнопкою в каталозі нижче):\n"
+        "🔍 Пріоритет пошуку — пройти чергу (разово)\n"
+        "🚻 Фільтр за статтю — на один діалог або на місяць\n"
+        "❤️ Пріоритетний запит на розкриття — разово\n"
+        "🔁 Статус взаємного запиту — разово\n"
+        "⏭ «Наступний» без затримки — разово\n"
+        "🖼 Додаткове фото до анкети\n\n"
+        "Фільтри й Premium не впливають на активний діалог: зміна застосовується до нового пошуку."
     ),
 }
+
+TARIFFS_HEADER = {
+    "ru": "Тарифы:",
+    "en": "Plans:",
+    "uk": "Тарифи:",
+}
+
+
 ACTIVE_PREMIUM = {
     "ru": (
         PREMIUM_TITLE + " активен\n"
@@ -245,28 +280,11 @@ async def product_keyboard(codes, session_id=None):
     )
 
 
-PREMIUM_DETAILS = {
-    "ru": "📖 Всё о Premium",
-    "en": "📖 All about Premium",
-    "uk": "📖 Все про Premium",
-}
-
-
-def rich_premium_blocks(text, lang, is_active):
-    """Единый rich-стиль: первая строка видимая, описание и оговорка —
-    в сворачиваемом <details>, строка выбора и тарифные кнопки внизу."""
-    chooser = (
-        T.tr(CHOOSE_RENEW, lang) if is_active else T.tr(CHOOSE_TERM, lang)
-    ).strip()
-    i = text.rfind("\n\n" + chooser)
-    body, tail = (text, "") if i < 0 else (text[:i], text[i:].strip())
-    lines = body.split("\n")
-    blocks = html_blocks(lines[0])
-    rest = "\n".join(lines[1:]).strip()
-    if rest:
-        blocks.append(details_block(T.tr(PREMIUM_DETAILS, lang), rest))
-    blocks += html_blocks(tail)
-    return blocks
+def rich_premium_blocks(text, lang):
+    """Единый rich-стиль: тарифы и возможности видимы (жирный заголовок
+    как entity bold), сворачиваемых блоков у премиума нет — экран целиком
+    в одном сообщении."""
+    return html_blocks(text)
 
 
 async def premium_keyboard(discounts=None, lang="ru"):
@@ -330,12 +348,25 @@ async def show_premium(message, user_id, lang="ru"):
     if state != "active":
         await first_purchase_discount(user_id)
     discounts = await _active_discounts(user_id, tuple(PLAN_LABELS))
+    products = await PaymentService().products(tuple(PLAN_LABELS))
+    tariffs = [T.tr(TARIFFS_HEADER, lang)]
+    lines = []
+    for product in products:
+        months = PLAN_MONTHS.get(product.code, 1)
+        label = T.tr(PLAN_LABELS.get(product.code, {"ru": product.title}), lang)
+        price = product.price_stars
+        per_month = ""
+        if months > 1:
+            per_month = f" · {round(price / months)} ⭐/{T.tr(PER_MONTH, lang)}"
+        lines.append(f"• {label} — {price} ⭐{per_month}")
+    tariffs_text = "\n\n" + tariffs[0] + "\n" + "\n".join(lines)
     if discounts:
         note = RENEW_DISCOUNT_NOTE if state == "active" else DISCOUNT_NOTE
-        text += T.tr(note, lang).format(pct=max(discounts.values()))
+        tariffs_text += T.tr(note, lang).format(pct=max(discounts.values()))
+    text += tariffs_text
     text += T.tr(CHOOSE_RENEW if state == "active" else CHOOSE_TERM, lang)
     keyboard = await premium_keyboard(discounts, lang)
-    blocks = rich_premium_blocks(text, lang, state == "active")
+    blocks = rich_premium_blocks(text, lang)
     if keyboard:
         blocks += rich_buttons(
             [

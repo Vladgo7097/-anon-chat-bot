@@ -48,10 +48,61 @@ AGE_REJECTED = {
     "uk": "Сервіс доступний лише з 18 років. Обери вік від 18 до 99.",
 }
 RULES_TEXT = {
-    "ru": '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Правила общения\n\n1️⃣ Запрещена реклама и спам\n2️⃣ Запрещены оскорбления и травля\n3️⃣ Запрещён запрещённый и нежелательный контент\n4️⃣ Не разглашай личные данные — свои и чужие\n5️⃣ Жалуйся на нарушителей кнопкой <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji>\n\nДля рассмотрения жалобы последние текстовые сообщения временно хранятся до 30 минут. Фото, голосовые, аудио и видео сохраняются только после явной отправки жалобы и удаляются через 30 дней; текст жалобы — до 90 дней.\n\nНарушение правил может привести к блокировке.\n\nНажимая кнопку ниже, ты подтверждаешь, что ознакомился с правилами. Сервис доступен только с 18 лет.',
-    "en": '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Chat rules\n\n1️⃣ No ads or spam\n2️⃣ No insults or harassment\n3️⃣ No prohibited or unwanted content\n4️⃣ Don\'t share personal data — yours or someone else\'s\n5️⃣ Report violators with the <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji> button\n\nTo review reports, recent text messages are kept for up to 30 minutes. Photos, voice messages, audio and video are saved only after a report is actually filed and are deleted after 30 days; report text is kept for up to 90 days.\n\nBreaking the rules can lead to a ban.\n\nBy tapping the button below, you confirm you\'ve read the rules. The service is available from 18 years old only.',
-    "uk": '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Правила спілкування\n\n1️⃣ Заборонена реклама і спам\n2️⃣ Заборонені образи й цькування\n3️⃣ Заборонений заборонений і небажаний контент\n4️⃣ Не розголошуй особисті дані — свої й чужі\n5️⃣ Скаржся на порушників кнопкою <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji>\n\nДля розгляду скарги останні текстові повідомлення тимчасово зберігаються до 30 хвилин. Фото, голосові, аудіо та відео зберігаються лише після явної відправки скарги й видаляються через 30 днів; текст скарги — до 90 днів.\n\nПорушення правил може призвести до блокування.\n\nНатискаючи кнопку нижче, ти підтверджуєш, що ознайомився з правилами. Сервіс доступний лише з 18 років.',
+    "ru": (
+        '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Правила общения\n\n'
+        "1️⃣ Реклама и спам запрещены: ссылки, приглашения в каналы и пиар в диалоге.\n"
+        "2️⃣ Оскорбления, травля, угрозы и вымогательство — запрещены.\n"
+        "3️⃣ Преступный контент запрещён: насилие, экстремизм, наркотики, оружие.\n"
+        "4️⃣ Сексуальный контент — только по явному согласию обоих; навязывать нельзя.\n"
+        "5️⃣ Материалы с участием несовершеннолетних — немедленный и пожизненный бан, тяжёлые случаи уходят в Telegram.\n"
+        "6️⃣ Не выдавай себя за других и не используй чужие фото.\n"
+        "7️⃣ Личные данные — свои и чужие — только на свой риск; деанонимизация собеседника запрещена.\n"
+        "8️⃣ Уважай отказ: собеседник вправе молчать или уйти «Следующим» — преследовать нельзя.\n"
+        '9️⃣ Жалуйся на нарушителей кнопкой <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji> — сообщения и медиа сохраняются для разбора (подробнее ниже).\n'
+        "🔒 Обойти блокировку новой анкетой нельзя.\n"
+        "\n"
+        "Для рассмотрения жалобы последние текстовые сообщения хранятся до 30 минут. "
+        "Фото, голосовые, аудио и видео сохраняются только после явной отправки жалобы и удаляются не позднее чем через 30 дней; текст жалобы — до 90 дней.\n\n"
+        "Санкции: первое нарушение — мут или бан, повторное — бан навсегда.\n\n"
+        "Сервис доступен только с 18 лет. Нажимая «Принять правила», ты подтверждаешь, что ознакомился с ними."
+    ),
+    "en": (
+        '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Chat rules\n\n'
+        "1️⃣ No ads or spam: no links, channel invites, or self-promotion in a chat.\n"
+        "2️⃣ No insults, harassment, threats, or blackmail.\n"
+        "3️⃣ No criminal content: violence, extremism, drugs, weapons.\n"
+        "4️⃣ Sexual content only with the explicit consent of both; never pushed.\n"
+        "5️⃣ Material involving minors — immediate permanent ban; grave cases go to Telegram.\n"
+        "6️⃣ Don't impersonate others and don't use photos that aren't yours.\n"
+        "7️⃣ Personal data — yours or someone else's — is shared at your own risk; deanonymizing your match is forbidden.\n"
+        "8️⃣ Respect refusal: your match may stay silent or press “Next” — no stalking.\n"
+        '9️⃣ Report violators with the <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji> button — messages and media are kept for review (details below).\n'
+        "🔒 Bypassing a block with a new profile is not possible.\n"
+        "\n"
+        "To review a report, recent text messages are kept for up to 30 minutes. Photos, voice messages, audio, and video are saved only after a report is actually filed and deleted within at most 30 days; report text is kept for up to 90 days.\n\n"
+        "Consequences: the first violation — mute or ban, the next one — permanent ban.\n\n"
+        "The service is 18+ only. By tapping “Accept rules”, you confirm you've read them."
+    ),
+    "uk": (
+        '<tg-emoji emoji-id="5976292450870761243">📜</tg-emoji> Правила спілкування\n\n'
+        "1️⃣ Реклама і спам заборонені: посилання, запрошення в канали і піар у діалозі.\n"
+        "2️⃣ Образи, цькування, погрози й шантаж — заборонені.\n"
+        "3️⃣ Кримінальний контент заборонений: насильство, екстремізм, наркотики, зброя.\n"
+        "4️⃣ Сексуальний контент — лише за явної згоди обох; нав'язувати не можна.\n"
+        "5️⃣ Матеріали за участю неповнолітніх — негайний і довічний бан, тяжкі випадки уходять до Telegram.\n"
+        "6️⃣ Не видавай себе за інших і не користуйся чужими фото.\n"
+        "7️⃣ Особисті дані — свої й чужі — лише на власний ризик; деанонімізація співрозмовника заборонена.\n"
+        "8️⃣ Поважай відмову: співрозмовник вправі мовчати чи піти «Наступним» — переслідувати не можна.\n"
+        '9️⃣ Скаржся на порушників кнопкою <tg-emoji emoji-id="5460755126761312667">🚩</tg-emoji> — повідомлення та медіа зберігаються для розгляду (докладніше нижче).\n'
+        "🔒 Обійти блокування з новою анкетою не вийде.\n"
+        "\n"
+        "Для розгляду скарги останні текстові повідомлення зберігаються до 30 хвилин. Фото, голосові, аудіо та відео зберігаються лише після явної відправки скарги й видаляються не пізніше ніж за 30 днів; текст скарги — до 90 днів.\n\n"
+        "Санкції: перше порушення — мут або бан, наступне — бан назавжди.\n\n"
+        "Сервіс доступний лише з 18 років. Натискаючи «Прийняти правила», ти підтверджуєш, що ознайомився з ними."
+    ),
 }
+
+
 BANNED_UNTIL = {
     "ru": "⛔ Ты заблокирован до {until} UTC.",
     "en": "⛔ You are banned until {until} UTC.",

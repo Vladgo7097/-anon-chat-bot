@@ -5,7 +5,7 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -95,6 +95,12 @@ class PremiumScreenTests(unittest.IsolatedAsyncioTestCase):
                 "handlers.premium.premium_keyboard",
                 AsyncMock(return_value=None),
             ) as keyboard,
+            patch(
+                "handlers.premium.PaymentService",
+                MagicMock(
+                    return_value=SimpleNamespace(products=AsyncMock(return_value=[]))
+                ),
+            ),
         ):
             await show_premium(message, 1, lang)
         return message, first_purchase_mock, keyboard
@@ -113,7 +119,7 @@ class PremiumScreenTests(unittest.IsolatedAsyncioTestCase):
 
         method = message.bot.await_args.args[0]
         text = rich_text(method, hidden=True)
-        self.assertIn("Автопродления нет", text)
+        self.assertIn("без автопродления", text)
         self.assertIn("Без рекламы", text)
         self.assertIn("3 фото вместо 1", text)
         self.assertIn("Скидка до 50%", text)
