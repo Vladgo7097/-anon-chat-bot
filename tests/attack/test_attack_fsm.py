@@ -410,7 +410,8 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             "services.reveal",
             "services.reports",
             "services.admin",
-            "services.ads", "services.op",
+            "services.ads",
+            "services.op",
         ):
             p = patch(module + ".async_session", self.factory)
             p.start()
@@ -583,7 +584,19 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             await ctx.update_data(**data)
 
     def texts(self):
-        return [p.text for p in self.sent if getattr(p, "text", None)]
+        # Rich-сообщения (SendRichMessage) несут текст в rich_message.html;
+        # <br> и <img> — артефакты разметки, чистим до сравнения.
+        out = []
+        for p in self.sent:
+            t = getattr(p, "text", None)
+            if t:
+                out.append(t)
+                continue
+            rm = getattr(p, "rich_message", None)
+            html_text = getattr(rm, "html", None) if rm else None
+            if html_text:
+                out.append(html_text.replace("<br>", "\n"))
+        return out
 
 
 class SmokeTests(AttackCase):
@@ -1446,7 +1459,9 @@ class FloodGateTests(AttackCase):
         )
         # Каждый тап получает ответ: либо онбординг, либо тост slow_down --
         # молчаливых пропусков нет.
-        self.assertGreaterEqual(len(self.texts()), 20, "some of the 20 taps were dropped")
+        self.assertGreaterEqual(
+            len(self.texts()), 20, "some of the 20 taps were dropped"
+        )
         self.assertEqual(self.bot_errors, [], self.bot_errors)
 
     async def test_the_gate_fails_open_while_redis_is_down(self):
