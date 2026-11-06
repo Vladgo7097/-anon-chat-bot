@@ -691,6 +691,19 @@ class ChatRepository:
                     next((u.language for u in users if u.telegram_id == partner), None)
                     or "ru"
                 )
+                # Партнёр должен знать, что диалог закрыли, -- и получить вместе
+                # с этим reply-клавиатуру главного меню: иначе у него навсегда
+                # остаются кнопки диалогового набора (worker отдаёт main_menu_kb
+                # на type="chat_ended").
+                texts = T.tr(T.WORKER_TEXTS, lang)
+                await enqueue(
+                    s,
+                    partner,
+                    "chat_ended",
+                    f"ended:{chat.session_id}:{partner}",
+                    texts["ended_new"],
+                    "menu",
+                )
                 await enqueue(
                     s,
                     partner,

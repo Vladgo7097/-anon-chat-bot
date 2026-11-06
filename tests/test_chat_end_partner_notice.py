@@ -56,6 +56,19 @@ class PartnerLeftNoticeTests(DatabaseCase):
             )
         self.assertIsNotNone(row)
         self.assertEqual(row.text, T.tr(T.CHAT_AFTER, "ru")["text"])
+        # Партнёру уходит и явное «Диалог завершён» с reply-клавиатурой
+        # главного меню (worker отдаёт main_menu_kb на type="chat_ended") --
+        # иначе у него навсегда остаются кнопки диалогового набора.
+        async with self.factory() as s:
+            ended = await s.scalar(
+                select(Notification).where(
+                    Notification.type == "chat_ended",
+                    Notification.user_id == 2,
+                    Notification.callback_data == "menu",
+                ),
+            )
+        self.assertIsNotNone(ended)
+        self.assertEqual(ended.text, T.tr(T.WORKER_TEXTS, "ru")["ended_new"])
 
     async def test_stop_notifies_the_partner_in_their_own_language(self):
         async with self.factory.begin() as s:
@@ -73,6 +86,16 @@ class PartnerLeftNoticeTests(DatabaseCase):
             )
         self.assertIsNotNone(row)
         self.assertEqual(row.text, T.tr(T.CHAT_AFTER, "uk")["text"])
+        async with self.factory() as s:
+            ended = await s.scalar(
+                select(Notification).where(
+                    Notification.type == "chat_ended",
+                    Notification.user_id == 2,
+                    Notification.callback_data == "menu",
+                ),
+            )
+        self.assertIsNotNone(ended)
+        self.assertEqual(ended.text, T.tr(T.WORKER_TEXTS, "uk")["ended_new"])
 
 
 if __name__ == "__main__":
