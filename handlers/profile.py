@@ -256,9 +256,24 @@ def _profile_buttons_blocks(buttons, lang):
     named = dict(T.tr(T.PROFILE_BUTTONS, lang))
     named["language"] = _LANGUAGE_LABEL
 
+    # У поля button нет size/width — клиент кроет кнопку по длине текста,
+    # поэтому выравниваем ширину вашей молчаливостью: добиваем каждый ярлык
+    # неразрывными пробелами (NBSP не сворачивается рэндером) до одной
+    # ширины — самая длинная метка в наборе. Половина пробелов уходит справа,
+    # половина слева, метка остаётся оптически центрированной.
+    NBSP = "\u00a0"
+    target = max(len(v) for v in named.values() if isinstance(v, str))
+
+    def even(label):
+        pad = target - len(label)
+        if pad <= 0:
+            return label
+        half = pad // 2
+        return NBSP * half + label + NBSP * (pad - half)
+
     def btn(item):
         label_key, callback, style = item
-        b = {"text": named[label_key], "callback_data": callback}
+        b = {"text": even(named[label_key]), "callback_data": callback}
         if style:
             b["style"] = style
         return b
