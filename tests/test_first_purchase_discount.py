@@ -63,11 +63,15 @@ class FirstPurchaseDiscountTests(DatabaseCase):
         self.assertIsNotNone(payment.offer_id)
 
     async def test_screen_quotes_the_same_discounted_prices_as_the_invoice(self):
-        message = SimpleNamespace(answer=AsyncMock())
+        from tests.rich_helpers import button_texts, rich_text
+
+        message = SimpleNamespace(
+            answer=AsyncMock(), bot=AsyncMock(), chat=SimpleNamespace(id=1)
+        )
         await show_premium(message, 1, "ru")
-        text = message.answer.await_args.args[0]
-        keyboard = message.answer.await_args.kwargs["reply_markup"]
-        labels = [row[0].text for row in keyboard.inline_keyboard]
+        method = message.bot.await_args.args[0]
+        text = rich_text(method, hidden=True)
+        labels = button_texts(method)
         self.assertIn("Скидка до 50%", text)
         self.assertIn("1 месяц · 49 ⭐ вместо 99", labels)
         self.assertIn("3 месяца · 124 ⭐ вместо 249", labels)

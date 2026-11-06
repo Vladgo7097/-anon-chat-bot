@@ -72,7 +72,9 @@ class PremiumKeyboardTests(unittest.IsolatedAsyncioTestCase):
 
 class PremiumScreenTests(unittest.IsolatedAsyncioTestCase):
     def message(self):
-        return SimpleNamespace(answer=AsyncMock())
+        return SimpleNamespace(
+            answer=AsyncMock(), bot=AsyncMock(), chat=SimpleNamespace(id=1)
+        )
 
     async def render(
         self, user, lang="ru", first_purchase=50, discounts=None, active=False
@@ -107,7 +109,10 @@ class PremiumScreenTests(unittest.IsolatedAsyncioTestCase):
                 "premium_12m": 50,
             },
         )
-        text = message.answer.await_args.args[0]
+        from tests.rich_helpers import rich_text
+
+        method = message.bot.await_args.args[0]
+        text = rich_text(method, hidden=True)
         self.assertIn("Автопродления нет", text)
         self.assertIn("Без рекламы", text)
         self.assertIn("3 фото вместо 1", text)
@@ -125,8 +130,11 @@ class PremiumScreenTests(unittest.IsolatedAsyncioTestCase):
         message, first_purchase, keyboard = await self.render(
             user, first_purchase=50, active=True
         )
-        text = message.answer.await_args.args[0]
-        self.assertIn("<b>Premium</b> активен", text)
+        from tests.rich_helpers import rich_text
+
+        method = message.bot.await_args.args[0]
+        text = rich_text(method, hidden=True)
+        self.assertIn("Premium активен", text)
         self.assertIn("10 дней", text)
         self.assertIn("Продление добавит время", text)
         self.assertIn("Выбери продление", text)
@@ -138,15 +146,21 @@ class PremiumScreenTests(unittest.IsolatedAsyncioTestCase):
         expired = utcnow() - timedelta(days=3)
         user = SimpleNamespace(premium_expires=expired, is_premium=False)
         message, _, _ = await self.render(user, first_purchase=None)
-        text = message.answer.await_args.args[0]
-        self.assertIn("<b>Premium</b> закончился", text)
+        from tests.rich_helpers import rich_text
+
+        method = message.bot.await_args.args[0]
+        text = rich_text(method, hidden=True)
+        self.assertIn("Premium закончился", text)
         self.assertIn(f"{expired:%d.%m.%Y}", text)
         self.assertIn("Выбери срок", text)
 
     async def test_new_user_without_an_offer_gets_no_fake_discount(self):
         user = SimpleNamespace(premium_expires=None, is_premium=False)
         message, _, _ = await self.render(user, first_purchase=None, discounts={})
-        text = message.answer.await_args.args[0]
+        from tests.rich_helpers import rich_text
+
+        method = message.bot.await_args.args[0]
+        text = rich_text(method, hidden=True)
         self.assertNotIn("Скидка", text)
         self.assertIn("Выбери срок", text)
 

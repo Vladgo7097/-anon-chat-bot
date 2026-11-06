@@ -419,11 +419,15 @@ class UserFlowTests(DatabaseCase):
         from handlers.ideas import open_ideas
 
         stub, state = self.message_stub(), self.state()
+        stub.bot = AsyncMock()
+        stub.chat = SimpleNamespace(id=7)
         with patch("handlers.ideas.set_online", AsyncMock()):
             await open_ideas(stub, state, lang="ru")
-        text = stub.answer.await_args.args[0]
-        self.assertIn("Предложи идею", text)
-        markup = stub.answer.await_args.kwargs["reply_markup"]
+        from tests.rich_helpers import rich_text
+
+        method = stub.bot.await_args.args[0]
+        self.assertIn("Предложи идею", rich_text(method))
+        markup = method.reply_markup
         self.assertEqual(markup.inline_keyboard[0][0].callback_data, "idea:new")
         self.assertIsNone(await state.get_state())
 

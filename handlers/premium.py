@@ -19,6 +19,7 @@ from models.payment import Payment, PremiumSubscription
 
 logger = logging.getLogger(__name__)
 from handlers import premium_router
+from utils.rich_messages import details_block, html_blocks, rich_buttons, send_rich
 from services.payments import PaymentService
 from keyboards import texts as T
 
@@ -244,6 +245,30 @@ async def product_keyboard(codes, session_id=None):
     )
 
 
+PREMIUM_DETAILS = {
+    "ru": "📖 Всё о Premium",
+    "en": "📖 All about Premium",
+    "uk": "📖 Все про Premium",
+}
+
+
+def rich_premium_blocks(text, lang, is_active):
+    """Единый rich-стиль: первая строка видимая, описание и оговорка —
+    в сворачиваемом <details>, строка выбора и тарифные кнопки внизу."""
+    chooser = (
+        T.tr(CHOOSE_RENEW, lang) if is_active else T.tr(CHOOSE_TERM, lang)
+    ).strip()
+    i = text.rfind("\n\n" + chooser)
+    body, tail = (text, "") if i < 0 else (text[:i], text[i:].strip())
+    lines = body.split("\n")
+    blocks = html_blocks(lines[0])
+    rest = "\n".join(lines[1:]).strip()
+    if rest:
+        blocks.append(details_block(T.tr(PREMIUM_DETAILS, lang), rest))
+    blocks += html_blocks(tail)
+    return blocks
+
+
 async def premium_keyboard(discounts=None, lang="ru"):
     discounts = discounts or {}
     products = await PaymentService().products(list(PLAN_LABELS))
@@ -309,10 +334,18 @@ async def show_premium(message, user_id, lang="ru"):
         note = RENEW_DISCOUNT_NOTE if state == "active" else DISCOUNT_NOTE
         text += T.tr(note, lang).format(pct=max(discounts.values()))
     text += T.tr(CHOOSE_RENEW if state == "active" else CHOOSE_TERM, lang)
-    await message.answer(
-        text,
-        reply_markup=await premium_keyboard(discounts, lang),
-    )
+    keyboard = await premium_keyboard(discounts, lang)
+    blocks = rich_premium_blocks(text, lang, state == "active")
+    if keyboard:
+        blocks += rich_buttons(
+            [
+                (b.text, b.callback_data, getattr(b, "style", None))
+                for row in keyboard.inline_keyboard
+                for b in row
+            ],
+            per_row=1,
+        )
+    await send_rich(message.bot, message.chat.id, blocks)
 
 
 @premium_router.message(F.text.in_(T.all_labels(T.PREMIUM)))

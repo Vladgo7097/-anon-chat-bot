@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from handlers import settings_router
 from keyboards import texts as T
-from keyboards.inline import settings_kb, language_kb
+from utils.rich_messages import card_blocks, details_block, rich_buttons, send_rich
 from repositories.users import UserRepository
 from services.settings import SettingsService
 
@@ -62,7 +62,43 @@ async def show_settings(message, user_id, lang="ru"):
     text = T.tr(SETTINGS_TEXT, lang).format(
         gender=gender, min=user.settings_age_min, max=user.settings_age_max
     )
-    await message.answer(text, reply_markup=settings_kb(lang))
+    await send_rich(message.bot, message.chat.id, rich_settings_blocks(text, lang))
+
+
+def rich_settings_blocks(text, lang):
+    """Единый rich-стиль: заголовок+фильтр+возраст видимы, оговорка про
+    Premium — в сворачиваемом <details>, выбор фильтра — кнопки-блоки."""
+    labels = T.tr(T.SETTINGS_BUTTONS, lang)
+    lines = text.split("\n")
+    blocks = card_blocks("\n".join(lines[:4]))
+    note = "\n".join(lines[4:]).strip()
+    if note:
+        blocks.append(details_block(T.tr(FILTER_NOTE_SUMMARY, lang), note))
+    blocks += rich_buttons(
+        [
+            (labels["m"], "settings:gender:m", None),
+            (labels["f"], "settings:gender:f", None),
+            (labels["a"], "settings:gender:a", None),
+            ("18-25", "settings:age:18-25", None),
+            ("26-35", "settings:age:26-35", None),
+            ("36+", "settings:age:36+", None),
+            (labels["any"], "settings:age:any", None),
+        ],
+        per_row=2,
+    )
+    blocks += rich_buttons(
+        [("🌐 Язык / Language", "language:menu", "primary")],
+        per_row=1,
+        center_tail=1,
+    )
+    return blocks
+
+
+FILTER_NOTE_SUMMARY = {
+    "ru": "📖 Что дают фильтры",
+    "en": "📖 What the filters give",
+    "uk": "📖 Що дають фільтри",
+}
 
 
 @settings_router.message(F.text.in_(T.all_labels(T.SETTINGS)))
@@ -76,11 +112,26 @@ async def cb_settings(callback: CallbackQuery, lang: str = "ru"):
     await show_settings(callback.message, callback.from_user.id, lang)
 
 
+def rich_language_blocks(lang, back_callback=None):
+    """Единый rich-стиль: языки кнопками-блоками, «Назад» — по центру."""
+    buttons = [
+        (f"{T.LANGUAGE_FLAGS[code]} {T.LANGUAGE_NAMES[code]}", f"lang:{code}", None)
+        for code in sorted(T.LANGUAGE_NAMES)
+    ]
+    blocks = card_blocks(T.tr(LANGUAGE_MENU_TEXT, lang))
+    blocks += rich_buttons(buttons, per_row=2)
+    if back_callback:
+        blocks += rich_buttons(
+            [(T.label(T.PAGE_PREV, lang), back_callback, None)],
+            per_row=1,
+            center_tail=1,
+        )
+    return blocks
+
+
 @settings_router.message(Command("language"))
 async def cmd_language(message: Message, lang: str = "ru"):
-    await message.answer(
-        T.tr(LANGUAGE_MENU_TEXT, lang), reply_markup=language_kb(lang=lang)
-    )
+    await send_rich(message.bot, message.chat.id, rich_language_blocks(lang))
 
 
 @settings_router.callback_query(F.data.startswith("language:menu"))
@@ -89,9 +140,10 @@ async def cb_language_menu(callback: CallbackQuery, lang: str = "ru"):
     back_callback = (
         "profile" if callback.data == "language:menu:profile" else "settings"
     )
-    await callback.message.answer(
-        T.tr(LANGUAGE_MENU_TEXT, lang),
-        reply_markup=language_kb(back_callback=back_callback, lang=lang),
+    await send_rich(
+        callback.bot,
+        callback.message.chat.id,
+        rich_language_blocks(lang, back_callback),
     )
 
 

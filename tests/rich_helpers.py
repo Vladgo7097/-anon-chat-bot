@@ -53,12 +53,29 @@ def _render_paragraph(b):
     line = ""
     for pt in parts:
         if isinstance(pt, dict):
-            line += pt.get("alternative_text", "")
+            line += _entity_text(pt)
+        elif hasattr(pt, "text") and hasattr(pt, "type"):
+            # entity bold/quotation: вложенный текст — тоже RichTextUnion
+            inner = pt.text
+            line += (
+                inner
+                if isinstance(inner, str)
+                else "".join(
+                    _entity_text(dict(t)) if isinstance(t, dict) else str(t)
+                    for t in inner
+                )
+            )
         elif hasattr(pt, "alternative_text"):
             line += pt.alternative_text
         else:
             line += str(pt)
     return line
+
+
+def _entity_text(pt):
+    if pt.get("type") == "custom_emoji":
+        return pt.get("alternative_text", "")
+    return pt.get("text", "")
 
 
 def _render_plain(s):
@@ -84,8 +101,17 @@ def body_lines(method, expected):
     summary_like = {
         "📖 Показать подробности",
         "📖 Показать подробно",
+        "📖 Что дают фильтры",
+        "📖 Всё о Premium",
+        "📖 Хранение данных и санкции",
         "📖 Show details",
+        "📖 What the filters give",
+        "📖 All about Premium",
+        "📖 Data retention and consequences",
         "📖 Показати подробиці",
+        "📖 Що дають фільтри",
+        "📖 Все про Premium",
+        "📖 Зберігання даних і санкції",
     }
     actual = {l for l in rich_text(method, hidden=True).split("\n") if l.strip()}
     want = set(
@@ -96,3 +122,31 @@ def body_lines(method, expected):
     )
     want = {l for l in want if l.strip()}
     return actual - want - summary_like, want - actual - summary_like
+
+
+def button_texts(method):
+    """Ярлыки кнопок rich-метода — блоки "buttons"; NBSP-выравнивание срезаю."""
+    labels = []
+    for b in method.rich_message.blocks:
+        if getattr(b, "type", None) != "buttons":
+            continue
+        for btn in b.buttons:
+            text = btn.text if not isinstance(btn, dict) else btn.get("text", "")
+            labels.append(text.replace("\u00a0", " ").strip())
+    return labels
+
+
+def callback_texts(method):
+    """callback_data кнопок rich-метода в порядке ярлыков button_texts()."""
+    data = []
+    for b in method.rich_message.blocks:
+        if getattr(b, "type", None) != "buttons":
+            continue
+        for btn in b.buttons:
+            cb = (
+                btn.callback_data
+                if not isinstance(btn, dict)
+                else btn.get("callback_data")
+            )
+            data.append(cb)
+    return data

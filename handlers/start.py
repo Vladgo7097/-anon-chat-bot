@@ -5,6 +5,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, Update
 from handlers import start_router
 from keyboards import texts as T
+from utils.rich_messages import card_blocks, details_block, send_rich
 from keyboards.reply import onboarding_kb, main_menu_kb
 from keyboards.inline import language_kb
 from services.onboarding import OnboardingService, step_for
@@ -187,9 +188,28 @@ async def enter_bot(message, state, user, bot, payload=""):
     await show_step(message, state, result, lang=lang)
 
 
+RULES_DETAILS = {
+    "ru": "📖 Хранение данных и санкции",
+    "en": "📖 Data retention and consequences",
+    "uk": "📖 Зберігання даних і санкції",
+}
+
+
+def rich_rules_blocks(lang):
+    """Единый rich-стиль: заголовок и сами правила видимы, порядок хранения
+    медиа, блокировки и 18+ — в сворачиваемом <details>."""
+    sections = [t for t in T.tr(RULES_TEXT, lang).split("\n\n") if t.strip()]
+    blocks = card_blocks("\n\n".join(sections[:2]))
+    hidden = sections[2:-1]
+    if hidden:
+        blocks.append(details_block(T.tr(RULES_DETAILS, lang), "\n\n".join(hidden)))
+    blocks += card_blocks(sections[-1])
+    return blocks
+
+
 @start_router.message(Command("rules"))
 async def cmd_rules(message: Message, lang: str = "ru"):
-    await message.answer(T.tr(RULES_TEXT, lang))
+    await send_rich(message.bot, message.chat.id, rich_rules_blocks(lang))
 
 
 @start_router.callback_query(F.data.startswith("lang:"))

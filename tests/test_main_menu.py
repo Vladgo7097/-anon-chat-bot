@@ -1,4 +1,4 @@
-from tests.rich_helpers import body_lines
+from tests.rich_helpers import body_lines, rich_text
 
 """The main menu: eight buttons, each one claimed by a handler, each screen
 speaking the language its client asked in."""
@@ -323,9 +323,13 @@ class MenuDispatchTests(unittest.IsolatedAsyncioTestCase):
                     await self.dp.feed_update(
                         self.bot, Update(update_id=31, message=message("/rules", "ru"))
                     )
-                self.assertEqual(
-                    telegram.await_args.args[1].text, T.tr(RULES_TEXT, lang)
-                )
+                method = telegram.await_args.args[1]
+                rules = T.tr(RULES_TEXT, lang)
+                covered = rich_text(method, hidden=True)
+                # rich-правила: само тело сохраняется построчно, summary
+                # <details> в шаблоне нет — сверяем содержимое, как помощь.
+                self.assertEqual(body_lines(method, rules), (set(), set()))
+                self.assertIn("📖", covered)
 
 
 class ScreenLanguageTests(unittest.IsolatedAsyncioTestCase):

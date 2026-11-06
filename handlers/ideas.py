@@ -26,6 +26,7 @@ from keyboards.inline import (
 )
 from services.chat_manager import set_online
 from services.ideas import IdeaService, status_label
+from utils.rich_messages import html_blocks, send_rich
 from utils.time import KYIV, utcnow
 
 NOT_FOUND = {
@@ -53,7 +54,12 @@ def _short(text: str, size: int = 48) -> str:
 
 
 async def _root(message, lang: str):
-    await message.answer(T.tr(T.IDEA_MENU, lang), reply_markup=ideas_menu_kb(lang))
+    await send_rich(
+        message.bot,
+        message.chat.id,
+        html_blocks(T.tr(T.IDEA_MENU, lang)),
+        reply_markup=ideas_menu_kb(lang),
+    )
 
 
 @ideas_router.message(F.text.in_(T.all_labels(T.IDEA)))
@@ -67,8 +73,11 @@ async def open_ideas(message: Message, state: FSMContext, lang: str = "ru"):
 async def cb_root(callback: CallbackQuery, state: FSMContext, lang: str = "ru"):
     await state.clear()
     await callback.answer()
-    await callback.message.answer(
-        T.tr(T.IDEA_MENU, lang), reply_markup=ideas_menu_kb(lang)
+    await send_rich(
+        callback.bot,
+        callback.message.chat.id,
+        html_blocks(T.tr(T.IDEA_MENU, lang)),
+        reply_markup=ideas_menu_kb(lang),
     )
 
 
