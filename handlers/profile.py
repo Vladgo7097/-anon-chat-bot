@@ -7,7 +7,6 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
-    InputRichMessage,
     InputRichMessageMedia,
     Message,
 )
@@ -15,6 +14,8 @@ from aiogram.methods import SendRichMessage
 from aiogram.exceptions import TelegramBadRequest
 from html import escape
 import json
+import re
+from html import unescape
 from handlers import profile_router
 from keyboards.inline import profile_kb, profile_edit_kb
 from keyboards.reply import onboarding_kb, main_menu_kb
@@ -209,58 +210,105 @@ UNKNOWN_GENDER_ICON = ("5348232622898167572", "♥️")
 _LANGUAGE_LABEL = "🌐 Язык / Language"
 
 
-def _profile_rich_html(text: str, lang: str, buttons) -> str:
-    """Карточка анкеты в rich-разметке: текст + кнопки InputRichBlockButtons.
+_EMOJI_TAG = re.compile(r'<tg-emoji emoji-id="(\d+)">([^<]*)</tg-emoji>')
 
-    Раскладка по словами dj: первые 6 кнопок — два ряда по 3, остаток
-    (седьмая «Удалить», при фото — ещё и «Удалить фото») — ряд под ними.
-    style принимается только из {"danger", "success", "primary"} — иное
-    значение роняет запрос 400-й.
+
+def _card_blocks(text):
+    """Карточка в blocks-режиме: каждая строка — block "paragraph".
+
+    RichText = строка ИЛИ массив сущностей, поэтому кастомные эмодзи
+    карточки уходят как {"type":"custom_emoji", "custom_emoji_id":...,
+    "alternative_text":...}, обычный текст — строкой.
+
+    HTML-парсинга в blocks-режиме нет: template живёт в html-экранировании
+    (bio был прогнан через escape()), поэтому сущности откатываем — юзер
+    видит ровно то, что ввёл, а tg-emoji-теги парсим сами до отката-формула
+    не трогает теги-развёртку emoji-альтернатив.
     """
-    labels = T.tr(T.PROFILE_BUTTONS, lang)
-    named = dict(labels)
+    blocks = []
+    for line in unescape(text).split("\n"):
+        parts, pos = [], 0
+        for m in _EMOJI_TAG.finditer(line):
+            if m.start() > pos:
+                parts.append(line[pos : m.start()])
+            parts.append(
+                {
+                    "type": "custom_emoji",
+                    "custom_emoji_id": m.group(1),
+                    "alternative_text": m.group(2),
+                }
+            )
+            pos = m.end()
+        if pos < len(line):
+            parts.append(line[pos:])
+        if not parts:
+            continue
+        blocks.append({"type": "paragraph", "text": parts})
+    return blocks
+
+
+def _profile_buttons_blocks(buttons, lang):
+    """Блоки "buttons" = InputRichBlockButtons — ровно формат присланного
+    JSON: первые 6 кнопок по 2 в ряд, финальная строка align="center".
+    style — только из {"danger", "success", "primary"}, иное значение роняет
+    запрос ("Bad Request: Invalid button style specified").
+    """
+    named = dict(T.tr(T.PROFILE_BUTTONS, lang))
     named["language"] = _LANGUAGE_LABEL
 
-    # Переносы строк видны и в обычных HTML-сообщениях, но rich-парсер
-    # сворачивает пробельные символы: каждую \n заменяем чистым <br>.
-    body = text.replace("\n", "<br>")
-
-    def button(item):
+    def btn(item):
         label_key, callback, style = item
-        style_attr = f' style="{style}"' if style else ""
-        return (
-            f'<tg-button type="callback_data" data="{callback}"{style_attr}>'
-            f"{named[label_key]}</tg-button>"
+        b = {"text": named[label_key], "callback_data": callback}
+        if style:
+            b["style"] = style
+        return b
+
+    # Пар рядов по 2; две последние кнопки («Удалить фото» + «Удалить» или
+    # одиночная «Удалить») — центрированный блок, как «Кнопка 7» в образце.
+    blocks = []
+    body_end = len(buttons) - 2 if len(buttons) > 7 else len(buttons) - 1
+    i = 0
+    while i < body_end:
+        blocks.append(
+            {"type": "buttons", "buttons": [btn(b) for b in buttons[i : i + 2]]}
         )
-
-    def row(items, align=' align="left"'):
-        cells = "".join(button(i) for i in items)
-        return f"<tg-button-row{align}>{cells}</tg-button-row>"
-
-    rendered = [body]
-    for i in range(0, len(buttons) - (2 if len(buttons) > 7 else 1), 3):
-        rendered.append(row(buttons[i : i + 3]))
-    rendered.append(row(buttons[-2:] if len(buttons) > 7 else buttons[-1:]))
-    return "".join(rendered)
+        i += 2
+    if i < len(buttons):
+        blocks.append(
+            {
+                "type": "buttons",
+                "align": "center",
+                "buttons": [btn(b) for b in buttons[i:]],
+            }
+        )
+    return blocks
 
 
 async def _send_rich_profile(bot, chat_id, text, lang, buttons, photo_file_id=None):
-    """SendRichMessage с фото анкеты (InputRichMessageMedia, file_id) и
-    кнопками-строками InputRichBlockButtons прямо в теле сообщения."""
-    html = _profile_rich_html(text, lang, buttons)
-    media = None
+    """SendRichMessage в blocks-режиме: параграфы карточки + строки кнопок
+    InputRichBlockButtons (формат присланного JSON, доки Bot API 10.3)."""
+    blocks = _card_blocks(text)
     if photo_file_id:
-        media = [
-            InputRichMessageMedia(
-                id="profile_photo", media=InputMediaPhoto(media=photo_file_id)
-            )
-        ]
-        html = '<img src="tg://photo?id=profile_photo"/>' + html
-    return await bot(
-        SendRichMessage(
-            chat_id=chat_id, rich_message=InputRichMessage(html=html, media=media)
+        # Фото анкеты: block "photo" по tg://photo?id= + file_id в media.
+        blocks.insert(
+            0,
+            {
+                "type": "photo",
+                "photo": InputMediaPhoto(media="tg://photo?id=profile_photo"),
+            },
         )
-    )
+        rich_message = {
+            "blocks": blocks,
+            "media": [
+                InputRichMessageMedia(
+                    id="profile_photo", media=InputMediaPhoto(media=photo_file_id)
+                ).model_dump(exclude_none=True)
+            ],
+        }
+    else:
+        rich_message = {"blocks": blocks}
+    rich_message["blocks"] += _profile_buttons_blocks(buttons, lang)
+    return await bot(SendRichMessage(chat_id=chat_id, rich_message=rich_message))
 
 
 async def show_profile(message, user_id, lang="ru"):

@@ -584,8 +584,8 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
             await ctx.update_data(**data)
 
     def texts(self):
-        # Rich-сообщения (SendRichMessage) несут текст в rich_message.html;
-        # <br> и <img> — артефакты разметки, чистим до сравнения.
+        # Rich-сообщения теперь в blocks-режиме (SendRichMessage):
+        # параграфы собираем обратно в текст, эмодзи — их альтернативой.
         out = []
         for p in self.sent:
             t = getattr(p, "text", None)
@@ -593,9 +593,28 @@ class AttackCase(unittest.IsolatedAsyncioTestCase):
                 out.append(t)
                 continue
             rm = getattr(p, "rich_message", None)
-            html_text = getattr(rm, "html", None) if rm else None
-            if html_text:
-                out.append(html_text.replace("<br>", "\n"))
+            blocks = getattr(rm, "blocks", None) if rm else None
+            if blocks:
+                lines = []
+                for b in blocks:
+                    # Блоки проходят pydantic-валидацию: приходят уже
+                    # моделями (InputRichBlockParagraph), а не словарями.
+                    if getattr(b, "type", None) != "paragraph":
+                        continue
+                    parts = getattr(b, "text", None) or []
+                    if isinstance(parts, str):
+                        lines.append(parts)
+                        continue
+                    line = ""
+                    for pt in parts:
+                        if isinstance(pt, dict):
+                            line += pt.get("alternative_text", "")
+                        elif hasattr(pt, "alternative_text"):
+                            line += pt.alternative_text
+                        else:
+                            line += str(pt)
+                    lines.append(line)
+                out.append("\n".join(lines))
         return out
 
 
@@ -1288,10 +1307,10 @@ class HtmlInjectionTests(AttackCase):
         await self._set_bio(uid, "&lt;3 cats")
         cards = await self._profile_cards(uid)
         self.assertEqual(len(cards), 1, self.bot_errors)
-        # Введённое экранировано ровно один раз: сырой HTML содержит &amp;lt;,
-        # и Telegram отдаёт пользователю ровно то, что он ввёл -- &lt;3 cats.
-        # До фикса сырая сущность &lt; прочитывалась Telegram как тег.
-        self.assertIn("&amp;lt;3 cats", cards[0])
+        # Blocks-режим не парсит HTML: юзер видит ровно то, что ввёл --
+        # одно прозрачное разворачивание сущностей, не хуже и не лучше.
+        self.assertIn("&lt;3 cats", cards[0])
+        self.assertNotIn("&amp;lt;", cards[0])
 
     async def test_the_save_step_itself_answers_before_the_card_fails(self):
         uid = next_uid()
