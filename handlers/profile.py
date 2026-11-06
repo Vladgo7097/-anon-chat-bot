@@ -209,13 +209,13 @@ UNKNOWN_GENDER_ICON = ("5348232622898167572", "♥️")
 _LANGUAGE_LABEL = "🌐 Язык / Language"
 
 
-def _profile_rich_html(text: str, lang: str, rows, on_photo_row: bool = False) -> str:
-    """Карточка анкеты в rich-разметке: байты текста + строки кнопок.
+def _profile_rich_html(text: str, lang: str, buttons) -> str:
+    """Карточка анкеты в rich-разметке: текст + кнопки InputRichBlockButtons.
 
-    Кнопка = <tg-button type="callback_data" data="..." style="..."> — канон
-    Bot API 10.3 (rich-messages.md); строки кнопок соответствуют классу
-    InputRichBlockButtons ("<tg-button-row>"). style принимается только из
-    {"danger", "success", "primary"} — иное значение роняет запрос 400-й.
+    Раскладка по словами dj: первые 6 кнопок — два ряда по 3, остаток
+    (седьмая «Удалить», при фото — ещё и «Удалить фото») — ряд под ними.
+    style принимается только из {"danger", "success", "primary"} — иное
+    значение роняет запрос 400-й.
     """
     labels = T.tr(T.PROFILE_BUTTONS, lang)
     named = dict(labels)
@@ -225,43 +225,29 @@ def _profile_rich_html(text: str, lang: str, rows, on_photo_row: bool = False) -
     # сворачивает пробельные символы: каждую \n заменяем чистым <br>.
     body = text.replace("\n", "<br>")
 
-    def button(label_key, callback, style):
+    def button(item):
+        label_key, callback, style = item
         style_attr = f' style="{style}"' if style else ""
         return (
             f'<tg-button type="callback_data" data="{callback}"{style_attr}>'
             f"{named[label_key]}</tg-button>"
         )
 
+    def row(items, align=' align="left"'):
+        cells = "".join(button(i) for i in items)
+        return f"<tg-button-row{align}>{cells}</tg-button-row>"
+
     rendered = [body]
-    rendered.append('<tg-button-row align="left">')
-    rendered.append(button(*rows[0]))
-    rendered.append(button(*rows[1]))
-    rendered.append("</tg-button-row>")
-    if on_photo_row:
-        rendered.append('<tg-button-row align="left">')
-        rendered.append(button(*rows[2]))
-        rendered.append("</tg-button-row>")
-        rows = rows[3:]
-    else:
-        rows = rows[2:]
-    rendered.append('<tg-button-row align="left">')
-    rendered.append(button(*rows[0]))
-    rendered.append(button(*rows[1]))
-    rendered.append("</tg-button-row>")
-    rendered.append('<tg-button-row align="left">')
-    rendered.append(button(*rows[2]))
-    rendered.append(button("language", "language:menu:profile", None))
-    rendered.append("</tg-button-row>")
-    rendered.append('<tg-button-row align="left">')
-    rendered.append(button(*rows[3]))
-    rendered.append("</tg-button-row>")
+    for i in range(0, len(buttons) - (2 if len(buttons) > 7 else 1), 3):
+        rendered.append(row(buttons[i : i + 3]))
+    rendered.append(row(buttons[-2:] if len(buttons) > 7 else buttons[-1:]))
     return "".join(rendered)
 
 
-async def _send_rich_profile(bot, chat_id, text, lang, rows, photo_file_id=None):
+async def _send_rich_profile(bot, chat_id, text, lang, buttons, photo_file_id=None):
     """SendRichMessage с фото анкеты (InputRichMessageMedia, file_id) и
     кнопками-строками InputRichBlockButtons прямо в теле сообщения."""
-    html = _profile_rich_html(text, lang, rows, on_photo_row=bool(photo_file_id))
+    html = _profile_rich_html(text, lang, buttons)
     media = None
     if photo_file_id:
         media = [
@@ -331,13 +317,17 @@ async def show_profile(message, user_id, lang="ru"):
     kb = profile_kb(has_photo=bool(s["profile_photo"]), lang=lang)
     # Bot API 10.3: карточка уходит как rich message, кнопки рендерятся внутри
     # самого сообщения строками <tg-button-row> (InputRichBlockButtons).
-    rows = [("fill", "profile:edit", "primary"), ("photo", "profile:photo", None)]
+    buttons = [
+        ("fill", "profile:edit", "primary"),
+        ("photo", "profile:photo", None),
+    ]
     if s["profile_photo"]:
-        rows.append(("photo_delete", "profile:photo:delete", "danger"))
-    rows += [
+        buttons.append(("photo_delete", "profile:photo:delete", "danger"))
+    buttons += [
         ("privacy", "profile:privacy", None),
         ("rewards", "profile:rewards", "primary"),
         ("friends", "profile:friends", None),
+        ("language", "language:menu:profile", None),
         ("delete", "profile:delete", "danger"),
     ]
     bot_for_rich = getattr(message, "bot", None)
@@ -348,7 +338,7 @@ async def show_profile(message, user_id, lang="ru"):
                 message.chat.id,
                 text,
                 lang,
-                rows,
+                buttons,
                 photo_file_id=s["profile_photo"],
             )
             return
