@@ -8,11 +8,9 @@ from types import SimpleNamespace
 
 from aiogram import F
 from aiogram.filters import Command
-from aiogram.methods import SendMessageDraft
 from aiogram.types import (
     Message,
     CallbackQuery,
-    Update,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
@@ -25,7 +23,7 @@ from handlers import search_router
 from keyboards import texts as T
 from keyboards.reply import search_kb_reply, chat_kb_reply, main_menu_kb
 from services.matching import MatchingService
-from services.chat_manager import get_redis, get_online_count
+from services.chat_manager import get_redis
 from redis.exceptions import RedisError
 from utils import bots
 import config
@@ -69,11 +67,6 @@ SEARCHING_PROGRESS = {
     "en": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Searching{dots}',
     "uk": '<tg-emoji emoji-id="5976789958407493804">🔎</tg-emoji> Шукаю{dots}',
 }
-SEARCHING_ONLINE = {
-    "ru": '\n\n<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji> Онлайн сейчас: {online}',
-    "en": '\n\n<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji> Online now: {online}',
-    "uk": '\n\n<tg-emoji emoji-id="5215522595922779944">👥</tg-emoji> Онлайн зараз: {online}',
-}
 SEARCH_STOPPED = {
     "ru": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Поиск остановлен.',
     "en": '<tg-emoji emoji-id="5296482716567495148">⏳</tg-emoji> Search stopped.',
@@ -89,7 +82,6 @@ SEARCH_UNAVAILABLE = {
     "en": "Search is temporarily unavailable. Try again.",
     "uk": "Пошук тимчасово недоступний. Спробуй ще раз.",
 }
-CANCEL_LABEL = {"ru": "Отменить поиск", "en": "Cancel search", "uk": "Скасувати пошук"}
 SEARCH_CANCELLED_TOAST = {
     "ru": "Поиск отменён",
     "en": "Search cancelled",
@@ -108,9 +100,6 @@ WAITING_AVAILABLE = {
 
 _tasks = {}
 _status_messages = {}
-# draft_id -> user_id: остановка генерации в клиенте приходит только с
-# chat/draft_id, поэтому мапа — единственный способ вернуть owner'а прогона.
-_draft_ids = {}
 # Compare-and-delete: only the holder that set the token releases the lock, so a
 # holder whose TTL already expired can never delete the next holder's lock.
 _RELEASE_SCRIPT = """
@@ -133,25 +122,6 @@ async def search_lock(user_id, ttl=10, retry_delay=0.05):
         yield
     finally:
         await r.eval(_RELEASE_SCRIPT, 1, key, token)
-
-
-@search_router.stopped_message_generation(F.stopped_message_generation)
-async def on_generation_stopped(update: Update):
-    """Bot API 10.3: пользователь остановил живой драфт поиска.
-
-    Прерывание превью трактуем как явный «Стоп»: гасим поисковый цикл,
-    выкидываем из очереди и снимаем карточку — так же, как cancel_search.
-    """
-    stopped = update.stopped_message_generation
-    chat_id = stopped.chat.id
-    user_id = _draft_ids.pop(stopped.draft_id, None)
-    if user_id is None or user_id != chat_id:
-        # Драйфт от старого прогона или другой сессии — не трогаем очередь.
-        return
-    try:
-        await cancel_search(user_id)
-    except Exception:
-        logger.debug("event=search_stop_via_draft_failed user_id=%s", user_id, exc_info=True)
 
 
 async def has_active_participation(user_id):
@@ -336,52 +306,14 @@ async def begin_search(message, user_id, lang="ru"):
 
 
 def search_status_keyboard(offer=None, lang="ru"):
-    rows = list(offer.inline_keyboard) if offer else []
-    return InlineKeyboardMarkup(
-        inline_keyboard=rows
-        + [
-            [
-                InlineKeyboardButton(
-                    text=T.tr(CANCEL_LABEL, lang),
-                    icon_custom_emoji_id="5273914604752216432",
-                    callback_data="search:cancel",
-                )
-            ]
-        ]
-    )
+    # Отмена ищется обычной кнопкой клавиатуры: инлайн-строка «Отменить поиск»
+    # не рисуется вовсе, чтобы карточка была одиночным «Ищу собеседника».
+    return offer if offer else None
 
 
-def search_status_text(template, lang="ru", dots="", online=None):
-    """Текст карточки поиска; онлайн-счётчик видит только владелец.
-
-    online=None убирает строку целиком, у пользователей счётчика нет.
-    """
-    text = T.tr(template, lang).format(dots=dots)
-    if online is not None:
-        text += T.tr(SEARCHING_ONLINE, lang).format(online=online)
-    return text
-
-
-async def _stream_draft(bot, user_id, text, draft_id):
-    """Bot API 9.5/10.x: «живое» превью поиска.
-
-    Драйфт рендерится в клиенте как всплывающий черновик и исчезает через
-    ~30 секунд или с первым настоящим сообщением — поэтому между
-    редактированиями карточки (которые ловили TelegramRetryAfter) юзер
-    всё равно видит пульсацию поиска. Сбой драйфта — косметика: лимит,
-    старый клиент, волна 403 — и не имеет права ронять поисковый цикл.
-    """
-    try:
-        await bot(SendMessageDraft(chat_id=user_id, draft_id=draft_id, text=text, can_stop=True))
-    except TelegramRetryAfter:
-        pass
-    except TelegramForbiddenError:
-        pass
-    except TelegramBadRequest:
-        # Клиент не понимает метод (до 10.x) — карточка его покрывает.
-        pass
-    except Exception:
-        logger.debug("event=search_draft_skipped user_id=%s", user_id, exc_info=True)
+def search_status_text(template, lang="ru", dots=""):
+    """Текст карточки поиска."""
+    return T.tr(template, lang).format(dots=dots)
 
 
 def nobody_keyboard(lang="ru"):
@@ -475,17 +407,11 @@ async def _begin_search(message, user_id, lang="ru"):
     # Старая карточка с прошлых заплаток (рестарт, прерванный цикл) снимается
     # до выпуска новой — иначе юзер копит её как снежный ком.
     await _clear_search_card(user_id)
-    # Живой счётчик онлайна в карточке — только для владельца, остальным он
-    # без пользы и лишний раз дёргает Redis в поиске. user_id — авторитетный
-    # источник: на callback-пути message.from_user это сам бот.
-    try:
-        online = await get_online_count() if user_id == config.OWNER_ID else None
-    except _REDIS_DOWN:
-        online = None
     try:
         status = await message.answer(
-            search_status_text(SEARCHING_STATUS, lang, online=online),
-            reply_markup=search_status_keyboard(lang=lang),
+            search_status_text(SEARCHING_STATUS, lang),
+            # Отмена — обычной кнопкой клавиатуры (ReplyKeyboard), не инлайном.
+            reply_markup=search_kb_reply(lang),
         )
     except Exception:
         # Do not leave an orphan queue entry when Telegram rejects the status.
@@ -505,9 +431,6 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         # from, and either side of a match may have joined through the other
         # bot, so the sender is resolved from the row rather than inherited.
         bot = await bots.bot_for(user_id)
-    # Неопределённый draft_id в finally (ранний выход из цикла до присвоения)
-    # был бы NameError -- поэтому None с самого начала.
-    draft_id = None
     try:
         r = await get_redis()
         queued_at = await r.get(f"search:user:{user_id}")
@@ -520,10 +443,6 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         queued_since = started
         offer_tracked = False
         status_retry_at = 0.0
-        # Один стабильный draft_id на прогон: правки одного драфта клиент
-        # анимирует как эволюцию одного превью, а не мигание нового.
-        draft_id = secrets.randbits(30) | 1
-        _draft_ids[draft_id] = user_id
         while True:
             r = await get_redis()
             if await r.zscore("search_queue", str(user_id)) is None:
@@ -615,16 +534,7 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                     )
                     dots = "." * (elapsed // 2 % 3 + 1)
                     await status.edit_text(
-                        search_status_text(
-                            SEARCHING_PROGRESS,
-                            lang,
-                            dots=dots,
-                            online=(
-                                await get_online_count()
-                                if user_id == config.OWNER_ID
-                                else None
-                            ),
-                        ),
+                        search_status_text(SEARCHING_PROGRESS, lang, dots=dots),
                         reply_markup=search_status_keyboard(offer, lang),
                     )
                     if offer and not offer_tracked:
@@ -640,15 +550,6 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
                 status_retry_at = time.monotonic() + error.retry_after
             except TelegramBadRequest:
                 pass
-            # Драйфт идёт и когда карточка стоит на retry-паузе: точки в
-            # превью и есть живой прогресс между редкими правками карточки.
-            dots = "." * (elapsed // 2 % 3 + 1)
-            await _stream_draft(
-                bot,
-                user_id,
-                search_status_text(SEARCHING_PROGRESS, lang, dots=dots),
-                draft_id,
-            )
             await asyncio.sleep(2)
     except asyncio.CancelledError:
         raise
@@ -662,7 +563,6 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         except (TelegramForbiddenError, TelegramBadRequest):
             pass
     finally:
-        _draft_ids.pop(draft_id, None)
         if _tasks.get(user_id) is asyncio.current_task():
             _tasks.pop(user_id, None)
             _status_messages.pop(user_id, None)
@@ -782,7 +682,6 @@ async def restore_searches():
 
 
 async def shutdown_searches():
-    _draft_ids.clear()
     for uid in list(_tasks):
         await cancel_task(uid)
     _status_messages.clear()

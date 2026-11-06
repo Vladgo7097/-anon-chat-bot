@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from keyboards import texts as T
 from handlers import search
 from services.result import ServiceResult
 from test_chat_duration import DatabaseCase
@@ -35,7 +36,6 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         for target, value in (
             ("handlers.search.MatchingService", lambda: self.service),
             ("handlers.search.get_redis", AsyncMock(return_value=self.redis)),
-            ("handlers.search.get_online_count", AsyncMock(return_value=0)),
             ("services.settings.bot_value", AsyncMock(return_value=60)),
             ("repositories.users.UserRepository", lambda: self.users_repo),
             # Онлайн-счётчик в карточке поиска видит только владелец; по
@@ -93,25 +93,22 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop):
             await search.begin_search(self.message, 1)
         self.message.answer.assert_awaited_once()
-        self.assertEqual(
-            self.message.answer.await_args.kwargs["reply_markup"]
-            .inline_keyboard[-1][0]
-            .callback_data,
-            "search:cancel",
-        )
+        markup = self.message.answer.await_args.kwargs["reply_markup"]
+        labels = [btn.text for row in markup.keyboard for btn in row]
+        self.assertIn(T.label(T.CANCEL, "ru"), labels)
         self.assertNotIn("Онлайн сейчас", self.message.answer.await_args.args[0])
 
-    async def test_start_status_shows_online_counter_to_owner_only(self):
+    async def test_online_counter_is_gone_even_for_the_owner(self):
         with (
             patch.object(search, "search_loop", side_effect=self.waiting_loop),
             patch("config.OWNER_ID", 1),
         ):
             await search.begin_search(self.message, 1)
-        self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
+        self.assertNotIn("Онлайн сейчас", self.message.answer.await_args.args[0])
 
     async def test_callback_path_uses_the_tapper_id_not_the_bots(self):
-        # callback.message.from_user — это бот; владелец определяется по
-        # from_user колбэка, иначе счётчик был бы виден только при вводе /search.
+        # callback.message.from_user — это бот; from_user колбэка исторически
+        # определял владельца, пока счётчик существовал; стек вызовов тот же.
         callback = SimpleNamespace(
             from_user=SimpleNamespace(id=1), answer=AsyncMock(), message=self.message
         )
@@ -120,7 +117,7 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
             patch("config.OWNER_ID", 1),
         ):
             await search.cb_search_start(callback)
-        self.assertIn("Онлайн сейчас: 0", self.message.answer.await_args.args[0])
+        self.assertNotIn("Онлайн сейчас", self.message.answer.await_args.args[0])
 
     async def test_start_status_carries_custom_emoji_and_no_elapsed_timer(self):
         with patch.object(search, "search_loop", side_effect=self.waiting_loop):
@@ -151,22 +148,6 @@ class SearchRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Прошло", text)
         # The elapsed-timer's own custom emoji id must not linger either.
         self.assertNotIn("5258258882022612173", text)
-
-    async def test_periodic_owner_update_keeps_the_online_counter(self):
-        status = SimpleNamespace(edit_text=AsyncMock())
-        with (
-            patch("handlers.premium.product_keyboard", AsyncMock(return_value=None)),
-            patch("utils.db.is_premium", AsyncMock(return_value=False)),
-            patch("config.OWNER_ID", 1),
-            patch(
-                "handlers.search.asyncio.sleep",
-                AsyncMock(side_effect=asyncio.CancelledError),
-            ),
-        ):
-            with self.assertRaises(asyncio.CancelledError):
-                await search.search_loop(status, 1, self.bot)
-        text = status.edit_text.await_args.args[0]
-        self.assertIn("Онлайн сейчас: 0", text)
 
     async def test_rejected_status_does_not_leave_orphan_search(self):
         from aiogram.exceptions import TelegramRetryAfter
