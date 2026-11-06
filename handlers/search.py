@@ -12,6 +12,7 @@ from aiogram.methods import SendMessageDraft
 from aiogram.types import (
     Message,
     CallbackQuery,
+    Update,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
@@ -107,6 +108,9 @@ WAITING_AVAILABLE = {
 
 _tasks = {}
 _status_messages = {}
+# draft_id -> user_id: остановка генерации в клиенте приходит только с
+# chat/draft_id, поэтому мапа — единственный способ вернуть owner'а прогона.
+_draft_ids = {}
 # Compare-and-delete: only the holder that set the token releases the lock, so a
 # holder whose TTL already expired can never delete the next holder's lock.
 _RELEASE_SCRIPT = """
@@ -129,6 +133,25 @@ async def search_lock(user_id, ttl=10, retry_delay=0.05):
         yield
     finally:
         await r.eval(_RELEASE_SCRIPT, 1, key, token)
+
+
+@search_router.stopped_message_generation(F.stopped_message_generation)
+async def on_generation_stopped(update: Update):
+    """Bot API 10.3: пользователь остановил живой драфт поиска.
+
+    Прерывание превью трактуем как явный «Стоп»: гасим поисковый цикл,
+    выкидываем из очереди и снимаем карточку — так же, как cancel_search.
+    """
+    stopped = update.stopped_message_generation
+    chat_id = stopped.chat.id
+    user_id = _draft_ids.pop(stopped.draft_id, None)
+    if user_id is None or user_id != chat_id:
+        # Драйфт от старого прогона или другой сессии — не трогаем очередь.
+        return
+    try:
+        await cancel_search(user_id)
+    except Exception:
+        logger.debug("event=search_stop_via_draft_failed user_id=%s", user_id, exc_info=True)
 
 
 async def has_active_participation(user_id):
@@ -349,7 +372,7 @@ async def _stream_draft(bot, user_id, text, draft_id):
     старый клиент, волна 403 — и не имеет права ронять поисковый цикл.
     """
     try:
-        await bot(SendMessageDraft(chat_id=user_id, draft_id=draft_id, text=text))
+        await bot(SendMessageDraft(chat_id=user_id, draft_id=draft_id, text=text, can_stop=True))
     except TelegramRetryAfter:
         pass
     except TelegramForbiddenError:
@@ -482,6 +505,9 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         # from, and either side of a match may have joined through the other
         # bot, so the sender is resolved from the row rather than inherited.
         bot = await bots.bot_for(user_id)
+    # Неопределённый draft_id в finally (ранний выход из цикла до присвоения)
+    # был бы NameError -- поэтому None с самого начала.
+    draft_id = None
     try:
         r = await get_redis()
         queued_at = await r.get(f"search:user:{user_id}")
@@ -497,6 +523,7 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         # Один стабильный draft_id на прогон: правки одного драфта клиент
         # анимирует как эволюцию одного превью, а не мигание нового.
         draft_id = secrets.randbits(30) | 1
+        _draft_ids[draft_id] = user_id
         while True:
             r = await get_redis()
             if await r.zscore("search_queue", str(user_id)) is None:
@@ -635,6 +662,7 @@ async def search_loop(status, user_id, bot=None, lang="ru"):
         except (TelegramForbiddenError, TelegramBadRequest):
             pass
     finally:
+        _draft_ids.pop(draft_id, None)
         if _tasks.get(user_id) is asyncio.current_task():
             _tasks.pop(user_id, None)
             _status_messages.pop(user_id, None)
@@ -754,6 +782,7 @@ async def restore_searches():
 
 
 async def shutdown_searches():
+    _draft_ids.clear()
     for uid in list(_tasks):
         await cancel_task(uid)
     _status_messages.clear()

@@ -1,6 +1,8 @@
 import math
 
 from aiogram import F
+import logging
+
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -8,7 +10,14 @@ from aiogram.types import (
     LabeledPrice,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Update,
+    BotSubscriptionUpdated,
 )
+from sqlalchemy import select
+from models.base import async_session
+from models.payment import Payment, PremiumSubscription
+
+logger = logging.getLogger(__name__)
 from handlers import premium_router
 from services.payments import PaymentService
 from keyboards import texts as T
@@ -421,3 +430,53 @@ async def refunded_payment(message: Message, lang: str = "ru"):
     )
     if result.ok:
         await message.answer(T.tr(REFUND_DONE, lang))
+
+
+@premium_router.subscription()
+async def on_subscription_update(update: Update):
+    """Bot API 10+: статус нативной подписки Telegram Stars.
+
+    Telegram присылает это обновление при изменении состояния подписки,
+    созданной через sendInvoice с subscription_period:
+
+      * 'active'   -- пользователь оформил или реактивировал подписку
+      * 'canceled' -- пользователь отменил подписку
+      * 'failed'   -- платёж очередного периода не прошёл
+
+    invoice_payload совпадает с payload из sendInvoice -- по нему
+    находим исходный Payment и PremiumSubscription.
+    """
+    sub: BotSubscriptionUpdated = update.subscription
+    async with async_session() as s:
+        p = await s.scalar(
+            select(Payment).where(Payment.payload == sub.invoice_payload).with_for_update()
+        )
+        if not p:
+            logger.warning(
+                "subscription_update_unknown_payload payload=%s state=%s",
+                sub.invoice_payload, sub.state,
+            )
+            return
+        if p.user_id != sub.user.id:
+            logger.warning(
+                "subscription_user_mismatch payment_user=%s update_user=%s",
+                p.user_id, sub.user.id,
+            )
+            return
+        subscription = await s.scalar(
+            select(PremiumSubscription).where(
+                PremiumSubscription.source_payment_id == p.id
+            ).with_for_update()
+        )
+        if sub.state == "active":
+            if subscription:
+                subscription.auto_renew = True
+            logger.info("subscription_reactivated user_id=%s payment_id=%s", p.user_id, p.id)
+        elif sub.state == "canceled":
+            if subscription:
+                subscription.auto_renew = False
+            logger.info("subscription_canceled user_id=%s payment_id=%s", p.user_id, p.id)
+        elif sub.state == "failed":
+            if subscription:
+                subscription.auto_renew = False
+            logger.warning("subscription_payment_failed user_id=%s payment_id=%s", p.user_id, p.id)
