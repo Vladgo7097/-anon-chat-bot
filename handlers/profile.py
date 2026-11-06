@@ -366,14 +366,14 @@ async def show_profile(message, user_id, lang="ru"):
     # Bot API 10.3: карточка уходит как rich message, кнопки рендерятся внутри
     # самого сообщения строками <tg-button-row> (InputRichBlockButtons).
     buttons = [
-        ("fill", "profile:edit", "primary"),
+        ("fill", "profile:edit", None),
         ("photo", "profile:photo", None),
     ]
     if s["profile_photo"]:
         buttons.append(("photo_delete", "profile:photo:delete", "danger"))
     buttons += [
         ("privacy", "profile:privacy", None),
-        ("rewards", "profile:rewards", "primary"),
+        ("rewards", "profile:rewards", None),
         ("friends", "profile:friends", None),
         ("language", "language:menu:profile", None),
         ("delete", "profile:delete", "danger"),
