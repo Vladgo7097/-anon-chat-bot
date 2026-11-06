@@ -8,6 +8,7 @@ row can't normally vanish between the two transactions -- but a manual DB
 operation between them must fail cleanly, not crash with an AttributeError
 on a None user.
 """
+
 import unittest
 from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
@@ -47,7 +48,9 @@ class ProfileDeleteTests(DatabaseCase):
             user = await s.scalar(select(User).where(User.telegram_id == 9005))
             self.assertIsNone(user.bio)
 
-    async def test_a_row_missing_before_the_second_transaction_is_reported_cleanly(self):
+    async def test_a_row_missing_before_the_second_transaction_is_reported_cleanly(
+        self,
+    ):
         await UserRepository().get_or_create(9002, "u", "N")
 
         from unittest.mock import patch

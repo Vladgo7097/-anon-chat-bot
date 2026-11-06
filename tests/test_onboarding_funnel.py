@@ -1,4 +1,5 @@
 """The registration funnel: where signups stop, and the age-gate refusals."""
+
 import sys
 import unittest
 from datetime import timedelta
@@ -24,19 +25,33 @@ class FunnelTests(DatabaseCase):
         async with self.factory.begin() as s:
             await s.execute(User.__table__.delete())
 
-    async def signup(self, telegram_id, step="WELCOME", gender=None, age=None,
-                     completed=False, days_ago=0):
+    async def signup(
+        self,
+        telegram_id,
+        step="WELCOME",
+        gender=None,
+        age=None,
+        completed=False,
+        days_ago=0,
+    ):
         async with self.factory.begin() as s:
-            s.add(User(telegram_id=telegram_id, anon_id=f"#f{telegram_id}",
-                       onboarding_step=step, gender=gender, age=age,
-                       onboarding_completed=completed,
-                       rules_accepted_at=utcnow() if completed else None,
-                       created_at=utcnow()-timedelta(days=days_ago)))
+            s.add(
+                User(
+                    telegram_id=telegram_id,
+                    anon_id=f"#f{telegram_id}",
+                    onboarding_step=step,
+                    gender=gender,
+                    age=age,
+                    onboarding_completed=completed,
+                    rules_accepted_at=utcnow() if completed else None,
+                    created_at=utcnow() - timedelta(days=days_ago),
+                )
+            )
 
     async def test_each_stage_counts_everyone_who_reached_it(self):
-        await self.signup(8001)                                        # stopped at welcome
-        await self.signup(8002, step="GENDER")                         # pressed "Начать"
-        await self.signup(8003, step="AGE", gender="male")             # gave gender
+        await self.signup(8001)  # stopped at welcome
+        await self.signup(8002, step="GENDER")  # pressed "Начать"
+        await self.signup(8003, step="AGE", gender="male")  # gave gender
         await self.signup(8004, step="RULES", gender="female", age=22)  # gave age
         await self.signup(8005, step="MENU", gender="male", age=30, completed=True)
         funnel = await StatsService().onboarding_funnel(1)
@@ -53,7 +68,9 @@ class FunnelTests(DatabaseCase):
         await self.signup(8020, days_ago=9)
         await self.signup(8021)
         self.assertEqual((await StatsService().onboarding_funnel(1))["stages"][0][1], 1)
-        self.assertEqual((await StatsService().onboarding_funnel(30))["stages"][0][1], 2)
+        self.assertEqual(
+            (await StatsService().onboarding_funnel(30))["stages"][0][1], 2
+        )
 
     async def test_deleted_users_are_excluded(self):
         await self.signup(8030)
@@ -72,8 +89,14 @@ class FunnelTests(DatabaseCase):
             result = await service.advance(8040, "age", 15)
             self.assertEqual(result.code, "AGE")
         async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(AnalyticsEvent.id)).where(
-                AnalyticsEvent.event == "onboarding_age_rejected")), 1)
+            self.assertEqual(
+                await s.scalar(
+                    select(func.count(AnalyticsEvent.id)).where(
+                        AnalyticsEvent.event == "onboarding_age_rejected"
+                    )
+                ),
+                1,
+            )
         self.assertEqual((await StatsService().onboarding_funnel(1))["age_rejected"], 1)
 
     async def test_a_valid_age_leaves_no_rejection(self):
@@ -105,48 +128,73 @@ class FunnelTextTests(unittest.TestCase):
         return funnel_text(data, 7, min_step_pct)
 
     def test_each_stage_shows_its_share_of_the_whole_and_of_the_step_before(self):
-        text = self.render([("Запустили /start", 100), ("Нажали «Начать»", 50),
-                            ("Указали пол", 40), ("Указали возраст", 30),
-                            ("Приняли правила", 20)])
+        text = self.render(
+            [
+                ("Запустили /start", 100),
+                ("Нажали «Начать»", 50),
+                ("Указали пол", 40),
+                ("Указали возраст", 30),
+                ("Приняли правила", 20),
+            ]
+        )
         self.assertIn("Запустили /start: 100 (100% от всех)", text)
         self.assertIn("Нажали «Начать»: 50 (50% от всех, 50% от предыдущего)", text)
         self.assertIn("Не нажали ни одной кнопки после /start: 50", text)
 
     def test_an_empty_period_does_not_divide_by_zero(self):
-        text = self.render([("Запустили /start", 0)]+[("x", 0)]*4)
+        text = self.render([("Запустили /start", 0)] + [("x", 0)] * 4)
         self.assertIn("никто не запускал бота", text)
 
     def test_a_stage_that_nobody_reached_does_not_divide_by_zero(self):
-        text = self.render([("Запустили /start", 5), ("Нажали «Начать»", 0),
-                            ("Указали пол", 0), ("Указали возраст", 0),
-                            ("Приняли правила", 0)])
+        text = self.render(
+            [
+                ("Запустили /start", 5),
+                ("Нажали «Начать»", 0),
+                ("Указали пол", 0),
+                ("Указали возраст", 0),
+                ("Приняли правила", 0),
+            ]
+        )
         self.assertIn("Указали пол: 0 (0% от всех, 0% от предыдущего)", text)
 
     def test_drop_off_warning_fires_below_the_configured_threshold(self):
-        stages = [("Запустили /start", 100), ("Нажали «Начать»", 30),
-                  ("Указали пол", 25), ("Указали возраст", 20),
-                  ("Приняли правила", 15)]
+        stages = [
+            ("Запустили /start", 100),
+            ("Нажали «Начать»", 30),
+            ("Указали пол", 25),
+            ("Указали возраст", 20),
+            ("Приняли правила", 15),
+        ]
         text = self.render(stages, min_step_pct=50)
-        self.assertIn("⚠️ Просадка на шаге «Нажали «Начать»»: 30% от «Запустили /start» (порог 50%)", text)
+        self.assertIn(
+            "⚠️ Просадка на шаге «Нажали «Начать»»: 30% от «Запустили /start» (порог 50%)",
+            text,
+        )
         # Later steps clear the threshold and get no warning of their own.
         self.assertNotIn("шаге «Указали пол»", text)
 
     def test_no_warning_below_threshold_when_disabled(self):
-        stages = [("Запустили /start", 100), ("Нажали «Начать»", 1)]+[("x", 1)]*3
+        stages = [("Запустили /start", 100), ("Нажали «Начать»", 1)] + [("x", 1)] * 3
         self.assertNotIn("Просадка", self.render(stages, min_step_pct=0))
 
     def test_no_warning_when_step_meets_the_threshold(self):
-        stages = [("Запустили /start", 100), ("Нажали «Начать»", 80)]+[("x", 80)]*3
+        stages = [("Запустили /start", 100), ("Нажали «Начать»", 80)] + [("x", 80)] * 3
         self.assertNotIn("Просадка", self.render(stages, min_step_pct=50))
 
     def test_optional_lines_appear_only_when_there_is_something_to_say(self):
-        stages = [("Запустили /start", 10)]+[("x", 5)]*4
+        stages = [("Запустили /start", 10)] + [("x", 5)] * 4
         self.assertNotIn("возраста", self.render(stages))
-        self.assertIn("Отклонено на шаге возраста: 3", self.render(stages, age_rejected=3))
-        self.assertIn("Среднее время регистрации: 2.5 мин.", self.render(stages, avg_minutes=2.5))
+        self.assertIn(
+            "Отклонено на шаге возраста: 3", self.render(stages, age_rejected=3)
+        )
+        self.assertIn(
+            "Среднее время регистрации: 2.5 мин.", self.render(stages, avg_minutes=2.5)
+        )
         self.assertNotIn("По дням", self.render(stages, daily=[("2026-09-07", 10, 5)]))
-        self.assertIn("2026-09-06: 10 / 5 (50%)",
-                      self.render(stages, daily=[("2026-09-06", 10, 5), ("2026-09-07", 4, 0)]))
+        self.assertIn(
+            "2026-09-06: 10 / 5 (50%)",
+            self.render(stages, daily=[("2026-09-06", 10, 5), ("2026-09-07", 4, 0)]),
+        )
 
 
 if __name__ == "__main__":

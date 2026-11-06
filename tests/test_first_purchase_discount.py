@@ -1,5 +1,6 @@
 """The first-purchase Premium discount: granted once, never to someone who
 has already paid, and actually reflected in the invoice amount."""
+
 import sys
 import unittest
 from pathlib import Path
@@ -27,17 +28,30 @@ class FirstPurchaseDiscountTests(DatabaseCase):
         self.assertEqual(await first_purchase_discount(1), 50)
         self.assertEqual(await first_purchase_discount(1), 50)
         async with self.factory() as s:
-            offers = list((await s.scalars(select(Offer).where(Offer.user_id == 1))).all())
+            offers = list(
+                (await s.scalars(select(Offer).where(Offer.user_id == 1))).all()
+            )
         self.assertEqual(len(offers), 1)
         self.assertEqual(offers[0].discount_percent, 50)
 
     async def test_not_offered_to_someone_who_already_paid(self):
         async with self.factory.begin() as s:
-            s.add(Payment(user_id=2, product="premium_1m", stars_amount=99, payload="paid-one",
-                          currency="XTR", status="paid"))
+            s.add(
+                Payment(
+                    user_id=2,
+                    product="premium_1m",
+                    stars_amount=99,
+                    payload="paid-one",
+                    currency="XTR",
+                    status="paid",
+                )
+            )
         self.assertIsNone(await first_purchase_discount(2))
         async with self.factory() as s:
-            self.assertEqual(list((await s.scalars(select(Offer).where(Offer.user_id == 2))).all()), [])
+            self.assertEqual(
+                list((await s.scalars(select(Offer).where(Offer.user_id == 2))).all()),
+                [],
+            )
 
     async def test_invoice_amount_uses_the_discount(self):
         await first_purchase_discount(1)

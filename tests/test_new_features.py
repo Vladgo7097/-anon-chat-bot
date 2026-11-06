@@ -11,14 +11,24 @@ class PrivacyFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_contact_is_not_relayed_before_confirmation(self):
         bot = SimpleNamespace(copy_message=AsyncMock())
         message = SimpleNamespace(
-            from_user=SimpleNamespace(id=1), chat=SimpleNamespace(id=1),
-            message_id=10, text="пиши @private_name", caption=None,
-            content_type="text", bot=bot, answer=AsyncMock())
+            from_user=SimpleNamespace(id=1),
+            chat=SimpleNamespace(id=1),
+            message_id=10,
+            text="пиши @private_name",
+            caption=None,
+            content_type="text",
+            bot=bot,
+            answer=AsyncMock(),
+        )
         relay = SimpleNamespace(
             SUPPORTED={"text"},
-            prepare=AsyncMock(return_value=ServiceResult(True, "RELAY", {
-                "partner": 2, "session_id": "session-1"})),
-            contact_warning_required=AsyncMock(return_value=True))
+            prepare=AsyncMock(
+                return_value=ServiceResult(
+                    True, "RELAY", {"partner": 2, "session_id": "session-1"}
+                )
+            ),
+            contact_warning_required=AsyncMock(return_value=True),
+        )
         with patch("services.relay.RelayService", return_value=relay):
             await forward_message(message)
         bot.copy_message.assert_not_awaited()
@@ -29,12 +39,26 @@ class PrivacyFlowTests(unittest.IsolatedAsyncioTestCase):
         # понять, нужно ли переливать байты.
         bot = SimpleNamespace(id=111, send_photo=AsyncMock(), send_message=AsyncMock())
         callback = SimpleNamespace(
-            data="v1:reveal:session-1", from_user=SimpleNamespace(id=2),
-            bot=bot, answer=AsyncMock(), message=SimpleNamespace(answer=AsyncMock()))
-        result = ServiceResult(True, "MUTUAL", {"profiles": {
-            1: {"username": "one", "photo": "photo-one", "anon_id": "#ONE"},
-            2: {"username": "two", "photo": None, "anon_id": "#TWO"}}, "partner": 1})
-        with patch("services.reveal.RevealService.consent", AsyncMock(return_value=result)):
+            data="v1:reveal:session-1",
+            from_user=SimpleNamespace(id=2),
+            bot=bot,
+            answer=AsyncMock(),
+            message=SimpleNamespace(answer=AsyncMock()),
+        )
+        result = ServiceResult(
+            True,
+            "MUTUAL",
+            {
+                "profiles": {
+                    1: {"username": "one", "photo": "photo-one", "anon_id": "#ONE"},
+                    2: {"username": "two", "photo": None, "anon_id": "#TWO"},
+                },
+                "partner": 1,
+            },
+        )
+        with patch(
+            "services.reveal.RevealService.consent", AsyncMock(return_value=result)
+        ):
             await cb_consent(callback)
         bot.send_photo.assert_awaited_once()
         self.assertEqual(bot.send_photo.await_args.args[:2], (2, "photo-one"))
@@ -42,13 +66,19 @@ class PrivacyFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_paid_reveal_distinguishes_not_paid_from_session_expired(self):
         message = SimpleNamespace(answer=AsyncMock())
-        with patch("services.reveal.upgrade_request", AsyncMock(return_value=ServiceResult(False, "NOT_PAID"))):
+        with patch(
+            "services.reveal.upgrade_request",
+            AsyncMock(return_value=ServiceResult(False, "NOT_PAID")),
+        ):
             await paid_reveal(message, 1, "session-1", "reveal_priority_request")
         self.assertIn("Premium", message.answer.await_args.args[0])
         self.assertNotIn("завершён", message.answer.await_args.args[0])
 
         message = SimpleNamespace(answer=AsyncMock())
-        with patch("services.reveal.upgrade_request", AsyncMock(return_value=ServiceResult(False, "SESSION_EXPIRED"))):
+        with patch(
+            "services.reveal.upgrade_request",
+            AsyncMock(return_value=ServiceResult(False, "SESSION_EXPIRED")),
+        ):
             await paid_reveal(message, 1, "session-1", "reveal_priority_request")
         self.assertIn("завершён", message.answer.await_args.args[0])
 
@@ -57,25 +87,59 @@ class RatingCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_already_edited_confirmation_does_not_crash_the_handler(self):
         from aiogram.exceptions import TelegramBadRequest
         from handlers.rating import cb_rate
+
         callback = SimpleNamespace(
-            data="v1:rate:session-1:1", from_user=SimpleNamespace(id=1), answer=AsyncMock(),
-            message=SimpleNamespace(edit_text=AsyncMock(side_effect=TelegramBadRequest(
-                method=SimpleNamespace(), message="message to edit not found")), answer=AsyncMock()),
-            bot=SimpleNamespace(get_me=AsyncMock(return_value=SimpleNamespace(username="anonim_chatqbot"))))
-        with (patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)),
-              patch("repositories.users.UserRepository.get", AsyncMock(return_value=None))):
+            data="v1:rate:session-1:1",
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(
+                edit_text=AsyncMock(
+                    side_effect=TelegramBadRequest(
+                        method=SimpleNamespace(), message="message to edit not found"
+                    )
+                ),
+                answer=AsyncMock(),
+            ),
+            bot=SimpleNamespace(
+                get_me=AsyncMock(
+                    return_value=SimpleNamespace(username="anonim_chatqbot")
+                )
+            ),
+        )
+        with (
+            patch(
+                "repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)
+            ),
+            patch(
+                "repositories.users.UserRepository.get", AsyncMock(return_value=None)
+            ),
+        ):
             await cb_rate(callback)  # must not raise
         callback.answer.assert_awaited_once_with("Спасибо за оценку!")
 
     async def test_a_positive_rating_offers_a_referral_link(self):
         from handlers.rating import cb_rate
+
         user = SimpleNamespace(referral_code="abc123")
         callback = SimpleNamespace(
-            data="v1:rate:session-1:1", from_user=SimpleNamespace(id=1), answer=AsyncMock(),
+            data="v1:rate:session-1:1",
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
             message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
-            bot=SimpleNamespace(get_me=AsyncMock(return_value=SimpleNamespace(username="anonim_chatqbot"))))
-        with (patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)),
-              patch("repositories.users.UserRepository.get", AsyncMock(return_value=user))):
+            bot=SimpleNamespace(
+                get_me=AsyncMock(
+                    return_value=SimpleNamespace(username="anonim_chatqbot")
+                )
+            ),
+        )
+        with (
+            patch(
+                "repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)
+            ),
+            patch(
+                "repositories.users.UserRepository.get", AsyncMock(return_value=user)
+            ),
+        ):
             await cb_rate(callback)
         callback.message.answer.assert_awaited_once()
         markup = callback.message.answer.await_args.kwargs["reply_markup"]
@@ -83,24 +147,37 @@ class RatingCallbackTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_negative_rating_does_not_offer_a_referral_link(self):
         from handlers.rating import cb_rate
+
         callback = SimpleNamespace(
-            data="v1:rate:session-1:-1", from_user=SimpleNamespace(id=1), answer=AsyncMock(),
-            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()))
-        with patch("repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)):
+            data="v1:rate:session-1:-1",
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(edit_text=AsyncMock(), answer=AsyncMock()),
+        )
+        with patch(
+            "repositories.chats.ChatRepository.rate", AsyncMock(return_value=True)
+        ):
             await cb_rate(callback)
         callback.message.answer.assert_not_awaited()
 
 
 class SettingsSaveTests(unittest.IsolatedAsyncioTestCase):
     def callback(self, data):
-        return SimpleNamespace(data=data, from_user=SimpleNamespace(id=1),
-                                answer=AsyncMock(), message=SimpleNamespace(answer=AsyncMock()))
+        return SimpleNamespace(
+            data=data,
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(answer=AsyncMock()),
+        )
 
     async def test_active_chat_gets_its_own_message_not_a_premium_pitch(self):
         from handlers.settings import cb_save
         from services.result import ServiceResult
-        with patch("services.settings.SettingsService.save_search",
-                   AsyncMock(return_value=ServiceResult(False, "ACTIVE_CHAT"))):
+
+        with patch(
+            "services.settings.SettingsService.save_search",
+            AsyncMock(return_value=ServiceResult(False, "ACTIVE_CHAT")),
+        ):
             callback = self.callback("settings:gender:m")
             await cb_save(callback)
         text = callback.answer.await_args.args[0]
@@ -111,10 +188,14 @@ class SettingsSaveTests(unittest.IsolatedAsyncioTestCase):
     async def test_premium_required_still_offers_the_purchase_keyboard(self):
         from handlers.settings import cb_save
         from services.result import ServiceResult
-        with (patch("services.settings.SettingsService.save_search",
-                    AsyncMock(return_value=ServiceResult(False, "PREMIUM_REQUIRED"))),
-              patch("handlers.premium.product_keyboard", AsyncMock(return_value=None))):
+
+        with (
+            patch(
+                "services.settings.SettingsService.save_search",
+                AsyncMock(return_value=ServiceResult(False, "PREMIUM_REQUIRED")),
+            ),
+            patch("handlers.premium.product_keyboard", AsyncMock(return_value=None)),
+        ):
             callback = self.callback("settings:gender:m")
             await cb_save(callback)
         callback.message.answer.assert_awaited_once()
-

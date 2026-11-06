@@ -3,6 +3,7 @@
 Telegram answers DOCUMENT_INVALID for an id that does not exist, and refuses
 the whole message — which is how a typo in one id made /admin unreachable.
 """
+
 import json
 import os
 import sys
@@ -19,8 +20,10 @@ from aiogram.exceptions import TelegramBadRequest
 from handlers.admin import CUSTOM_EMOJI, safe_send
 from test_message_markup import TAG, tags
 
-TEXT = ('<tg-emoji emoji-id="5312160339335347417">💰</tg-emoji> Оплачено: 5\n'
-        '<tg-emoji emoji-id="5920281855378068765">⭐</tg-emoji> Premium: нет')
+TEXT = (
+    '<tg-emoji emoji-id="5312160339335347417">💰</tg-emoji> Оплачено: 5\n'
+    '<tg-emoji emoji-id="5920281855378068765">⭐</tg-emoji> Premium: нет'
+)
 
 
 def rejection(description):
@@ -42,8 +45,9 @@ class PlainTextFallbackTests(unittest.TestCase):
 
 class SafeSendTests(unittest.IsolatedAsyncioTestCase):
     def message(self, *effects):
-        return SimpleNamespace(chat=SimpleNamespace(id=1),
-                               answer=AsyncMock(side_effect=list(effects)))
+        return SimpleNamespace(
+            chat=SimpleNamespace(id=1), answer=AsyncMock(side_effect=list(effects))
+        )
 
     async def test_a_good_message_is_sent_once_and_untouched(self):
         message = self.message("sent")
@@ -77,13 +81,20 @@ class LiveCustomEmojiTests(unittest.TestCase):
         ids = sorted({emoji_id for _, emoji_id, _ in tags() if emoji_id.isdigit()})
         found = set()
         for start in range(0, len(ids), 100):
-            query = urllib.parse.quote(json.dumps(ids[start:start+100]))
-            url = (f"https://api.telegram.org/bot{os.environ['BOT_TOKEN']}"
-                   f"/getCustomEmojiStickers?custom_emoji_ids={query}")
+            query = urllib.parse.quote(json.dumps(ids[start : start + 100]))
+            url = (
+                f"https://api.telegram.org/bot{os.environ['BOT_TOKEN']}"
+                f"/getCustomEmojiStickers?custom_emoji_ids={query}"
+            )
             with urllib.request.urlopen(url) as response:
-                found.update(s["custom_emoji_id"] for s in json.load(response)["result"])
-        missing = {emoji_id: [w for w, i, _ in tags() if i == emoji_id]
-                   for emoji_id in ids if emoji_id not in found}
+                found.update(
+                    s["custom_emoji_id"] for s in json.load(response)["result"]
+                )
+        missing = {
+            emoji_id: [w for w, i, _ in tags() if i == emoji_id]
+            for emoji_id in ids
+            if emoji_id not in found
+        }
         self.assertEqual(missing, {}, f"unusable custom emoji ids: {missing}")
 
 

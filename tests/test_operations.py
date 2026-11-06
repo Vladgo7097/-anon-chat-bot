@@ -7,7 +7,15 @@ from test_chat_duration import DatabaseCase
 from models.user import User
 from models.report import Report
 from models.ban import Ban
-from models.operations import Notification, Broadcast, AdminAudit, Streak, Offer, Achievement, Referral
+from models.operations import (
+    Notification,
+    Broadcast,
+    AdminAudit,
+    Streak,
+    Offer,
+    Achievement,
+    Referral,
+)
 from services.admin import AdminService
 from services.notifications import NotificationService, enqueue
 from services.growth import StreakService
@@ -19,24 +27,31 @@ from utils.time import utcnow
 class OperationsTests(DatabaseCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        for target, value in (("config.OWNER_ID",99), ("config.ADMIN_IDS",{99}),
-            ("services.matching.MatchingService.cancel",AsyncMock()),
-            ("services.chats.ChatService.end_chat",AsyncMock(return_value=ServiceResult(True,"ENDED")))):
-            p=patch(target,value)
+        for target, value in (
+            ("config.OWNER_ID", 99),
+            ("config.ADMIN_IDS", {99}),
+            ("services.matching.MatchingService.cancel", AsyncMock()),
+            (
+                "services.chats.ChatService.end_chat",
+                AsyncMock(return_value=ServiceResult(True, "ENDED")),
+            ),
+        ):
+            p = patch(target, value)
             p.start()
             self.addCleanup(p.stop)
 
     async def test_nonadmin_denied_and_invalid_setting_rejected(self):
         with self.assertRaises(PermissionError):
-            await AdminService().setting(1,"search_timeout",60)
-        self.assertFalse((await AdminService().setting(99,"search_timeout",1)).ok)
-        self.assertTrue((await AdminService().setting(99,"search_timeout",90)).ok)
+            await AdminService().setting(1, "search_timeout", 60)
+        self.assertFalse((await AdminService().setting(99, "search_timeout", 1)).ok)
+        self.assertTrue((await AdminService().setting(99, "search_timeout", 90)).ok)
         async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(AdminAudit.id))),1)
+            self.assertEqual(await s.scalar(select(func.count(AdminAudit.id))), 1)
 
     async def test_privacy_setting_persists_without_losing_other_preferences(self):
         import json
         from services.profile import ProfileService
+
         async with self.factory.begin() as s:
             user = await s.scalar(select(User).where(User.telegram_id == 1))
             user.notification_settings = '{"other": true}'
@@ -44,11 +59,15 @@ class OperationsTests(DatabaseCase):
             self.assertTrue((await ProfileService().marketing(1, enabled)).ok)
             async with self.factory() as s:
                 user = await s.scalar(select(User).where(User.telegram_id == 1))
-                self.assertEqual(json.loads(user.notification_settings), {"other": True, "marketing": enabled})
+                self.assertEqual(
+                    json.loads(user.notification_settings),
+                    {"other": True, "marketing": enabled},
+                )
         self.assertFalse((await ProfileService().marketing(999999, False)).ok)
 
     async def test_rejected_setting_change_does_not_cancel_the_search(self):
         from services.settings import SettingsService
+
         with patch("services.settings.MatchingService.cancel", AsyncMock()) as cancel:
             # User 1 has no Premium/entitlement in the fixture: a gender
             # filter change is rejected, and must not drop them from search
@@ -68,8 +87,16 @@ class OperationsTests(DatabaseCase):
 
     async def test_user_card_counts_reports(self):
         from handlers.admin import user_card_text
+
         async with self.factory.begin() as s:
-            s.add(Report(reporter_id=2, reported_id=1, chat_session_id="sess-card", reason="Спам/реклама"))
+            s.add(
+                Report(
+                    reporter_id=2,
+                    reported_id=1,
+                    chat_session_id="sess-card",
+                    reason="Спам/реклама",
+                )
+            )
         user = await AdminService().find_user(99, "#test1")
         text = await user_card_text(99, user)
         self.assertIn("Жалоб на него: 1", text)
@@ -78,7 +105,12 @@ class OperationsTests(DatabaseCase):
     async def test_resolve_mute_actions_apply_state_and_notice(self):
         for action, hours in (("mute1", 1), ("mute24", 24), ("mute7", 168)):
             async with self.factory.begin() as s:
-                report = Report(reporter_id=2, reported_id=1, chat_session_id=f"sess-{action}", reason="Спам/реклама")
+                report = Report(
+                    reporter_id=2,
+                    reported_id=1,
+                    chat_session_id=f"sess-{action}",
+                    reason="Спам/реклама",
+                )
                 s.add(report)
                 await s.flush()
                 report_id = report.id
@@ -89,19 +121,28 @@ class OperationsTests(DatabaseCase):
                 left = (user.mute_expires - utcnow()).total_seconds()
                 self.assertGreater(left, (hours - 1) * 3600)
                 self.assertLess(left, (hours + 1) * 3600)
-                notice = await s.scalar(select(Notification).where(Notification.type == "mute").order_by(Notification.id.desc()))
+                notice = await s.scalar(
+                    select(Notification)
+                    .where(Notification.type == "mute")
+                    .order_by(Notification.id.desc())
+                )
                 self.assertIn("Мут", notice.text)
             await AdminService().unmute(99, 1)
         async with self.factory() as s:
-            self.assertFalse((await s.scalar(select(User).where(User.telegram_id == 1))).is_muted)
+            self.assertFalse(
+                (await s.scalar(select(User).where(User.telegram_id == 1))).is_muted
+            )
 
     async def test_muted_user_cannot_start_search(self):
         from services.matching import MatchingService
+
         async with self.factory.begin() as s:
             user = await s.scalar(select(User).where(User.telegram_id == 1))
             user.is_muted = True
             user.mute_expires = utcnow() + timedelta(hours=1)
-        with patch("services.chat_manager.get_redis", AsyncMock(return_value=self.redis)):
+        with patch(
+            "services.chat_manager.get_redis", AsyncMock(return_value=self.redis)
+        ):
             result = await MatchingService().enqueue(1)
         self.assertEqual(result.code, "MUTED")
 
@@ -125,16 +166,25 @@ class OperationsTests(DatabaseCase):
         chat = await self.repo.match(1, 2, self.redis)
         await self.repo.end(1, chat.session_id, "unreachable")
         async with self.factory() as s:
-            ended = (await s.scalars(select(Notification).where(Notification.type == "chat_ended"))).all()
+            ended = (
+                await s.scalars(
+                    select(Notification).where(Notification.type == "chat_ended")
+                )
+            ).all()
             self.assertEqual([item.user_id for item in ended], [2])
         second = await self.repo.match(1, 2, self.redis)
         await self.repo.end(2, second.session_id, "timeout")
         async with self.factory() as s:
-            ended = (await s.scalars(select(Notification).where(Notification.type == "chat_ended"))).all()
+            ended = (
+                await s.scalars(
+                    select(Notification).where(Notification.type == "chat_ended")
+                )
+            ).all()
             self.assertEqual(sorted(item.user_id for item in ended), [1, 2, 2])
 
     async def test_invalid_numeric_referral_does_not_break_registration(self):
         from services.onboarding import OnboardingService
+
         for value in ("9" * 32, "²"):
             result = await OnboardingService().start(4, payload="ref_" + value)
             self.assertEqual(result.code, "LANGUAGE")
@@ -144,34 +194,56 @@ class OperationsTests(DatabaseCase):
 
     async def test_referral_uses_random_anon_code_and_rejects_telegram_id(self):
         from services.onboarding import OnboardingService
+
         async with self.factory() as s:
-            code = (await s.scalar(select(User).where(User.telegram_id == 1))).referral_code
+            code = (
+                await s.scalar(select(User).where(User.telegram_id == 1))
+            ).referral_code
         await OnboardingService().start(4, payload="ref_" + code)
         await OnboardingService().start(5, payload="ref_1")
         async with self.factory() as s:
-            self.assertEqual((await s.scalar(select(User).where(User.telegram_id == 4))).referrer_id, 1)
-            self.assertIsNone((await s.scalar(select(User).where(User.telegram_id == 5))).referrer_id)
+            self.assertEqual(
+                (await s.scalar(select(User).where(User.telegram_id == 4))).referrer_id,
+                1,
+            )
+            self.assertIsNone(
+                (await s.scalar(select(User).where(User.telegram_id == 5))).referrer_id
+            )
 
     async def test_duplicate_admin_grant_does_not_extend_twice(self):
-        admin=AdminService()
-        self.assertTrue((await admin.grant(99,1,30,"support","grant:99:1")).ok)
+        admin = AdminService()
+        self.assertTrue((await admin.grant(99, 1, 30, "support", "grant:99:1")).ok)
         async with self.factory() as s:
-            expires=(await s.scalar(select(User).where(User.telegram_id==1))).premium_expires
-        self.assertFalse((await admin.grant(99,1,30,"support","grant:99:1")).ok)
+            expires = (
+                await s.scalar(select(User).where(User.telegram_id == 1))
+            ).premium_expires
+        self.assertFalse((await admin.grant(99, 1, 30, "support", "grant:99:1")).ok)
         async with self.factory() as s:
-            self.assertEqual((await s.scalar(select(User).where(User.telegram_id==1))).premium_expires,expires)
+            self.assertEqual(
+                (
+                    await s.scalar(select(User).where(User.telegram_id == 1))
+                ).premium_expires,
+                expires,
+            )
 
     async def test_ban_notice_delivered_and_unban_clears_history(self):
-        await AdminService().ban(99,1,"spam",24)
-        service=NotificationService()
-        notification=await service.next()
-        self.assertEqual(notification.type,"ban")
-        await service.finish(notification.id,"sent")
-        await AdminService().unban(99,1)
+        await AdminService().ban(99, 1, "spam", 24)
+        service = NotificationService()
+        notification = await service.next()
+        self.assertEqual(notification.type, "ban")
+        await service.finish(notification.id, "sent")
+        await AdminService().unban(99, 1)
         async with self.factory() as s:
-            self.assertFalse((await s.scalar(select(User).where(User.telegram_id==1))).is_banned)
-            self.assertEqual(await s.scalar(select(func.count(Ban.id)).where(Ban.is_active.is_(True))),0)
-        self.assertEqual((await service.next()).type,"unban")
+            self.assertFalse(
+                (await s.scalar(select(User).where(User.telegram_id == 1))).is_banned
+            )
+            self.assertEqual(
+                await s.scalar(
+                    select(func.count(Ban.id)).where(Ban.is_active.is_(True))
+                ),
+                0,
+            )
+        self.assertEqual((await service.next()).type, "unban")
 
     async def test_enqueue_ignores_a_duplicate_dedupe_key_without_raising(self):
         # A plain check-then-insert races against dedupe_key's UNIQUE
@@ -181,158 +253,223 @@ class OperationsTests(DatabaseCase):
             await enqueue(s, 1, "reward", "dupe-key", "first")
             await enqueue(s, 1, "reward", "dupe-key", "second")
         async with self.factory() as s:
-            rows = (await s.scalars(select(Notification).where(Notification.dedupe_key == "dupe-key"))).all()
+            rows = (
+                await s.scalars(
+                    select(Notification).where(Notification.dedupe_key == "dupe-key")
+                )
+            ).all()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].text, "first")
 
     async def test_expired_ban_becomes_inactive_without_manual_action(self):
         async with self.factory.begin() as s:
-            user=await s.scalar(select(User).where(User.telegram_id==1))
-            user.is_banned=True
-            user.ban_expires=utcnow()-timedelta(seconds=1)
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.is_banned = True
+            user.ban_expires = utcnow() - timedelta(seconds=1)
         await NotificationService().schedule()
         async with self.factory() as s:
-            self.assertFalse((await s.scalar(select(User).where(User.telegram_id==1))).is_banned)
-        self.assertEqual((await NotificationService().next()).type,"unban")
+            self.assertFalse(
+                (await s.scalar(select(User).where(User.telegram_id == 1))).is_banned
+            )
+        self.assertEqual((await NotificationService().next()).type, "unban")
 
     async def test_expired_mute_becomes_inactive_without_manual_action(self):
         async with self.factory.begin() as s:
-            user=await s.scalar(select(User).where(User.telegram_id==1))
-            user.is_muted=True
-            user.mute_expires=utcnow()-timedelta(seconds=1)
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.is_muted = True
+            user.mute_expires = utcnow() - timedelta(seconds=1)
         await NotificationService().schedule()
         async with self.factory() as s:
-            self.assertFalse((await s.scalar(select(User).where(User.telegram_id==1))).is_muted)
-        self.assertEqual((await NotificationService().next()).type,"unmute")
+            self.assertFalse(
+                (await s.scalar(select(User).where(User.telegram_id == 1))).is_muted
+            )
+        self.assertEqual((await NotificationService().next()).type, "unmute")
 
     async def test_report_saved_once_and_resolved_once(self):
-        chat=await self.repo.match(1,2,self.redis)
-        service=ReportService()
-        first=await service.submit(1,chat.session_id,"spam","test details")
+        chat = await self.repo.match(1, 2, self.redis)
+        service = ReportService()
+        first = await service.submit(1, chat.session_id, "spam", "test details")
         self.assertTrue(first.ok)
-        self.assertEqual((await service.submit(1,chat.session_id,"spam")).code,"ALREADY_REPORTED")
-        self.assertTrue((await AdminService().resolve(99,first.data["report_id"],"dismiss")).ok)
-        self.assertFalse((await AdminService().resolve(99,first.data["report_id"],"ban1")).ok)
+        self.assertEqual(
+            (await service.submit(1, chat.session_id, "spam")).code, "ALREADY_REPORTED"
+        )
+        self.assertTrue(
+            (await AdminService().resolve(99, first.data["report_id"], "dismiss")).ok
+        )
+        self.assertFalse(
+            (await AdminService().resolve(99, first.data["report_id"], "ban1")).ok
+        )
 
     async def test_report_persists_only_explicitly_captured_context(self):
-        chat=await self.repo.match(1,2,self.redis)
-        context=["1:привет", "2:оскорбление"]
-        with patch("services.relay.RelayService.report_context",
-                   AsyncMock(side_effect=[context, context])):
-            result=await ReportService().submit(1,chat.session_id,"insult")
+        chat = await self.repo.match(1, 2, self.redis)
+        context = ["1:привет", "2:оскорбление"]
+        with patch(
+            "services.relay.RelayService.report_context",
+            AsyncMock(side_effect=[context, context]),
+        ):
+            result = await ReportService().submit(1, chat.session_id, "insult")
         async with self.factory() as s:
-            report=await s.get(Report,result.data["report_id"])
-            self.assertIn("Вы: привет",report.message_content)
-            self.assertIn("Собеседник: оскорбление",report.message_content)
+            report = await s.get(Report, result.data["report_id"])
+            self.assertIn("Вы: привет", report.message_content)
+            self.assertIn("Собеседник: оскорбление", report.message_content)
 
     async def test_unexpected_end_offers_same_settings_search(self):
-        chat=await self.repo.match(1,2,self.redis)
-        await self.repo.end(1,chat.session_id,"timeout")
+        chat = await self.repo.match(1, 2, self.redis)
+        await self.repo.end(1, chat.session_id, "timeout")
         async with self.factory() as s:
-            prompts=(await s.scalars(select(Notification).where(
-                Notification.type=="reconnect_prompt"))).all()
-            self.assertEqual({item.user_id for item in prompts},{1,2})
-            self.assertTrue(all(item.callback_data=="search:repeat" for item in prompts))
+            prompts = (
+                await s.scalars(
+                    select(Notification).where(Notification.type == "reconnect_prompt")
+                )
+            ).all()
+            self.assertEqual({item.user_id for item in prompts}, {1, 2})
+            self.assertTrue(
+                all(item.callback_data == "search:repeat" for item in prompts)
+            )
 
     async def test_broadcast_confirm_once_worker_counts_once_and_respects_optout(self):
         async with self.factory.begin() as s:
-            user=await s.scalar(select(User).where(User.telegram_id==2))
-            user.notification_settings='{"marketing":false}'
-        admin=AdminService()
-        job=(await admin.broadcast(99,"all","Hello")).data["job"]
-        self.assertTrue((await admin.confirm_broadcast(99,job.id)).ok)
-        self.assertFalse((await admin.confirm_broadcast(99,job.id)).ok)
-        service=NotificationService()
+            user = await s.scalar(select(User).where(User.telegram_id == 2))
+            user.notification_settings = '{"marketing":false}'
+        admin = AdminService()
+        job = (await admin.broadcast(99, "all", "Hello")).data["job"]
+        self.assertTrue((await admin.confirm_broadcast(99, job.id)).ok)
+        self.assertFalse((await admin.confirm_broadcast(99, job.id)).ok)
+        service = NotificationService()
         await service.expand_broadcast()
-        first=await service.next()
-        self.assertEqual(first.user_id,1)
-        await service.finish(first.id,"sent")
-        await service.finish(first.id,"sent")
+        first = await service.next()
+        self.assertEqual(first.user_id, 1)
+        await service.finish(first.id, "sent")
+        await service.finish(first.id, "sent")
         self.assertIsNone(await service.next())
-        third=await service.next()
-        self.assertEqual(third.user_id,3)
-        await service.finish(third.id,"failed","forbidden")
+        third = await service.next()
+        self.assertEqual(third.user_id, 3)
+        await service.finish(third.id, "failed", "forbidden")
         await service.expand_broadcast()
         async with self.factory() as s:
-            job=await s.get(Broadcast,job.id)
-            self.assertEqual((job.sent,job.failed,job.blocked,job.status),(1,1,1,"completed"))
-            self.assertIsNotNone((await s.scalar(select(User).where(User.telegram_id==3))).bot_blocked_at)
+            job = await s.get(Broadcast, job.id)
+            self.assertEqual(
+                (job.sent, job.failed, job.blocked, job.status), (1, 1, 1, "completed")
+            )
+            self.assertIsNotNone(
+                (
+                    await s.scalar(select(User).where(User.telegram_id == 3))
+                ).bot_blocked_at
+            )
 
     async def test_streak_utc_reward_once(self):
         async with self.factory.begin() as s:
-            s.add(Streak(user_id=1,current_streak=6,best_streak=6,last_checkin_date=utcnow().date()-timedelta(days=1)))
-        self.assertEqual(await StreakService().checkin(1),7)
-        self.assertEqual(await StreakService().checkin(1),7)
+            s.add(
+                Streak(
+                    user_id=1,
+                    current_streak=6,
+                    best_streak=6,
+                    last_checkin_date=utcnow().date() - timedelta(days=1),
+                )
+            )
+        self.assertEqual(await StreakService().checkin(1), 7)
+        self.assertEqual(await StreakService().checkin(1), 7)
         async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(Offer.id))),2)
-            self.assertEqual(await s.scalar(select(func.count()).select_from(Achievement)),2)
+            self.assertEqual(await s.scalar(select(func.count(Offer.id))), 2)
+            self.assertEqual(
+                await s.scalar(select(func.count()).select_from(Achievement)), 2
+            )
 
     async def test_season_requires_enabled_flag_and_real_window(self):
         from services.growth import SeasonalService
         from models.operations import BotSetting
-        admin=AdminService()
-        self.assertFalse((await admin.seasonal(99,"autumn","invalid","invalid",15)).ok)
-        now=utcnow()
-        self.assertTrue((await admin.seasonal(99,"autumn",(now-timedelta(hours=1)).isoformat(),(now+timedelta(hours=1)).isoformat(),15)).ok)
+
+        admin = AdminService()
+        self.assertFalse(
+            (await admin.seasonal(99, "autumn", "invalid", "invalid", 15)).ok
+        )
+        now = utcnow()
+        self.assertTrue(
+            (
+                await admin.seasonal(
+                    99,
+                    "autumn",
+                    (now - timedelta(hours=1)).isoformat(),
+                    (now + timedelta(hours=1)).isoformat(),
+                    15,
+                )
+            ).ok
+        )
         async with self.factory.begin() as s:
             self.assertIsNone(await SeasonalService.active(s))
-        await admin.setting(99,"seasonal_enabled",1)
+        await admin.setting(99, "seasonal_enabled", 1)
         async with self.factory.begin() as s:
-            await SeasonalService.reward(s,1)
-            await SeasonalService.reward(s,1)
+            await SeasonalService.reward(s, 1)
+            await SeasonalService.reward(s, 1)
         async with self.factory() as s:
-            self.assertEqual(await s.scalar(select(func.count(Offer.id))),1)
+            self.assertEqual(await s.scalar(select(func.count(Offer.id))), 1)
         async with self.factory.begin() as s:
-            item=await s.get(BotSetting,"seasonal_event")
-            item.value_json={**item.value_json,"ends_at":(now-timedelta(seconds=1)).isoformat()}
+            item = await s.get(BotSetting, "seasonal_event")
+            item.value_json = {
+                **item.value_json,
+                "ends_at": (now - timedelta(seconds=1)).isoformat(),
+            }
         async with self.factory.begin() as s:
             self.assertIsNone(await SeasonalService.active(s))
 
     async def test_marketing_daily_limit_defers_second_delivery(self):
         async with self.factory.begin() as s:
-            await enqueue(s,1,"campaign","campaign:1","First",marketing=True)
-            await enqueue(s,1,"campaign","campaign:2","Second",marketing=True)
-        service=NotificationService()
-        first=await service.next()
-        await service.finish(first.id,"sent")
+            await enqueue(s, 1, "campaign", "campaign:1", "First", marketing=True)
+            await enqueue(s, 1, "campaign", "campaign:2", "Second", marketing=True)
+        service = NotificationService()
+        first = await service.next()
+        await service.finish(first.id, "sent")
         self.assertIsNone(await service.next())
         async with self.factory() as s:
-            pending=await s.scalar(select(Notification).where(Notification.dedupe_key=="campaign:2"))
-            self.assertGreater(pending.scheduled_at,utcnow()+timedelta(hours=23))
+            pending = await s.scalar(
+                select(Notification).where(Notification.dedupe_key == "campaign:2")
+            )
+            self.assertGreater(pending.scheduled_at, utcnow() + timedelta(hours=23))
 
     async def test_profile_photos_and_server_side_age_limits(self):
         from services.profile import ProfileService
-        service=ProfileService()
-        self.assertFalse((await service.edit(1,"age",17)).ok)
-        self.assertTrue((await service.add_photo(1,"photo-one")).ok)
-        self.assertTrue((await service.add_photo(1,"photo-one")).ok)
-        self.assertEqual((await service.add_photo(1,"photo-two")).code,"PHOTO_LIMIT")
-        await AdminService().grant(99,1,30,"test")
-        self.assertTrue((await service.add_photo(1,"photo-two")).ok)
-        self.assertTrue((await service.add_photo(1,"photo-three")).ok)
-        self.assertFalse((await service.add_photo(1,"photo-four")).ok)
+
+        service = ProfileService()
+        self.assertFalse((await service.edit(1, "age", 17)).ok)
+        self.assertTrue((await service.add_photo(1, "photo-one")).ok)
+        self.assertTrue((await service.add_photo(1, "photo-one")).ok)
+        self.assertEqual((await service.add_photo(1, "photo-two")).code, "PHOTO_LIMIT")
+        await AdminService().grant(99, 1, 30, "test")
+        self.assertTrue((await service.add_photo(1, "photo-two")).ok)
+        self.assertTrue((await service.add_photo(1, "photo-three")).ok)
+        self.assertFalse((await service.add_photo(1, "photo-four")).ok)
 
     async def test_referral_reward_once_after_real_completed_chat(self):
         from datetime import timedelta
         from utils.time import utcnow
         from models.payment import PremiumSubscription
+
         async with self.factory.begin() as s:
-            s.add(Referral(referrer_id=3,referred_id=1))
-        chat=await self.repo.match(1,2,self.redis)
-        await self.repo.end(1,chat.session_id)
-        await self.repo.end(2,chat.session_id)
+            s.add(Referral(referrer_id=3, referred_id=1))
+        chat = await self.repo.match(1, 2, self.redis)
+        await self.repo.end(1, chat.session_id)
+        await self.repo.end(2, chat.session_id)
         async with self.factory() as s:
-            referrer=await s.scalar(select(User).where(User.telegram_id==3))
-            self.assertEqual(referrer.referrals_activated,1)
+            referrer = await s.scalar(select(User).where(User.telegram_id == 3))
+            self.assertEqual(referrer.referrals_activated, 1)
             # The inviter gets an hour of Premium (dj's call), not the old
             # 20% coupon; only the invited side keeps a discount offer.
             self.assertTrue(referrer.is_premium)
-            self.assertGreater(referrer.premium_expires, utcnow()+timedelta(minutes=59))
-            self.assertEqual(await s.scalar(select(func.count(Offer.id))),1)
-            grant=await s.scalar(select(PremiumSubscription).where(PremiumSubscription.plan=="referral"))
+            self.assertGreater(
+                referrer.premium_expires, utcnow() + timedelta(minutes=59)
+            )
+            self.assertEqual(await s.scalar(select(func.count(Offer.id))), 1)
+            grant = await s.scalar(
+                select(PremiumSubscription).where(
+                    PremiumSubscription.plan == "referral"
+                )
+            )
             self.assertIsNotNone(grant)
-            notice=await s.scalar(select(Notification.id).where(
-                Notification.user_id==3, Notification.type=="reward"))
+            notice = await s.scalar(
+                select(Notification.id).where(
+                    Notification.user_id == 3, Notification.type == "reward"
+                )
+            )
             self.assertIsNotNone(notice)
 
     async def test_owner_startup_does_not_require_user_profile(self):
@@ -350,12 +487,17 @@ class OperationsTests(DatabaseCase):
         self.assertEqual(notice.type, "backup_failed")
 
 
-class PaymentFloodTests(__import__('unittest').IsolatedAsyncioTestCase):
+class PaymentFloodTests(__import__("unittest").IsolatedAsyncioTestCase):
     async def test_successful_payment_never_dropped_by_flood_limiter(self):
         from utils.middleware import AntiFloodMiddleware
-        handler=AsyncMock()
-        event=SimpleNamespace(successful_payment=object(),from_user=SimpleNamespace(id=1))
-        with patch("utils.middleware.check_flood",AsyncMock(return_value=True)) as flood:
-            await AntiFloodMiddleware()(handler,event,{})
+
+        handler = AsyncMock()
+        event = SimpleNamespace(
+            successful_payment=object(), from_user=SimpleNamespace(id=1)
+        )
+        with patch(
+            "utils.middleware.check_flood", AsyncMock(return_value=True)
+        ) as flood:
+            await AntiFloodMiddleware()(handler, event, {})
         handler.assert_awaited_once()
         flood.assert_not_awaited()

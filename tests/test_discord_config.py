@@ -3,6 +3,7 @@
 discord_bot.py импортируется, только если discord.py поставлен в окружении —
 в docker-прогонах тестов его нет, файл молча скипается.
 """
+
 import os
 import unittest
 
@@ -12,7 +13,7 @@ import discord_setup
 
 try:
     import discord_bot
-except ImportError:                                   # discord.py нет в этом окружении
+except ImportError:  # discord.py нет в этом окружении
     discord_bot = None
 
 VIEW = 1 << 10
@@ -33,7 +34,9 @@ class ReactionRoles(unittest.TestCase):
     @unittest.skipIf(discord_bot is None, "discord.py не установлен")
     def test_keys_have_no_variation_selector(self):
         for emoji in discord_bot.REACTION_ROLES:
-            self.assertNotIn("\ufe0f", emoji, f"{emoji!r} не переживёт сравнение с payload")
+            self.assertNotIn(
+                "\ufe0f", emoji, f"{emoji!r} не переживёт сравнение с payload"
+            )
 
     @unittest.skipIf(discord_bot is None, "discord.py не установлен")
     def test_every_mapped_role_is_produced_by_plan(self):
@@ -46,7 +49,9 @@ class ReactionRoles(unittest.TestCase):
     def test_notification_roles_are_mentionable(self):
         for spec in discord_setup.ROLE_PLAN:
             if spec["name"] in ("Анонсы", "Клановые Битвы"):
-                self.assertTrue(spec["mentionable"], f"{spec['name']} должна упоминаться")
+                self.assertTrue(
+                    spec["mentionable"], f"{spec['name']} должна упоминаться"
+                )
 
     @unittest.skipIf(discord_bot is None, "discord.py не установлен")
     def test_post_title_is_the_one_bot_looks_for(self):
@@ -66,12 +71,17 @@ class ChannelNames(unittest.TestCase):
             (discord_bot.TICKETS_CHANNEL, "тикеты"),
             (discord_bot.RULES_CHANNEL, "правила"),
         ):
-            self.assertEqual(discord_setup.CHANNEL_ALIAS[plan], actual,
-                             f"константа {actual} не совпала с планом «{plan}»")
+            self.assertEqual(
+                discord_setup.CHANNEL_ALIAS[plan],
+                actual,
+                f"константа {actual} не совпала с планом «{plan}»",
+            )
 
     def test_alias_values_are_unique(self):
         values = list(discord_setup.CHANNEL_ALIAS.values())
-        self.assertEqual(len(values), len(set(values)), "два плановых имени смотрят в один канал")
+        self.assertEqual(
+            len(values), len(set(values)), "два плановых имени смотрят в один канал"
+        )
 
 
 class FakeApi:
@@ -97,40 +107,69 @@ class LockedModerationChannels(unittest.TestCase):
 
     def _run(self):
         channels = [
-            {"id": "100", "name": discord_setup.CHANNEL_ALIAS["🛡 Модерация"],
-             "type": discord_setup.CHANNEL_CAT, "permission_overwrites": [
-                 {"id": self.BOT, "allow": "1", "deny": "0"},
-                 {"id": self.EVERYONE, "allow": "0", "deny": str(VIEW)},
-             ]},
-            {"id": "200", "name": discord_setup.CHANNEL_ALIAS["логи"], "type": 0,
-             "parent_id": "100", "permission_overwrites": [
-                 {"id": self.EVERYONE, "allow": "0", "deny": str(VIEW)},
-                 {"id": self.BOT, "allow": "1", "deny": "0"},
-             ]},
-            {"id": "201", "name": discord_setup.CHANNEL_ALIAS["модерация"], "type": 0,
-             "parent_id": "100", "permission_overwrites": [
-                 {"id": self.EVERYONE, "allow": "0", "deny": str(VIEW)},
-                 {"id": self.BOT, "allow": "1", "deny": "0"},
-             ]},
+            {
+                "id": "100",
+                "name": discord_setup.CHANNEL_ALIAS["🛡 Модерация"],
+                "type": discord_setup.CHANNEL_CAT,
+                "permission_overwrites": [
+                    {"id": self.BOT, "allow": "1", "deny": "0"},
+                    {"id": self.EVERYONE, "allow": "0", "deny": str(VIEW)},
+                ],
+            },
+            {
+                "id": "200",
+                "name": discord_setup.CHANNEL_ALIAS["логи"],
+                "type": 0,
+                "parent_id": "100",
+                "permission_overwrites": [
+                    {"id": self.EVERYONE, "allow": "0", "deny": str(VIEW)},
+                    {"id": self.BOT, "allow": "1", "deny": "0"},
+                ],
+            },
+            {
+                "id": "201",
+                "name": discord_setup.CHANNEL_ALIAS["модерация"],
+                "type": 0,
+                "parent_id": "100",
+                "permission_overwrites": [
+                    {"id": self.EVERYONE, "allow": "0", "deny": str(VIEW)},
+                    {"id": self.BOT, "allow": "1", "deny": "0"},
+                ],
+            },
         ]
         api = FakeApi(channels)
         setup = discord_setup.Setup(api, "1", dry_run=False)
-        setup.ensure_channels(None, self.EVERYONE, {
-            "Админ": self.ADMIN, "Модератор": self.MODERATOR, "Разработчик": self.DEVELOPER,
-        }, self.BOT)
+        setup.ensure_channels(
+            None,
+            self.EVERYONE,
+            {
+                "Админ": self.ADMIN,
+                "Модератор": self.MODERATOR,
+                "Разработчик": self.DEVELOPER,
+            },
+            self.BOT,
+        )
         return api
 
     def _channel_patches(self, api):
-        return [(path, body) for method, path, body in api.calls
-                if method == "PATCH" and path.startswith("/channels/")]
+        return [
+            (path, body)
+            for method, path, body in api.calls
+            if method == "PATCH" and path.startswith("/channels/")
+        ]
 
     def test_plan_denies_everyone_view_on_locked_channels(self):
-        locked = next(block for block in discord_setup.CHANNEL_PLAN if block.get("locked"))
+        locked = next(
+            block for block in discord_setup.CHANNEL_PLAN if block.get("locked")
+        )
         self.assertTrue(locked["channels"], "locked-категория осталась без каналов")
         for spec in locked["channels"]:
             self.assertIn("view_channel", spec.get("deny", []))
-            self.assertNotIn("view_channel", spec.get("allow", []),
-                             f"{spec['name']} снова открыт @everyone")
+            self.assertNotIn(
+                "view_channel",
+                spec.get("allow", []),
+                f"{spec['name']} снова открыт @everyone",
+            )
 
     def test_channels_get_role_allows_not_only_category(self):
         api = self._run()
@@ -141,7 +180,9 @@ class LockedModerationChannels(unittest.TestCase):
         _, own = next((p, b) for p, b in patches.items() if p.endswith("200"))
         overwrites = {o["id"]: o for o in own["permission_overwrites"]}
         view = str(VIEW)
-        self.assertEqual(overwrites[self.EVERYONE], {"id": self.EVERYONE, "allow": "0", "deny": view})
+        self.assertEqual(
+            overwrites[self.EVERYONE], {"id": self.EVERYONE, "allow": "0", "deny": view}
+        )
         for role_id in (self.ADMIN, self.MODERATOR, self.DEVELOPER):
             self.assertIn(role_id, overwrites, "роль потеряла доступ к логам модерации")
             self.assertEqual(overwrites[role_id]["allow"], view)

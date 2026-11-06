@@ -91,7 +91,5 @@ class FsmStorageTests(unittest.IsolatedAsyncioTestCase):
             await storage.redis.aclose()
 
 
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -514,6 +514,7 @@ async def cb_op_audit(callback: CallbackQuery):
 
 # ── Правила: политики, группы, состав ──────────────────────────
 
+
 def _policy_title(policy) -> str:
     if policy.feature_key == "*":
         return "🌐 Глобальное"
@@ -531,9 +532,13 @@ def _rules_text(policies, counts) -> str:
     lines = ["🧮 Правила ОП", ""]
     for policy in policies:
         groups = counts.get(policy.id, [])
-        modes = " · ".join(
-            f"{'И' if group.mode == 'and' else 'ИЛИ'} {count}" for group, count in groups
-        ) or "групп нет"
+        modes = (
+            " · ".join(
+                f"{'И' if group.mode == 'and' else 'ИЛИ'} {count}"
+                for group, count in groups
+            )
+            or "групп нет"
+        )
         window = _window_line(policy.starts_at, policy.ends_at)
         lines.append(
             f"{'🟢' if policy.enabled else '⚪'} {_policy_title(policy)} — {modes}; окно: {window}"
@@ -571,16 +576,22 @@ def _policy_text(policy, groups, counts) -> str:
 
 
 def _group_text(group, policy, targets, selected) -> str:
-    mode = "И — нужны все отмеченные" if group.mode == "and" else "ИЛИ — достаточно одного"
+    mode = (
+        "И — нужны все отмеченные" if group.mode == "and" else "ИЛИ — достаточно одного"
+    )
     lines = [
         f"🧩 Группа · {mode}",
         f"Правило: {_policy_title(policy)}",
         "",
     ]
     if not targets:
-        lines.append("Ресурсов нет. Сначала добавь канал или группу в разделе «Ресурсы».")
+        lines.append(
+            "Ресурсов нет. Сначала добавь канал или группу в разделе «Ресурсы»."
+        )
     else:
-        lines.append(f"Отмечено: {len(selected)} из {len(targets)}. Нажми на ресурс, чтобы включить или убрать.")
+        lines.append(
+            f"Отмечено: {len(selected)} из {len(targets)}. Нажми на ресурс, чтобы включить или убрать."
+        )
         lines.append("")
         for target in targets:
             lines.append(
@@ -680,7 +691,9 @@ async def cb_op_rule_toggle(callback: CallbackQuery):
     updated = await panel.set_policy_enabled(
         callback.bot.id, callback.from_user.id, policy_id, not policy.enabled
     )
-    await callback.answer("Правило включено" if updated.enabled else "Правило выключено")
+    await callback.answer(
+        "Правило включено" if updated.enabled else "Правило выключено"
+    )
     await _show_policy(callback, policy_id, answered=True)
 
 
@@ -724,7 +737,9 @@ async def cb_op_rule_group_target(callback: CallbackQuery):
     if linked is None:
         await callback.answer("Группа или ресурс не найдены", show_alert=True)
         return
-    await callback.answer("Ресурс добавлен в группу" if linked else "Ресурс убран из группы")
+    await callback.answer(
+        "Ресурс добавлен в группу" if linked else "Ресурс убран из группы"
+    )
     found = await panel.get_group(callback.bot.id, int(group_id))
     if found is None:
         return
@@ -746,9 +761,7 @@ async def cb_op_rule_group_delete(callback: CallbackQuery):
         await callback.answer("Группа не найдена", show_alert=True)
         return
     _, policy = found
-    removed = await panel.delete_group(
-        callback.bot.id, callback.from_user.id, group_id
-    )
+    removed = await panel.delete_group(callback.bot.id, callback.from_user.id, group_id)
     await callback.answer("Группа удалена" if removed else "Группа не найдена")
     if removed:
         await _show_policy(callback, policy.id, answered=True)
@@ -826,7 +839,8 @@ async def cb_op_time_edit(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await safe_send(
         callback.message,
-        WINDOW_PROMPT + f"\n\nСейчас: {_window_line(settings.starts_at, settings.ends_at)}",
+        WINDOW_PROMPT
+        + f"\n\nСейчас: {_window_line(settings.starts_at, settings.ends_at)}",
         reply_markup=op_cancel_kb("admin:op:time"),
     )
 
@@ -885,7 +899,10 @@ async def op_window_input(message: Message, state: FSMContext):
         )
         if policy is None:
             await state.clear()
-            await message.answer("Правило не найдено.", reply_markup=op_single_kb("admin:op:rule", "← К правилам"))
+            await message.answer(
+                "Правило не найдено.",
+                reply_markup=op_single_kb("admin:op:rule", "← К правилам"),
+            )
             return
         await state.clear()
         groups = await panel.list_groups(policy.id)
@@ -901,7 +918,10 @@ async def op_window_input(message: Message, state: FSMContext):
         )
         if target is None:
             await state.clear()
-            await message.answer("Ресурс не найден.", reply_markup=op_single_kb("admin:op:res", "← К ресурсам"))
+            await message.answer(
+                "Ресурс не найден.",
+                reply_markup=op_single_kb("admin:op:res", "← К ресурсам"),
+            )
             return
         await state.clear()
         await message.answer(
@@ -920,6 +940,7 @@ async def op_window_input(message: Message, state: FSMContext):
 
 
 # ── Исключения ─────────────────────────────────────────────────
+
 
 def _exemptions_text(rows) -> str:
     lines = [
@@ -963,9 +984,7 @@ async def cb_op_exemptions_add(callback: CallbackQuery, state: FSMContext):
 async def op_exemption_input(message: Message, state: FSMContext):
     parts = message.text.split()
     if not parts or not parts[0].isdigit():
-        await message.answer(
-            "Нужен числовой Telegram ID, например: 123456789 30"
-        )
+        await message.answer("Нужен числовой Telegram ID, например: 123456789 30")
         return
     user_id = int(parts[0])
     days = 0
@@ -975,9 +994,7 @@ async def op_exemption_input(message: Message, state: FSMContext):
             return
         days = int(parts[1])
     until = utcnow() + timedelta(days=days) if days > 0 else None
-    await panel.add_exemption(
-        message.bot.id, message.from_user.id, user_id, until
-    )
+    await panel.add_exemption(message.bot.id, message.from_user.id, user_id, until)
     await state.clear()
     rows = await panel.list_exemptions(message.bot.id)
     await message.answer(
@@ -1088,7 +1105,9 @@ def _buttons_text(settings) -> str:
     for field, title in panel.BUTTON_TITLES.items():
         own = getattr(settings, panel.BUTTON_FIELDS[field])
         value = own or core.button_default(field)
-        lines.append(f"{title}: «{escape(value)}» — {'своя' if own else 'по умолчанию'}")
+        lines.append(
+            f"{title}: «{escape(value)}» — {'своя' if own else 'по умолчанию'}"
+        )
     lines += ["", "Кнопку проверки убрать нельзя — можно только переименовать."]
     return "\n".join(lines)
 
@@ -1098,7 +1117,11 @@ async def cb_op_messages(callback: CallbackQuery):
     rows = await panel.list_templates(callback.bot.id)
     keys = await panel.feature_keys(callback.bot.id)
     await callback.answer()
-    await _render(callback, _messages_text(rows, keys), op_messages_kb(_messages_entries(rows, keys)))
+    await _render(
+        callback,
+        _messages_text(rows, keys),
+        op_messages_kb(_messages_entries(rows, keys)),
+    )
 
 
 @op_admin_router.callback_query(F.data == "admin:op:msg:add")
@@ -1333,4 +1356,7 @@ async def op_button_input(message: Message, state: FSMContext):
         )
         return
     await state.clear()
-    await message.answer("✅ Подпись сохранена.\n\n" + _buttons_text(settings), reply_markup=op_buttons_kb())
+    await message.answer(
+        "✅ Подпись сохранена.\n\n" + _buttons_text(settings),
+        reply_markup=op_buttons_kb(),
+    )

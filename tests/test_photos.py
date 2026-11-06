@@ -10,6 +10,7 @@ file_id знает только тот бот, который его выдал:
 
 Офлайн: сеть замокана, БД не трогается.
 """
+
 import asyncio
 import io
 import sys
@@ -26,15 +27,21 @@ from aiogram.methods import SendPhoto
 from utils import bots, photos
 
 
-BAD_FILE = TelegramBadRequest(method=SendPhoto(chat_id=1, photo="x"),
-                              message='Telegram server says - Bad Request: Unknown "file"')
+BAD_FILE = TelegramBadRequest(
+    method=SendPhoto(chat_id=1, photo="x"),
+    message='Telegram server says - Bad Request: Unknown "file"',
+)
 
 
 def make_bot(bot_id, *, owns=()):
     """Бот: file_id из `owns` знает, остальные отвергает 400, а байты принимает всегда."""
-    bot = SimpleNamespace(id=bot_id, accepts=set(owns),
-                          get_file=AsyncMock(), download=AsyncMock(),
-                          send_photo=AsyncMock())
+    bot = SimpleNamespace(
+        id=bot_id,
+        accepts=set(owns),
+        get_file=AsyncMock(),
+        download=AsyncMock(),
+        send_photo=AsyncMock(),
+    )
 
     async def send(chat_id, photo, **kwargs):
         if isinstance(photo, str) and photo not in bot.accepts:
@@ -54,10 +61,12 @@ def make_bot(bot_id, *, owns=()):
 
 def fake_message(bot):
     """Сообщение, чей answer_photo отвергает чужой file_id как Telegram."""
+
     async def answer(photo, **kwargs):
         if isinstance(photo, str) and photo not in bot.accepts:
             raise BAD_FILE
         return SimpleNamespace(photo=photo)
+
     return SimpleNamespace(bot=bot, answer_photo=AsyncMock(side_effect=answer))
 
 

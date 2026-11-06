@@ -1,5 +1,6 @@
 """Structured logging: the formatter must never crash a log call, and a
 cancelled update must not be recorded as a successful one."""
+
 import asyncio
 import json
 import logging
@@ -15,7 +16,9 @@ from utils.logging import JsonFormatter, UpdateLoggingMiddleware
 
 class JsonFormatterTests(unittest.TestCase):
     def record(self, exc_info=None):
-        return logging.LogRecord("test", logging.INFO, __file__, 1, "msg", None, exc_info)
+        return logging.LogRecord(
+            "test", logging.INFO, __file__, 1, "msg", None, exc_info
+        )
 
     def test_real_exception_info_reports_the_error_class(self):
         try:

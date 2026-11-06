@@ -188,12 +188,11 @@ class CoreGateTests(OpCase):
             if button.callback_data
         ]
         urls = [
-            button.url
-            for row in markup.inline_keyboard
-            for button in row
-            if button.url
+            button.url for row in markup.inline_keyboard for button in row if button.url
         ]
-        self.assertEqual(callbacks, ["op:check", "menu"], "при ошибке -- без вступления")
+        self.assertEqual(
+            callbacks, ["op:check", "menu"], "при ошибке -- без вступления"
+        )
         self.assertEqual(urls, [])
         async with self.factory() as s:
             self.assertEqual(await s.scalar(select(func.count(OpErrorLog.id))), 1)

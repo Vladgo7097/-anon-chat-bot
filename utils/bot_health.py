@@ -16,6 +16,7 @@ Telegram не присылает событий, когда бот перест�
 своим способом. Ловля лога точна, но держится на формате сообщения aiogram.
 Периодический get_me — тупой, но формат не ломается никогда.
 """
+
 import logging
 import re
 import time
@@ -101,6 +102,7 @@ def notice_text(bot_id, kind, count):
 async def report():
     """Уложить инциденты в очередь владельцу. Возвращает, сколько ушло."""
     import config
+
     if not config.OWNER_ID:
         return 0
     incidents = drain()
@@ -108,17 +110,25 @@ async def report():
         return 0
     from models.base import async_session
     from services.notifications import enqueue
+
     async with async_session.begin() as s:
         for bot_id, kind, count in incidents:
             # Ключ обязан меняться от уведомления к уведомлению: dedupe_key
             # уникален, и постоянный ключ заглушил бы владельца навсегда после
             # самой первой страницы. Окно в имени -- это и есть COOLDOWN.
             bucket = int(time.time() // COOLDOWN)
-            await enqueue(s, config.OWNER_ID, "admin_message",
-                          f"bot_health:{bot_id}:{kind}:{bucket}",
-                          notice_text(bot_id, kind, count))
-    logger.warning("event=bot_health_page sent=%s kinds=%s",
-                   len(incidents), [kind for _, kind, _ in incidents])
+            await enqueue(
+                s,
+                config.OWNER_ID,
+                "admin_message",
+                f"bot_health:{bot_id}:{kind}:{bucket}",
+                notice_text(bot_id, kind, count),
+            )
+    logger.warning(
+        "event=bot_health_page sent=%s kinds=%s",
+        len(incidents),
+        [kind for _, kind, _ in incidents],
+    )
     for bot_id, kind, count in incidents:
         await _webhook(notice_text(bot_id, kind, count))
     return len(incidents)
@@ -133,17 +143,22 @@ async def _webhook(text_body):
     поля, поэтому шлём оба сразу.
     """
     import config
+
     url = config.ALERT_WEBHOOK_URL
     if not url:
         return
     try:
         import aiohttp
+
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json={"content": text_body,
-                                               "text": text_body}) as response:
+            async with session.post(
+                url, json={"content": text_body, "text": text_body}
+            ) as response:
                 if response.status >= 400:
-                    logger.warning("event=alert_webhook_failed status=%s", response.status)
+                    logger.warning(
+                        "event=alert_webhook_failed status=%s", response.status
+                    )
     except Exception:
         logger.warning("event=alert_webhook_failed", exc_info=True)
 
@@ -272,8 +287,8 @@ def _drop_stale_markers(alive):
 
 def classify(error):
     """Что именно сломалось, если об этом обязан узнать человек."""
-    from aiogram.exceptions import (TelegramConflictError,
-                                    TelegramUnauthorizedError)
+    from aiogram.exceptions import TelegramConflictError, TelegramUnauthorizedError
+
     if isinstance(error, TelegramConflictError):
         return "conflict"
     if isinstance(error, TelegramUnauthorizedError):

@@ -5,6 +5,7 @@ an admin. So this handler only ever fires for campaigns whose advertiser
 granted admin rights and got a tracked invite link (see handlers/admin.py's
 launch flow) — there is no path here that infers or estimates a join.
 """
+
 from aiogram.types import ChatMemberUpdated
 from handlers import ads_router
 
@@ -20,4 +21,7 @@ async def on_channel_membership_change(event: ChatMemberUpdated):
     if event.old_chat_member.status in JOINED_STATUSES:
         return  # a status change between existing members, not a fresh join
     from services.ads import record_join
-    await record_join(event.invite_link.invite_link, event.new_chat_member.user.id, event.date)
+
+    await record_join(
+        event.invite_link.invite_link, event.new_chat_member.user.id, event.date
+    )

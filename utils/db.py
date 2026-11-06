@@ -1,4 +1,5 @@
 """Read compatibility helpers. Mutations belong in transactional services."""
+
 import json
 import logging
 from locales import normalize
@@ -44,12 +45,20 @@ async def get_user_stats(user_id):
     if not user:
         return {}
     return {
-        "anon_id": user.anon_id, "created_at": user.created_at,
-        "chats_count": user.chats_count, "likes": user.likes_received,
-        "dislikes": user.dislikes_received, "rating_pct": user.positive_rating_pct,
-        "streak": user.streak_days, "is_premium": premium_active(user),
-        "premium_expires": user.premium_expires, "total_spent": user.total_stars_spent,
-        "total_chat_seconds": user.total_chat_seconds, "gender": user.gender, "age": user.age,
-        "profile_photo": user.profile_photo, "bio": user.bio,
+        "anon_id": user.anon_id,
+        "created_at": user.created_at,
+        "chats_count": user.chats_count,
+        "likes": user.likes_received,
+        "dislikes": user.dislikes_received,
+        "rating_pct": user.positive_rating_pct,
+        "streak": user.streak_days,
+        "is_premium": premium_active(user),
+        "premium_expires": user.premium_expires,
+        "total_spent": user.total_stars_spent,
+        "total_chat_seconds": user.total_chat_seconds,
+        "gender": user.gender,
+        "age": user.age,
+        "profile_photo": user.profile_photo,
+        "bio": user.bio,
         "extra_photos_count": len(json.loads(user.extra_photos or "[]")),
     }

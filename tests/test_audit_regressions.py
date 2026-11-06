@@ -23,28 +23,42 @@ from utils.time import utcnow
 class AuditDatabaseTests(DatabaseCase):
     async def test_reported_partner_is_excluded_from_next_match(self):
         from services.reports import ReportService
+
         chat = await self.repo.match(1, 2, self.redis)
-        with patch("services.chat_manager.get_redis", AsyncMock(return_value=self.redis)):
-            self.assertTrue((await ReportService().submit(1, chat.session_id, "spam")).ok)
+        with patch(
+            "services.chat_manager.get_redis", AsyncMock(return_value=self.redis)
+        ):
+            self.assertTrue(
+                (await ReportService().submit(1, chat.session_id, "spam")).ok
+            )
         self.assertIsNone(await self.repo.match(1, 2, self.redis))
 
     async def test_scheduler_does_not_acquire_matching_lock_and_dedupes(self):
         async with self.factory.begin() as s:
             for user in (await s.scalars(select(User))).all():
-                user.last_online = utcnow()-timedelta(days=4)
-        with patch("repositories.chats.lock_matching", side_effect=AssertionError("matching lock used")):
+                user.last_online = utcnow() - timedelta(days=4)
+        with patch(
+            "repositories.chats.lock_matching",
+            side_effect=AssertionError("matching lock used"),
+        ):
             await NotificationService().schedule()
             await NotificationService().schedule()
         async with self.factory() as s:
-            notices = (await s.scalars(select(Notification).where(Notification.type == "inactive"))).all()
+            notices = (
+                await s.scalars(
+                    select(Notification).where(Notification.type == "inactive")
+                )
+            ).all()
             self.assertEqual(len(notices), 3)
 
     async def test_repeated_profile_update_does_not_write_users(self):
         await UserRepository().get_or_create(1, "same", "Same")
         writes = []
+
         def observe(conn, cursor, statement, parameters, context, many):
             if statement.upper().startswith("UPDATE USERS"):
                 writes.append(statement)
+
         event.listen(self.engine.sync_engine, "before_cursor_execute", observe)
         try:
             await UserRepository().get_or_create(1, "same", "Same")
@@ -57,11 +71,20 @@ class AuditDatabaseTests(DatabaseCase):
         async with self.factory.begin() as s:
             own = await s.scalar(select(User).where(User.telegram_id == 1))
             own.settings_gender_filter = "f"
-            own.premium_expires = utcnow()+timedelta(days=1)
-        with patch("repositories.chats.lock_matching", side_effect=AssertionError("matching lock used")):
+            own.premium_expires = utcnow() + timedelta(days=1)
+        with patch(
+            "repositories.chats.lock_matching",
+            side_effect=AssertionError("matching lock used"),
+        ):
             self.assertEqual(await self.repo.compatible_candidates(1, [3, 2]), [2])
         async with self.factory() as s:
-            a, b = (await s.scalars(select(User).where(User.telegram_id.in_([1, 2])).order_by(User.telegram_id))).all()
+            a, b = (
+                await s.scalars(
+                    select(User)
+                    .where(User.telegram_id.in_([1, 2]))
+                    .order_by(User.telegram_id)
+                )
+            ).all()
             b.age = None
             self.assertFalse(compatible(a, b))
 
@@ -69,6 +92,7 @@ class AuditDatabaseTests(DatabaseCase):
 class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_update_is_ignored_and_failure_can_retry(self):
         from utils.deduplication import UpdateDeduplication
+
         saved = set()
         redis = AsyncMock()
         redis.exists.side_effect = lambda key: key in saved
@@ -77,7 +101,12 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
         data = {"bot": SimpleNamespace(id=1)}
         with patch("utils.deduplication.get_redis", AsyncMock(return_value=redis)):
             middleware = UpdateDeduplication()
-            await asyncio.gather(*(middleware(handler, SimpleNamespace(update_id=1), data) for _ in range(3)))
+            await asyncio.gather(
+                *(
+                    middleware(handler, SimpleNamespace(update_id=1), data)
+                    for _ in range(3)
+                )
+            )
             handler.assert_awaited_once()
             # A new instance represents a restarted polling process.
             await UpdateDeduplication()(handler, SimpleNamespace(update_id=1), data)
@@ -92,13 +121,35 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_invoice_transport_uses_stars(self):
         from handlers.premium import cb_buy
         from services.result import ServiceResult
-        payment = SimpleNamespace(id=1, payload="test", stars_amount=100, product="premium_1m")
-        bot = SimpleNamespace(send_invoice=AsyncMock(return_value=SimpleNamespace(message_id=5)))
-        callback = SimpleNamespace(data="v1:buy:premium_1m", from_user=SimpleNamespace(id=1),
-                                   answer=AsyncMock(), message=SimpleNamespace(answer=AsyncMock()), bot=bot)
-        with patch("services.payments.PaymentService.create", AsyncMock(return_value=ServiceResult(True, "INVOICE", {"payment": payment, "title": "Premium"}))), \
-             patch("services.payments.PaymentService.claim_invoice", AsyncMock(return_value=True)), \
-             patch("services.payments.PaymentService.invoice_sent", AsyncMock()):
+
+        payment = SimpleNamespace(
+            id=1, payload="test", stars_amount=100, product="premium_1m"
+        )
+        bot = SimpleNamespace(
+            send_invoice=AsyncMock(return_value=SimpleNamespace(message_id=5))
+        )
+        callback = SimpleNamespace(
+            data="v1:buy:premium_1m",
+            from_user=SimpleNamespace(id=1),
+            answer=AsyncMock(),
+            message=SimpleNamespace(answer=AsyncMock()),
+            bot=bot,
+        )
+        with (
+            patch(
+                "services.payments.PaymentService.create",
+                AsyncMock(
+                    return_value=ServiceResult(
+                        True, "INVOICE", {"payment": payment, "title": "Premium"}
+                    )
+                ),
+            ),
+            patch(
+                "services.payments.PaymentService.claim_invoice",
+                AsyncMock(return_value=True),
+            ),
+            patch("services.payments.PaymentService.invoice_sent", AsyncMock()),
+        ):
             await cb_buy(callback)
         self.assertEqual(bot.send_invoice.await_args.kwargs["currency"], "XTR")
         self.assertEqual(bot.send_invoice.await_args.kwargs["prices"][0].amount, 100)
@@ -106,14 +157,21 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_album_middleware_calls_flood_and_relay_once_per_group(self):
         from utils.albums import AlbumMiddleware
         from handlers.chat import forward_message
+
         ready, release = asyncio.Event(), asyncio.Event()
+
         async def collect(seconds):
             ready.set()
             await release.wait()
+
         middleware = AlbumMiddleware()
         handler = AsyncMock()
-        first = SimpleNamespace(chat=SimpleNamespace(id=1), media_group_id="a", message_id=10)
-        second = SimpleNamespace(chat=SimpleNamespace(id=1), media_group_id="a", message_id=11)
+        first = SimpleNamespace(
+            chat=SimpleNamespace(id=1), media_group_id="a", message_id=10
+        )
+        second = SimpleNamespace(
+            chat=SimpleNamespace(id=1), media_group_id="a", message_id=11
+        )
         data = {"handler": SimpleNamespace(callback=forward_message)}
         with patch("utils.albums.asyncio.sleep", collect):
             task = asyncio.create_task(middleware(handler, first, data))
@@ -122,15 +180,20 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
             release.set()
             await task
         handler.assert_awaited_once()
-        self.assertEqual([m.message_id for m in handler.await_args.args[1]["album"]], [10, 11])
+        self.assertEqual(
+            [m.message_id for m in handler.await_args.args[1]["album"]], [10, 11]
+        )
         self.assertEqual(middleware.pending, {})
 
-    async def test_late_item_arriving_while_the_handler_is_still_running_is_not_dropped(self):
+    async def test_late_item_arriving_while_the_handler_is_still_running_is_not_dropped(
+        self,
+    ):
         # forward_message (copy_messages, DB writes) can outlast the 0.7s
         # collection window; a straggler for the same group must start its
         # own album instead of landing in the already-handed-off list.
         from utils.albums import AlbumMiddleware
         from handlers.chat import forward_message
+
         sleep_ready, sleep_release = asyncio.Event(), asyncio.Event()
 
         async def collect(seconds):
@@ -147,8 +210,12 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
 
         middleware = AlbumMiddleware()
         data = {"handler": SimpleNamespace(callback=forward_message)}
-        first = SimpleNamespace(chat=SimpleNamespace(id=1), media_group_id="a", message_id=10)
-        late = SimpleNamespace(chat=SimpleNamespace(id=1), media_group_id="a", message_id=99)
+        first = SimpleNamespace(
+            chat=SimpleNamespace(id=1), media_group_id="a", message_id=10
+        )
+        late = SimpleNamespace(
+            chat=SimpleNamespace(id=1), media_group_id="a", message_id=99
+        )
 
         with patch("utils.albums.asyncio.sleep", collect):
             task1 = asyncio.create_task(middleware(handler, first, dict(data)))
@@ -165,7 +232,9 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
             # forever instead of failing it.
             await asyncio.wait_for(sleep_ready.wait(), timeout=2)
             sleep_release.set()
-            await asyncio.wait_for(handler_started.wait(), timeout=2)  # handler(late) reached, not swallowed
+            await asyncio.wait_for(
+                handler_started.wait(), timeout=2
+            )  # handler(late) reached, not swallowed
 
             handler_release.set()
             await asyncio.wait_for(asyncio.gather(task1, task2), timeout=2)
@@ -190,27 +259,37 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_queue_scans_beyond_first_page(self):
         from services.matching import MatchingService
+
         first = [str(n) for n in range(1, 201)]
-        redis = self._queue_redis([first, ["201"]], [[1]*200, [1]])
-        repo = SimpleNamespace(compatible_candidates=AsyncMock(side_effect=[[], [201]]),
-                               match=AsyncMock(return_value=SimpleNamespace(session_id="s")))
-        with patch("services.chat_manager.get_redis", AsyncMock(return_value=redis)), \
-             patch("services.matching.ChatRepository", return_value=repo), \
-             patch("services.chats.ChatService.sync", AsyncMock()):
+        redis = self._queue_redis([first, ["201"]], [[1] * 200, [1]])
+        repo = SimpleNamespace(
+            compatible_candidates=AsyncMock(side_effect=[[], [201]]),
+            match=AsyncMock(return_value=SimpleNamespace(session_id="s")),
+        )
+        with (
+            patch("services.chat_manager.get_redis", AsyncMock(return_value=redis)),
+            patch("services.matching.ChatRepository", return_value=repo),
+            patch("services.chats.ChatService.sync", AsyncMock()),
+        ):
             self.assertIsNotNone(await MatchingService().find(1))
         repo.match.assert_awaited_once_with(1, 201, redis)
         redis.zrange.assert_awaited_with("search_queue", 200, 399)
 
     async def test_expired_queue_entries_are_dropped_and_do_not_shift_paging(self):
         from services.matching import MatchingService
+
         first = [str(n) for n in range(1, 201)]
         alive = [0 if value in {"5", "7"} else 1 for value in first]
         redis = self._queue_redis([first, ["201"]], [alive, [1]])
-        repo = SimpleNamespace(compatible_candidates=AsyncMock(side_effect=[[], [201]]),
-                               match=AsyncMock(return_value=SimpleNamespace(session_id="s")))
-        with patch("services.chat_manager.get_redis", AsyncMock(return_value=redis)), \
-             patch("services.matching.ChatRepository", return_value=repo), \
-             patch("services.chats.ChatService.sync", AsyncMock()):
+        repo = SimpleNamespace(
+            compatible_candidates=AsyncMock(side_effect=[[], [201]]),
+            match=AsyncMock(return_value=SimpleNamespace(session_id="s")),
+        )
+        with (
+            patch("services.chat_manager.get_redis", AsyncMock(return_value=redis)),
+            patch("services.matching.ChatRepository", return_value=repo),
+            patch("services.chats.ChatService.sync", AsyncMock()),
+        ):
             self.assertIsNotNone(await MatchingService().find(1))
         redis.zrem.assert_awaited_once_with("search_queue", "5", "7")
         # Dead entries never reach the database pre-filter.
@@ -221,36 +300,59 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_redis_outage_preserves_noncritical_functions_and_state_read(self):
         from services.chat_manager import set_online, get_online_count, check_flood
         from utils.storage import AvailableRedisStorage
+
         redis = AsyncMock()
         redis.get.side_effect = ConnectionError("offline")
-        with patch("services.chat_manager.get_redis", AsyncMock(side_effect=ConnectionError("offline"))):
+        with patch(
+            "services.chat_manager.get_redis",
+            AsyncMock(side_effect=ConnectionError("offline")),
+        ):
             self.assertIsNone(await set_online(1))
             self.assertEqual(await get_online_count(), "—")
             self.assertFalse(await check_flood(1, 1))
         from aiogram.fsm.storage.base import StorageKey
-        self.assertIsNone(await AvailableRedisStorage(redis).get_state(StorageKey(bot_id=1, chat_id=1, user_id=1)))
+
+        self.assertIsNone(
+            await AvailableRedisStorage(redis).get_state(
+                StorageKey(bot_id=1, chat_id=1, user_id=1)
+            )
+        )
 
     async def test_retry_after_retries_only_transport(self):
         from utils.telegram import RetryTelegramRequests
+
         method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
-        request = AsyncMock(side_effect=[TelegramRetryAfter(method=method, message="limit", retry_after=1), "ok"])
+        request = AsyncMock(
+            side_effect=[
+                TelegramRetryAfter(method=method, message="limit", retry_after=1),
+                "ok",
+            ]
+        )
         with patch("utils.telegram.asyncio.sleep", AsyncMock()) as sleep:
-            self.assertEqual(await RetryTelegramRequests()(request, "bot", method), "ok")
+            self.assertEqual(
+                await RetryTelegramRequests()(request, "bot", method), "ok"
+            )
             sleep.assert_awaited_once_with(1)
         self.assertEqual(request.await_count, 2)
 
     async def test_network_reset_is_retried_and_then_succeeds(self):
         from utils.telegram import RetryTelegramRequests
+
         method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
         reset = TelegramNetworkError(method=method, message="Connection reset by peer")
         request = AsyncMock(side_effect=[reset, reset, "ok"])
         with patch("utils.telegram.asyncio.sleep", AsyncMock()) as sleep:
-            self.assertEqual(await RetryTelegramRequests()(request, "bot", method), "ok")
-            self.assertEqual([call.args[0] for call in sleep.await_args_list], [0.5, 1.5])
+            self.assertEqual(
+                await RetryTelegramRequests()(request, "bot", method), "ok"
+            )
+            self.assertEqual(
+                [call.args[0] for call in sleep.await_args_list], [0.5, 1.5]
+            )
         self.assertEqual(request.await_count, 3)
 
     async def test_network_stall_after_last_attempt_propagates_up(self):
         from utils.telegram import RetryTelegramRequests
+
         method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
         timeout = TelegramNetworkError(method=method, message="Request timeout error")
         request = AsyncMock(side_effect=timeout)
@@ -262,8 +364,13 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_long_poll_failure_is_left_to_the_dispatcher(self):
         from utils.telegram import RetryTelegramRequests
+
         method = GetUpdates(offset=0)
-        request = AsyncMock(side_effect=TelegramNetworkError(method=method, message="Request timeout error"))
+        request = AsyncMock(
+            side_effect=TelegramNetworkError(
+                method=method, message="Request timeout error"
+            )
+        )
         with patch("utils.telegram.asyncio.sleep", AsyncMock()) as sleep:
             with self.assertRaises(TelegramNetworkError):
                 await RetryTelegramRequests()(request, "bot", method)
@@ -272,8 +379,11 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_business_error_is_not_retried(self):
         from utils.telegram import RetryTelegramRequests
+
         method = CopyMessage(chat_id=2, from_chat_id=1, message_id=3)
-        request = AsyncMock(side_effect=TelegramBadRequest(method=method, message="chat not found"))
+        request = AsyncMock(
+            side_effect=TelegramBadRequest(method=method, message="chat not found")
+        )
         with patch("utils.telegram.asyncio.sleep", AsyncMock()):
             with self.assertRaises(TelegramBadRequest):
                 await RetryTelegramRequests()(request, "bot", method)
@@ -283,7 +393,12 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
         from aiogram.client.session.aiohttp import AiohttpSession
         from aiogram.methods import SendMessage, SendPhoto
         from aiogram.types import BufferedInputFile
-        from utils.telegram import GET_UPDATES_TIMEOUT, REQUEST_TIMEOUT, TimeoutBoundedSession
+        from utils.telegram import (
+            GET_UPDATES_TIMEOUT,
+            REQUEST_TIMEOUT,
+            TimeoutBoundedSession,
+        )
+
         session = TimeoutBoundedSession()
         mock = AsyncMock()
         photo = BufferedInputFile(b"x", filename="photo.jpg")
@@ -292,11 +407,16 @@ class AuditTransportTests(unittest.IsolatedAsyncioTestCase):
             await session.make_request("bot", SendPhoto(chat_id=1, photo=photo))
             await session.make_request("bot", GetUpdates(offset=0))
             await session.make_request("bot", GetUpdates(offset=0), timeout=70)
-        bounded = [(call.args[1].__class__.__name__, call.kwargs["timeout"])
-                   for call in mock.await_args_list]
-        self.assertEqual(bounded, [
-            ("SendMessage", REQUEST_TIMEOUT),
-            ("SendPhoto", None),
-            ("GetUpdates", GET_UPDATES_TIMEOUT),
-            ("GetUpdates", GET_UPDATES_TIMEOUT),
-        ])
+        bounded = [
+            (call.args[1].__class__.__name__, call.kwargs["timeout"])
+            for call in mock.await_args_list
+        ]
+        self.assertEqual(
+            bounded,
+            [
+                ("SendMessage", REQUEST_TIMEOUT),
+                ("SendPhoto", None),
+                ("GetUpdates", GET_UPDATES_TIMEOUT),
+                ("GetUpdates", GET_UPDATES_TIMEOUT),
+            ],
+        )

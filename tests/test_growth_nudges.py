@@ -1,4 +1,5 @@
 """Onboarding nudges, queue priority, icebreakers."""
+
 import sys
 import unittest
 from datetime import timedelta
@@ -18,15 +19,24 @@ from utils.time import utcnow
 class OnboardingNudgeTests(DatabaseCase):
     async def stuck_user(self, telegram_id=7001, hours_ago=5, completed=False):
         async with self.factory.begin() as s:
-            s.add(User(telegram_id=telegram_id, anon_id=f"#stuck{telegram_id}",
-                       onboarding_completed=completed, onboarding_step="WELCOME",
-                       created_at=utcnow()-timedelta(hours=hours_ago),
-                       last_online=utcnow()-timedelta(hours=hours_ago)))
+            s.add(
+                User(
+                    telegram_id=telegram_id,
+                    anon_id=f"#stuck{telegram_id}",
+                    onboarding_completed=completed,
+                    onboarding_step="WELCOME",
+                    created_at=utcnow() - timedelta(hours=hours_ago),
+                    last_online=utcnow() - timedelta(hours=hours_ago),
+                )
+            )
 
     async def nudges(self):
         async with self.factory() as s:
-            return (await s.scalars(select(Notification).where(
-                Notification.type == "onboarding_nudge"))).all()
+            return (
+                await s.scalars(
+                    select(Notification).where(Notification.type == "onboarding_nudge")
+                )
+            ).all()
 
     async def test_user_stuck_past_the_delay_is_nudged_once(self):
         await self.stuck_user()
@@ -44,7 +54,7 @@ class OnboardingNudgeTests(DatabaseCase):
         self.assertEqual(await self.nudges(), [])
 
     async def test_a_long_abandoned_signup_is_not_nudged(self):
-        await self.stuck_user(telegram_id=7003, hours_ago=24*10)
+        await self.stuck_user(telegram_id=7003, hours_ago=24 * 10)
         await NotificationService().schedule()
         self.assertEqual(await self.nudges(), [])
 
@@ -65,7 +75,9 @@ class OnboardingNudgeTests(DatabaseCase):
             user.onboarding_completed = True
         self.assertIsNone(await service.next())
         async with self.factory() as s:
-            row = await s.scalar(select(Notification).where(Notification.type == "onboarding_nudge"))
+            row = await s.scalar(
+                select(Notification).where(Notification.type == "onboarding_nudge")
+            )
             self.assertEqual(row.status, "skipped")
 
 
@@ -75,11 +87,12 @@ class QueuePriorityTests(DatabaseCase):
     async def queue(self, kind, user_id, marketing, key):
         async with self.factory.begin() as s:
             from services.notifications import enqueue
+
             await enqueue(s, user_id, kind, key, "text", marketing=marketing)
 
     async def test_a_match_overtakes_a_bulk_backlog_queued_before_it(self):
         for index in range(50):
-            await self.queue("onboarding_nudge", 6000+index, True, f"nudge:{index}")
+            await self.queue("onboarding_nudge", 6000 + index, True, f"nudge:{index}")
         chat = await self.repo.match(1, 2, self.redis)
         picked = await NotificationService().next()
         self.assertIsNotNone(picked)
@@ -108,10 +121,13 @@ class AlreadyChattingKeyboardTests(unittest.IsolatedAsyncioTestCase):
         from handlers import search
         from services.result import ServiceResult
         from keyboards import texts as T
+
         message = AsyncMock()
         message.answer = AsyncMock()
         with patch.object(search, "MatchingService") as matching:
-            matching.return_value.enqueue = AsyncMock(return_value=ServiceResult(False, "ALREADY_CHATTING"))
+            matching.return_value.enqueue = AsyncMock(
+                return_value=ServiceResult(False, "ALREADY_CHATTING")
+            )
             await search._begin_search(message, 1)
         markup = message.answer.await_args.kwargs["reply_markup"]
         labels = [b.text for row in markup.keyboard for b in row]
@@ -126,7 +142,11 @@ class IcebreakerTests(DatabaseCase):
     async def test_match_notice_carries_the_prompt_for_both_users(self):
         chat = await self.repo.match(1, 2, self.redis)
         async with self.factory() as s:
-            rows = (await s.scalars(select(Notification).where(Notification.type == "match"))).all()
+            rows = (
+                await s.scalars(
+                    select(Notification).where(Notification.type == "match")
+                )
+            ).all()
         self.assertEqual(len(rows), 2)
         starter = icebreaker(chat.session_id)
         for row in rows:

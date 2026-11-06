@@ -1,4 +1,5 @@
 """Admin overview additions: 7-day growth and the optional star-to-USD estimate."""
+
 import sys
 import unittest
 from datetime import timedelta
@@ -26,8 +27,13 @@ class GrowthTests(DatabaseCase):
 
     async def add_user(self, telegram_id, days_ago):
         async with self.factory.begin() as s:
-            s.add(User(telegram_id=telegram_id, anon_id=f"#g{telegram_id}",
-                       created_at=utcnow()-timedelta(days=days_ago)))
+            s.add(
+                User(
+                    telegram_id=telegram_id,
+                    anon_id=f"#g{telegram_id}",
+                    created_at=utcnow() - timedelta(days=days_ago),
+                )
+            )
 
     async def test_growth_compares_last_two_seven_day_windows(self):
         for uid, days_ago in ((1, 1), (2, 3), (3, 5)):  # last 7 days: 3 users
@@ -60,8 +66,15 @@ class StarsUsdTests(DatabaseCase):
             p.start()
             self.addCleanup(p.stop)
         async with self.factory.begin() as s:
-            s.add(Payment(user_id=1, product="premium_1m", stars_amount=100,
-                          status="paid", paid_at=utcnow()))
+            s.add(
+                Payment(
+                    user_id=1,
+                    product="premium_1m",
+                    stars_amount=100,
+                    status="paid",
+                    paid_at=utcnow(),
+                )
+            )
 
     async def test_no_dollar_estimate_without_a_configured_rate(self):
         s = await StatsService().overview()

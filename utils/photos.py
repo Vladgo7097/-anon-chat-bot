@@ -9,6 +9,7 @@
 и чужая фотография становится своей. Результат кэшируется по паре
 (бот-слушатель, исходный file_id), чтобы повторный показ шёл напрямую.
 """
+
 import logging
 from collections import OrderedDict
 
@@ -86,12 +87,20 @@ async def _reupload(target, file_id, chat_id=None):
             data = await owner.download(file)
         except Exception:
             # Нет доступа к файлу у этого бота -- пробуем следующего.
-            logger.debug("event=photo_move_miss owner_id=%s target_id=%s", owner.id, target.id)
+            logger.debug(
+                "event=photo_move_miss owner_id=%s target_id=%s", owner.id, target.id
+            )
             continue
         payload = data.read() if hasattr(data, "read") else bytes(data)
         _remember(target.id, file_id, payload)
-        logger.info("event=photo_moved owner_id=%s target_id=%s chat_id=%s",
-                    owner.id, target.id, chat_id)
+        logger.info(
+            "event=photo_moved owner_id=%s target_id=%s chat_id=%s",
+            owner.id,
+            target.id,
+            chat_id,
+        )
         return BufferedInputFile(payload, filename="photo.jpg")
-    logger.warning("event=photo_move_failed target_id=%s chat_id=%s", target.id, chat_id)
+    logger.warning(
+        "event=photo_move_failed target_id=%s chat_id=%s", target.id, chat_id
+    )
     return None

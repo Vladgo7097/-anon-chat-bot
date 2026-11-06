@@ -18,4 +18,6 @@ def kyiv_day_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
     оставаться одним днём, каким его видит Киев."""
     local = (now or utcnow()).astimezone(KYIV)
     start = local.replace(hour=0, minute=0, second=0, microsecond=0)
-    return start.astimezone(timezone.utc), (start + timedelta(days=1)).astimezone(timezone.utc)
+    return start.astimezone(timezone.utc), (start + timedelta(days=1)).astimezone(
+        timezone.utc
+    )

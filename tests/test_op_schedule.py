@@ -20,19 +20,23 @@ from utils.time import utcnow
 class BoundaryEntryTests(OpCase):
     def test_entries_catch_start_and_end(self):
         now = utcnow()
-        settings = SimpleNamespace(
-            starts_at=now - timedelta(minutes=2), ends_at=None
-        )
+        settings = SimpleNamespace(starts_at=now - timedelta(minutes=2), ends_at=None)
         policy = SimpleNamespace(
             id=1, feature_key="*", starts_at=None, ends_at=now - timedelta(minutes=1)
         )
         target = SimpleNamespace(
-            id=2, title="Канал", chat_id=-100,
-            starts_at=now - timedelta(minutes=5), ends_at=None,
+            id=2,
+            title="Канал",
+            chat_id=-100,
+            starts_at=now - timedelta(minutes=5),
+            ends_at=None,
         )
         old_target = SimpleNamespace(
-            id=3, title="Старый", chat_id=-200,
-            starts_at=now - timedelta(minutes=30), ends_at=None,
+            id=3,
+            title="Старый",
+            chat_id=-200,
+            starts_at=now - timedelta(minutes=30),
+            ends_at=None,
         )
         entries = op_schedule._entries(settings, [policy], [target, old_target], now)
         found = {(kind, label) for kind, _, _, label in entries}
@@ -89,9 +93,7 @@ class ScheduleCheckTests(OpCase):
     async def test_policy_and_target_windows(self):
         now = utcnow()
         await self.enable()
-        target_id = await self.add_target(
-            starts_at=now - timedelta(minutes=2)
-        )
+        target_id = await self.add_target(starts_at=now - timedelta(minutes=2))
         await self.add_policy(
             starts_at=now - timedelta(minutes=2), groups=[("and", [target_id])]
         )

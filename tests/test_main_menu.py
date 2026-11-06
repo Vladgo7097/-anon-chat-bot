@@ -1,3 +1,5 @@
+from tests.rich_helpers import body_lines
+
 """The main menu: eight buttons, each one claimed by a handler, each screen
 speaking the language its client asked in."""
 
@@ -267,7 +269,10 @@ class MenuDispatchTests(unittest.IsolatedAsyncioTestCase):
                     AsyncMock(),
                     row=SimpleNamespace(language=lang, anon_id="#X"),
                 )
-                self.assertEqual(telegram.await_args.args[1].text, help_text(lang))
+                self.assertEqual(
+                    body_lines(telegram.await_args.args[1], help_text(lang)),
+                    (set(), set()),
+                )
 
     async def test_help_follows_the_client_before_registration(self):
         # The help/rules path returns before the onboarding gate, so a reader who
@@ -280,7 +285,10 @@ class MenuDispatchTests(unittest.IsolatedAsyncioTestCase):
                 telegram = await self.press(
                     T.HELP, "ru", AsyncMock(), row=None, lang_code=lang_code
                 )
-                self.assertEqual(telegram.await_args.args[1].text, help_text(lang_code))
+                self.assertEqual(
+                    body_lines(telegram.await_args.args[1], help_text(lang_code)),
+                    (set(), set()),
+                )
 
     async def test_rules_follow_the_stored_language(self):
         from handlers.start import RULES_TEXT

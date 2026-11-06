@@ -13,21 +13,26 @@ copy_message копирует внутри одного бота: из чата,
 Пара на одном боте идёт прежним copy_message -- без скачивания, без потери
 оригинальных метаданных, без лишней нагрузки на сеть.
 """
+
 import logging
 
-from aiogram.types import (BufferedInputFile, InputMediaAnimation,
-                           InputMediaPhoto, InputMediaVideo)
+from aiogram.types import (
+    BufferedInputFile,
+    InputMediaAnimation,
+    InputMediaPhoto,
+    InputMediaVideo,
+)
 
 logger = logging.getLogger(__name__)
 
 # kind -> (поле с файлом в Message, метод отправки, класс для альбома, есть ли caption)
 _MEDIA = {
-    "photo":      ("photo", "send_photo", InputMediaPhoto, True),
-    "voice":      ("voice", "send_voice", None, True),
-    "sticker":    ("sticker", "send_sticker", None, False),
-    "video":      ("video", "send_video", InputMediaVideo, True),
+    "photo": ("photo", "send_photo", InputMediaPhoto, True),
+    "voice": ("voice", "send_voice", None, True),
+    "sticker": ("sticker", "send_sticker", None, False),
+    "video": ("video", "send_video", InputMediaVideo, True),
     "video_note": ("video_note", "send_video_note", None, False),
-    "animation":  ("animation", "send_animation", InputMediaAnimation, True),
+    "animation": ("animation", "send_animation", InputMediaAnimation, True),
 }
 
 
@@ -40,10 +45,12 @@ async def copy(target_bot, chat_id, *, source, **kwargs):
     не дойдя до получателя и не оставив ответа отправителю.
     """
     if target_bot is source.bot:
-        return await target_bot.copy_message(chat_id=chat_id,
-                                             from_chat_id=source.chat.id,
-                                             message_id=source.message_id,
-                                             **kwargs)
+        return await target_bot.copy_message(
+            chat_id=chat_id,
+            from_chat_id=source.chat.id,
+            message_id=source.message_id,
+            **kwargs,
+        )
     return await repost(target_bot, chat_id, source, **kwargs)
 
 
@@ -53,8 +60,10 @@ async def copy_many(target_bot, chat_id, *, sources):
         return []
     if target_bot is sources[0].bot:
         return await target_bot.copy_messages(
-            chat_id=chat_id, from_chat_id=sources[0].chat.id,
-            message_ids=[item.message_id for item in sources])
+            chat_id=chat_id,
+            from_chat_id=sources[0].chat.id,
+            message_ids=[item.message_id for item in sources],
+        )
     return await repost_many(target_bot, chat_id, sources)
 
 
@@ -64,9 +73,9 @@ async def repost(target_bot, chat_id, message, **kwargs):
     if kind == "text":
         # parse_mode=None обязателен: отправляется чужой текст, а у бота по
         # умолчанию включён HTML, который поломается на незакрытой скобке.
-        return await target_bot.send_message(chat_id, message.text,
-                                             entities=message.entities,
-                                             parse_mode=None, **kwargs)
+        return await target_bot.send_message(
+            chat_id, message.text, entities=message.entities, parse_mode=None, **kwargs
+        )
     media = _MEDIA.get(kind)
     if media is None:
         logger.warning("event=repost_unsupported kind=%s chat_id=%s", kind, chat_id)
@@ -75,8 +84,9 @@ async def repost(target_bot, chat_id, message, **kwargs):
     if payload is None:
         return None
     send = getattr(target_bot, media[1])
-    return await send(chat_id, payload, parse_mode=None,
-                      **_caption(message, media[3]), **kwargs)
+    return await send(
+        chat_id, payload, parse_mode=None, **_caption(message, media[3]), **kwargs
+    )
 
 
 async def repost_many(target_bot, chat_id, messages):
@@ -97,8 +107,13 @@ async def repost_many(target_bot, chat_id, messages):
         payload = await _download(message, media)
         if payload is None:
             return None
-        parts.append(media[2](media=payload, caption=message.caption,
-                              caption_entities=message.caption_entities))
+        parts.append(
+            media[2](
+                media=payload,
+                caption=message.caption,
+                caption_entities=message.caption_entities,
+            )
+        )
     if parts:
         kept.extend(await target_bot.send_media_group(chat_id, media=parts))
     return kept

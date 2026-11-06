@@ -4,6 +4,7 @@ Only the "ref_" program's own code was ever kept, so there was no way to tell
 apart a low-intent visitor from a bot catalog and a genuinely broken first
 screen -- every other deep-link source vanished the instant it arrived.
 """
+
 import unittest
 from sqlalchemy import select, func
 
@@ -45,7 +46,7 @@ class StartSourceTests(DatabaseCase):
         self.assertEqual([r.dedupe_key for r in rows], ["start_source:9004:first_link"])
 
     async def test_stray_characters_are_stripped_and_the_value_is_capped(self):
-        await OnboardingService().start(9005, "u", "N", payload="a!b/c "+"x"*100)
+        await OnboardingService().start(9005, "u", "N", payload="a!b/c " + "x" * 100)
         rows = await self.sources(9005)
         self.assertEqual(len(rows), 1)
         value = rows[0].dedupe_key.split(":", 2)[2]
@@ -53,9 +54,12 @@ class StartSourceTests(DatabaseCase):
 
     async def test_the_ref_program_still_works_alongside_the_new_logging(self):
         referrer, _ = await self._referrer()
-        await OnboardingService().start(9006, "u", "N", payload=f"ref_{referrer.referral_code}")
+        await OnboardingService().start(
+            9006, "u", "N", payload=f"ref_{referrer.referral_code}"
+        )
         async with self.factory() as s:
             from models.user import User
+
             user = await s.scalar(select(User).where(User.telegram_id == 9006))
             self.assertEqual(user.referrer_id, referrer.telegram_id)
         rows = await self.sources(9006)
@@ -67,6 +71,7 @@ class StartSourceTests(DatabaseCase):
         # /start handler, so by the time start() runs the row already exists.
         # The source must still be logged exactly once.
         from repositories.users import UserRepository
+
         await UserRepository().get_or_create(9007, "u", "N")
         await OnboardingService().start(9007, "u", "N", payload="catalog123")
         rows = await self.sources(9007)
@@ -77,6 +82,7 @@ class StartSourceTests(DatabaseCase):
 
     async def _referrer(self):
         from repositories.users import UserRepository
+
         return await UserRepository().get_or_create(9100, "referrer", "R")
 
 

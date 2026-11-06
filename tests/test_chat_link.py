@@ -6,6 +6,7 @@ as plain text into the void -- the button "did nothing". The link now lives
 in an inline answer, so this test feeds a real press through the dispatcher
 and inspects what would go to Telegram.
 """
+
 import asyncio
 import sys
 import unittest
@@ -42,17 +43,30 @@ class ChatLinkTests(unittest.TestCase):
         try:
             with patch.object(bot.session, "make_request", new=telegram):
                 for index, label in enumerate(labels, start=100):
-                    bot._me = User(id=123456, is_bot=True, first_name="Test",
-                                   username="offline_test_bot")
-                    await dp.feed_update(bot, Update(update_id=index, message=Message(
-                        message_id=index,
-                        date=datetime.now(timezone.utc),
-                        chat=Chat(id=7, type="private"),
-                        from_user=User(id=7, is_bot=False, first_name="T"),
-                        text=label,
-                    )))
-                self.assertEqual(telegram.await_count, len(labels),
-                                 "a chat-button press must be answered")
+                    bot._me = User(
+                        id=123456,
+                        is_bot=True,
+                        first_name="Test",
+                        username="offline_test_bot",
+                    )
+                    await dp.feed_update(
+                        bot,
+                        Update(
+                            update_id=index,
+                            message=Message(
+                                message_id=index,
+                                date=datetime.now(timezone.utc),
+                                chat=Chat(id=7, type="private"),
+                                from_user=User(id=7, is_bot=False, first_name="T"),
+                                text=label,
+                            ),
+                        ),
+                    )
+                self.assertEqual(
+                    telegram.await_count,
+                    len(labels),
+                    "a chat-button press must be answered",
+                )
                 for call in telegram.await_args_list:
                     request = call.args[1]
                     button = request.reply_markup.inline_keyboard[0][0]
@@ -71,11 +85,14 @@ class ChatLinkTests(unittest.TestCase):
         class FakeSession:
             async def __aenter__(self):
                 return self
+
             async def __aexit__(self, *args):
                 return False
+
             async def scalar(self, query):
-                return SimpleNamespace(referral_code="ABC123", referrals_count=2,
-                                       referrals_activated=1)
+                return SimpleNamespace(
+                    referral_code="ABC123", referrals_count=2, referrals_activated=1
+                )
 
         routers = load_routers()
         for r in routers:
@@ -91,30 +108,46 @@ class ChatLinkTests(unittest.TestCase):
             # real User so the handler can read bot.username.
             method = args[1] if len(args) > 1 else args[0]
             if type(method).__name__ == "GetMe":
-                return User(id=1, is_bot=True, first_name="T",
-                            username="offline_test_bot")
+                return User(
+                    id=1, is_bot=True, first_name="T", username="offline_test_bot"
+                )
             return True
 
         telegram.side_effect = fake_request
         try:
-            with (patch.object(bot.session, "make_request", new=telegram),
-                  patch("models.base.async_session", lambda: FakeSession())):
+            with (
+                patch.object(bot.session, "make_request", new=telegram),
+                patch("models.base.async_session", lambda: FakeSession()),
+            ):
                 for index, label in enumerate(labels, start=200):
-                    await dp.feed_update(bot, Update(update_id=index, message=Message(
-                        message_id=index,
-                        date=datetime.now(timezone.utc),
-                        chat=Chat(id=7, type="private"),
-                        from_user=User(id=7, is_bot=False, first_name="T"),
-                        text=label,
-                    )))
-                sends = [c for c in telegram.await_args_list
-                         if type(c.args[1]).__name__ == "SendMessage"]
-                self.assertEqual(len(sends), len(labels),
-                                 "an invite-button press must be answered")
+                    await dp.feed_update(
+                        bot,
+                        Update(
+                            update_id=index,
+                            message=Message(
+                                message_id=index,
+                                date=datetime.now(timezone.utc),
+                                chat=Chat(id=7, type="private"),
+                                from_user=User(id=7, is_bot=False, first_name="T"),
+                                text=label,
+                            ),
+                        ),
+                    )
+                sends = [
+                    c
+                    for c in telegram.await_args_list
+                    if type(c.args[1]).__name__ == "SendMessage"
+                ]
+                self.assertEqual(
+                    len(sends), len(labels), "an invite-button press must be answered"
+                )
                 for call in sends:
                     request = call.args[1]
-                    self.assertIn("ref_ABC123", request.text,
-                                  "the card must carry the referral link")
+                    self.assertIn(
+                        "ref_ABC123",
+                        request.text,
+                        "the card must carry the referral link",
+                    )
                     share, rewards = request.reply_markup.inline_keyboard[0]
                     self.assertIn("offline_test_bot", share.url)
                     self.assertIn("ref_ABC123", share.url)

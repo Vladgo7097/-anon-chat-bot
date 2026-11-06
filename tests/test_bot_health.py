@@ -7,6 +7,7 @@
 
 Всё офлайн: ни одной реальной сети, ни одной настоящей БД.
 """
+
 import asyncio
 import logging
 import pathlib
@@ -21,24 +22,36 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 
-from aiogram.exceptions import (TelegramBadRequest, TelegramConflictError,
-                                TelegramUnauthorizedError)
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramConflictError,
+    TelegramUnauthorizedError,
+)
 from aiogram.methods import GetMe
 
 from utils import bot_health
 
 
-CONFLICT_ERROR = ("Failed to fetch updates - TelegramConflictError: "
-                  "Conflict: terminated by other getUpdates request; make "
-                  "sure that only one bot instance is running")
-CONFLICT_RETRY = ("Sleep for 1.0 seconds and try again... (tryings = 16, "
-                  "bot id = 7828301604)")
+CONFLICT_ERROR = (
+    "Failed to fetch updates - TelegramConflictError: "
+    "Conflict: terminated by other getUpdates request; make "
+    "sure that only one bot instance is running"
+)
+CONFLICT_RETRY = (
+    "Sleep for 1.0 seconds and try again... (tryings = 16, bot id = 7828301604)"
+)
 
 
 def record_of(message, level=logging.ERROR):
-    return logging.LogRecord(name="aiogram.dispatcher", level=level,
-                             pathname=__file__, lineno=1, msg=message,
-                             args=(), exc_info=None)
+    return logging.LogRecord(
+        name="aiogram.dispatcher",
+        level=level,
+        pathname=__file__,
+        lineno=1,
+        msg=message,
+        args=(),
+        exc_info=None,
+    )
 
 
 class BotHealthCase(unittest.TestCase):
@@ -82,8 +95,7 @@ class BotHealthCase(unittest.TestCase):
         for _ in range(bot_health.THRESHOLD):
             bot_health.record(8873771495, "unauthorized")
         kinds = {bot_id: kind for bot_id, kind, _ in bot_health.drain()}
-        self.assertEqual(kinds, {7828301604: "conflict",
-                                 8873771495: "unauthorized"})
+        self.assertEqual(kinds, {7828301604: "conflict", 8873771495: "unauthorized"})
 
     # -- троттлинг --------------------------------------------------------
 
@@ -150,7 +162,8 @@ class BotHealthCase(unittest.TestCase):
         broken = AsyncMock()
         broken.id = 7828301604
         broken.get_me.side_effect = TelegramUnauthorizedError(
-            method=GetMe(), message="Unauthorized")
+            method=GetMe(), message="Unauthorized"
+        )
         healthy = AsyncMock()
         healthy.id = 8873771495
         with patch.object(bot_health.bots, "all", return_value=(broken, healthy)):
@@ -162,8 +175,8 @@ class BotHealthCase(unittest.TestCase):
         broken = AsyncMock()
         broken.id = 7828301604
         broken.get_me.side_effect = TelegramUnauthorizedError(
-            method=GetMe(),
-            message="Unauthorized")
+            method=GetMe(), message="Unauthorized"
+        )
         with patch.object(bot_health.bots, "all", return_value=(broken,)):
             asyncio.run(bot_health.probe(force=True))
         self.assertIn((7828301604, "unauthorized"), bot_health._hits)
@@ -178,8 +191,8 @@ class BotHealthCase(unittest.TestCase):
         broken = AsyncMock()
         broken.id = 7828301604
         broken.get_me.side_effect = TelegramUnauthorizedError(
-            method=GetMe(),
-            message="Unauthorized")
+            method=GetMe(), message="Unauthorized"
+        )
         with patch.object(bot_health.bots, "all", return_value=(broken,)) as all_:
             asyncio.run(bot_health.probe(force=True))
             asyncio.run(bot_health.probe())
@@ -190,13 +203,22 @@ class BotHealthCase(unittest.TestCase):
     def test_classify_names_only_the_failures_a_human_fixes(self):
         method = GetMe()
         self.assertEqual(
-            bot_health.classify(TelegramConflictError(
-                method=method, message="Conflict")), "conflict")
+            bot_health.classify(
+                TelegramConflictError(method=method, message="Conflict")
+            ),
+            "conflict",
+        )
         self.assertEqual(
-            bot_health.classify(TelegramUnauthorizedError(
-                method=method, message="Unauthorized")), "unauthorized")
-        self.assertIsNone(bot_health.classify(TelegramBadRequest(
-            method=method, message="Bad Request: chat not found")))
+            bot_health.classify(
+                TelegramUnauthorizedError(method=method, message="Unauthorized")
+            ),
+            "unauthorized",
+        )
+        self.assertIsNone(
+            bot_health.classify(
+                TelegramBadRequest(method=method, message="Bad Request: chat not found")
+            )
+        )
 
     # -- текст уведомления ------------------------------------------------
 
@@ -205,8 +227,9 @@ class BotHealthCase(unittest.TestCase):
         self.assertIn("7828301604", text)
         self.assertIn("опрашивает кто-то ещё", text)
         self.assertIn("12", text)
-        self.assertIn("@BotFather", bot_health.notice_text(
-            7828301604, "unauthorized", 1))
+        self.assertIn(
+            "@BotFather", bot_health.notice_text(7828301604, "unauthorized", 1)
+        )
 
 
 class SimpleDispatcher:
@@ -247,8 +270,10 @@ class AliveMarkerCase(unittest.TestCase):
     def test_an_untouched_marker_becomes_stale(self):
         bot_health.mark_alive(7828301604)
         later = time.time() + bot_health.ALIVE_STALE + 1
-        self.assertEqual(bot_health.stale_alive(now=later), [("7828301604",
-                                                             bot_health.ALIVE_STALE + 1)])
+        self.assertEqual(
+            bot_health.stale_alive(now=later),
+            [("7828301604", bot_health.ALIVE_STALE + 1)],
+        )
 
     def test_no_markers_at_all_is_not_a_failure(self):
         # Контейнер только поднялся, probe ещё не успел -- это не беда.
@@ -269,7 +294,8 @@ class AliveMarkerCase(unittest.TestCase):
         bot = AsyncMock()
         bot.id = 7828301604
         bot.get_me.side_effect = TelegramUnauthorizedError(
-            method=GetMe(), message="Unauthorized")
+            method=GetMe(), message="Unauthorized"
+        )
         with mock.patch.object(bot_health.bots, "all", return_value=(bot,)):
             asyncio.run(bot_health.probe(force=True))
         self.assertFalse(self.marker(7828301604).exists())
@@ -300,19 +326,25 @@ class AliveMarkerCase(unittest.TestCase):
 
     def test_healthcheck_fails_on_a_silent_polling_bot(self):
         from utils import healthcheck
+
         self.touch_heartbeat()
         # Метка записана напрямую и старше порога: probe давно не проходил,
         # воркер при этом жив и heartbeat обновляет.
-        self.marker(7828301604).write_text(str(time.time() - bot_health.ALIVE_STALE - 1))
-        with mock.patch.object(healthcheck, "engine"), \
-             mock.patch.object(healthcheck, "get_redis"), \
-             mock.patch.object(healthcheck, "close_redis"):
+        self.marker(7828301604).write_text(
+            str(time.time() - bot_health.ALIVE_STALE - 1)
+        )
+        with (
+            mock.patch.object(healthcheck, "engine"),
+            mock.patch.object(healthcheck, "get_redis"),
+            mock.patch.object(healthcheck, "close_redis"),
+        ):
             with self.assertRaises(RuntimeError) as caught:
                 asyncio.run(healthcheck.check())
         self.assertIn("Polling silent", str(caught.exception))
 
     def test_healthcheck_passes_on_fresh_markers(self):
         from utils import healthcheck
+
         self.touch_heartbeat()
         bot_health.mark_alive(7828301604)
         bot_health.mark_alive(8873771495)
@@ -338,9 +370,13 @@ class AliveMarkerCase(unittest.TestCase):
             async def ping(self):
                 return True
 
-        with mock.patch.object(healthcheck, "engine", _Engine()), \
-             mock.patch.object(healthcheck, "get_redis", AsyncMock(return_value=_Redis())), \
-             mock.patch.object(healthcheck, "close_redis", AsyncMock()):
+        with (
+            mock.patch.object(healthcheck, "engine", _Engine()),
+            mock.patch.object(
+                healthcheck, "get_redis", AsyncMock(return_value=_Redis())
+            ),
+            mock.patch.object(healthcheck, "close_redis", AsyncMock()),
+        ):
             asyncio.run(healthcheck.check())
 
 

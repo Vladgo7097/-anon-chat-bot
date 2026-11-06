@@ -8,6 +8,7 @@ from services.chat_manager import get_redis
 
 class UpdateDeduplication(BaseMiddleware):
     """Deduplicate completed updates across restarts of the single polling bot."""
+
     def __init__(self):
         self.locks = WeakValueDictionary()
 

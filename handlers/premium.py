@@ -449,34 +449,44 @@ async def on_subscription_update(update: Update):
     sub: BotSubscriptionUpdated = update.subscription
     async with async_session() as s:
         p = await s.scalar(
-            select(Payment).where(Payment.payload == sub.invoice_payload).with_for_update()
+            select(Payment)
+            .where(Payment.payload == sub.invoice_payload)
+            .with_for_update()
         )
         if not p:
             logger.warning(
                 "subscription_update_unknown_payload payload=%s state=%s",
-                sub.invoice_payload, sub.state,
+                sub.invoice_payload,
+                sub.state,
             )
             return
         if p.user_id != sub.user.id:
             logger.warning(
                 "subscription_user_mismatch payment_user=%s update_user=%s",
-                p.user_id, sub.user.id,
+                p.user_id,
+                sub.user.id,
             )
             return
         subscription = await s.scalar(
-            select(PremiumSubscription).where(
-                PremiumSubscription.source_payment_id == p.id
-            ).with_for_update()
+            select(PremiumSubscription)
+            .where(PremiumSubscription.source_payment_id == p.id)
+            .with_for_update()
         )
         if sub.state == "active":
             if subscription:
                 subscription.auto_renew = True
-            logger.info("subscription_reactivated user_id=%s payment_id=%s", p.user_id, p.id)
+            logger.info(
+                "subscription_reactivated user_id=%s payment_id=%s", p.user_id, p.id
+            )
         elif sub.state == "canceled":
             if subscription:
                 subscription.auto_renew = False
-            logger.info("subscription_canceled user_id=%s payment_id=%s", p.user_id, p.id)
+            logger.info(
+                "subscription_canceled user_id=%s payment_id=%s", p.user_id, p.id
+            )
         elif sub.state == "failed":
             if subscription:
                 subscription.auto_renew = False
-            logger.warning("subscription_payment_failed user_id=%s payment_id=%s", p.user_id, p.id)
+            logger.warning(
+                "subscription_payment_failed user_id=%s payment_id=%s", p.user_id, p.id
+            )

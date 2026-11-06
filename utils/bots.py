@@ -9,6 +9,7 @@ A user's own bot lives on User.bot_id, written by AccessMiddleware whenever
 it differs. register() runs before the first send, so primary() is never
 empty by the time anything can reach it.
 """
+
 import logging
 
 from aiogram import Bot
@@ -115,6 +116,7 @@ async def bot_for(user_id, fallback: Bot | None = None) -> Bot:
     """
     try:
         from repositories.users import UserRepository
+
         row = await UserRepository().get(user_id)
         bot = resolve(getattr(row, "bot_id", None))
         if bot is not None:

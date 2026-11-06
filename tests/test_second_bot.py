@@ -6,6 +6,7 @@ three things that are easy to get wrong when the two bots share one process:
 which bot a message leaves through, what language a row that has not picked
 one yet renders in, and whether opening the second bot forks the profile.
 """
+
 import asyncio
 import sys
 import unittest
@@ -53,7 +54,9 @@ class RegistryMixin:
         self.addCleanup(bots._bot_by_id.clear)
         self.addCleanup(setattr, bots, "_primary", None)
         self.first = SimpleNamespace(id=111, default_lang="ru", detect_client_lang=True)
-        self.second = SimpleNamespace(id=222, default_lang="uk", detect_client_lang=False)
+        self.second = SimpleNamespace(
+            id=222, default_lang="uk", detect_client_lang=False
+        )
         bots.register(self.first, primary=True)
         bots.register(self.second)
 
@@ -97,7 +100,9 @@ class BotRoutingTests(RegistryMixin, DatabaseCase):
         self.assertIs(await bots.bot_for(1, self.first), self.second)
 
     async def test_get_or_create_records_the_delivering_bot(self):
-        created_row, is_new = await UserRepository().get_or_create(501, "u", "N", bot_id=222)
+        created_row, is_new = await UserRepository().get_or_create(
+            501, "u", "N", bot_id=222
+        )
         self.assertTrue(is_new)
         self.assertEqual(created_row.bot_id, 222)
 
@@ -115,7 +120,9 @@ class BotRoutingTests(RegistryMixin, DatabaseCase):
         """Opening the second bot must not fork the profile -- one database,
         one anonymous id, one pool that both bots draw from."""
         first_row, _ = await UserRepository().get_or_create(503, "u", "N", bot_id=111)
-        second_row, is_new = await UserRepository().get_or_create(503, "u", "N", bot_id=222)
+        second_row, is_new = await UserRepository().get_or_create(
+            503, "u", "N", bot_id=222
+        )
         self.assertFalse(is_new)
         self.assertEqual(second_row.id, first_row.id)
         self.assertEqual(second_row.anon_id, first_row.anon_id)
@@ -124,13 +131,25 @@ class BotRoutingTests(RegistryMixin, DatabaseCase):
 class WorkerRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_notice_leaves_through_the_recipients_own_bot(self):
         from workers import maintenance
-        notification = SimpleNamespace(id=1, user_id=123, type="match", text="hi",
-                                       callback_data=None, attempt_count=1, broadcast_id=None)
-        service = SimpleNamespace(schedule=AsyncMock(), expand_broadcast=AsyncMock(),
-                                  progress_updates=AsyncMock(return_value=[]),
-                                  drop_progress=AsyncMock(),
-                                  next=AsyncMock(side_effect=[notification, asyncio.CancelledError()]),
-                                  finish=AsyncMock(), broadcast_poll=AsyncMock(return_value=None))
+
+        notification = SimpleNamespace(
+            id=1,
+            user_id=123,
+            type="match",
+            text="hi",
+            callback_data=None,
+            attempt_count=1,
+            broadcast_id=None,
+        )
+        service = SimpleNamespace(
+            schedule=AsyncMock(),
+            expand_broadcast=AsyncMock(),
+            progress_updates=AsyncMock(return_value=[]),
+            drop_progress=AsyncMock(),
+            next=AsyncMock(side_effect=[notification, asyncio.CancelledError()]),
+            finish=AsyncMock(),
+            broadcast_poll=AsyncMock(return_value=None),
+        )
         fallback = SimpleNamespace(send_message=AsyncMock(), default_lang="ru")
         theirs = SimpleNamespace(send_message=AsyncMock(), default_lang="uk")
         with (
@@ -138,7 +157,9 @@ class WorkerRoutingTests(unittest.IsolatedAsyncioTestCase):
             patch.object(maintenance.Path, "write_text"),
             patch("workers.maintenance.ChatService.reconcile", AsyncMock()),
             patch("workers.maintenance.asyncio.sleep", AsyncMock()),
-            patch.object(maintenance.funnel_alert, "check", AsyncMock(return_value=None)),
+            patch.object(
+                maintenance.funnel_alert, "check", AsyncMock(return_value=None)
+            ),
             patch.object(maintenance.bots, "bot_for", AsyncMock(return_value=theirs)),
             patch("utils.db.user_lang", AsyncMock(return_value="uk")) as language,
         ):
@@ -161,23 +182,37 @@ class CrossBotRelayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_message_leaves_through_the_partners_own_bot(self):
         from handlers import chat as chat_handlers
+
         mine, theirs = SimpleNamespace(id=111), SimpleNamespace(id=222)
         message = SimpleNamespace(
-            text="привет", caption=None, content_type="text",
-            from_user=SimpleNamespace(id=1), chat=SimpleNamespace(id=1),
-            message_id=10, bot=mine, answer=AsyncMock(), reply_to_message=None)
+            text="привет",
+            caption=None,
+            content_type="text",
+            from_user=SimpleNamespace(id=1),
+            chat=SimpleNamespace(id=1),
+            message_id=10,
+            bot=mine,
+            answer=AsyncMock(),
+            reply_to_message=None,
+        )
         active = SimpleNamespace(user1_id=1, user2_id=2, session_id="s1")
         with (
             patch("handlers.chat.ChatService.active", AsyncMock(return_value=active)),
-            patch("services.relay.RelayService.contact_warning_required",
-                  AsyncMock(return_value=False)),
+            patch(
+                "services.relay.RelayService.contact_warning_required",
+                AsyncMock(return_value=False),
+            ),
             patch("services.relay.RelayService.remember", AsyncMock()),
             patch("services.relay.RelayService.delivered", AsyncMock()),
             patch("services.relay.RelayService.remember_context", AsyncMock()),
-            patch.object(chat_handlers.bots, "bot_for",
-                         AsyncMock(return_value=theirs)) as route,
-            patch.object(chat_handlers.repost, "copy",
-                         AsyncMock(return_value=SimpleNamespace(message_id=77))) as copy,
+            patch.object(
+                chat_handlers.bots, "bot_for", AsyncMock(return_value=theirs)
+            ) as route,
+            patch.object(
+                chat_handlers.repost,
+                "copy",
+                AsyncMock(return_value=SimpleNamespace(message_id=77)),
+            ) as copy,
         ):
             await chat_handlers.forward_message(message)
         route.assert_awaited_once_with(2, mine)
@@ -190,31 +225,49 @@ class CrossBotRelayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_edits_and_deletes_also_go_through_the_delivering_bot(self):
         from handlers import chat as chat_handlers
+
         mine, theirs = SimpleNamespace(id=111), SimpleNamespace(id=222)
         active = SimpleNamespace(user1_id=1, user2_id=2, session_id="s1")
         edited = SimpleNamespace(
-            text="правка", caption=None, content_type="text",
-            from_user=SimpleNamespace(id=1), message_id=10, bot=mine,
-            answer=AsyncMock())
+            text="правка",
+            caption=None,
+            content_type="text",
+            from_user=SimpleNamespace(id=1),
+            message_id=10,
+            bot=mine,
+            answer=AsyncMock(),
+        )
         reply = SimpleNamespace(message_id=10)
         deleting = SimpleNamespace(
-            text="/delete", caption=None, content_type="text",
-            from_user=SimpleNamespace(id=1), chat=SimpleNamespace(id=1),
-            message_id=11, bot=mine, answer=AsyncMock(), reply_to_message=reply)
+            text="/delete",
+            caption=None,
+            content_type="text",
+            from_user=SimpleNamespace(id=1),
+            chat=SimpleNamespace(id=1),
+            message_id=11,
+            bot=mine,
+            answer=AsyncMock(),
+            reply_to_message=reply,
+        )
         with (
             patch("handlers.chat.ChatService.active", AsyncMock(return_value=active)),
-            patch("services.relay.RelayService.contact_warning_required",
-                  AsyncMock(return_value=False)),
-            patch("services.relay.RelayService.reply_target",
-                  AsyncMock(return_value=55)),
+            patch(
+                "services.relay.RelayService.contact_warning_required",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "services.relay.RelayService.reply_target", AsyncMock(return_value=55)
+            ),
             patch("services.relay.RelayService.remember_context", AsyncMock()),
-            patch.object(chat_handlers.bots, "bot_for",
-                         AsyncMock(return_value=theirs)) as route,
+            patch.object(
+                chat_handlers.bots, "bot_for", AsyncMock(return_value=theirs)
+            ) as route,
         ):
             theirs.edit_message_text = AsyncMock()
             await chat_handlers.sync_edited_message(edited)
             theirs.edit_message_text.assert_awaited_once_with(
-                "правка", chat_id=2, message_id=55, parse_mode=None)
+                "правка", chat_id=2, message_id=55, parse_mode=None
+            )
             route.assert_awaited_once_with(2, mine)
 
             route.reset_mock()
@@ -227,12 +280,16 @@ class CrossBotRelayTests(unittest.IsolatedAsyncioTestCase):
 # The real token lives in .env and never in the repo: dispatch below only needs
 # a second Bot whose id differs from the primary's, and nothing here talks to
 # Telegram. Hardcoding a secret is how the first one ended up rotting in git.
-SECOND = Bot(token="7828301604:OFFLINE_TEST_TOKEN",
-             default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+SECOND = Bot(
+    token="7828301604:OFFLINE_TEST_TOKEN",
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+)
 SECOND.default_lang = "uk"
 SECOND.detect_client_lang = False
-PRIMARY = Bot(token="111:TEST_TOKEN_FOR_OFFLINE_DISPATCH",
-              default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+PRIMARY = Bot(
+    token="111:TEST_TOKEN_FOR_OFFLINE_DISPATCH",
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+)
 PRIMARY.default_lang = "ru"
 PRIMARY.detect_client_lang = True
 
@@ -245,17 +302,31 @@ class SecondBotOnboardingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         import tempfile
         from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
         self.uid = _next_uid[0]
         _next_uid[0] += 1
         self.temp = tempfile.TemporaryDirectory()
         self.engine = create_async_engine(
-            "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "second.db"))
+            "sqlite+aiosqlite:///" + str(Path(self.temp.name) / "second.db")
+        )
         self.factory = async_sessionmaker(self.engine, expire_on_commit=False)
-        for module in ("models.base", "repositories.chats", "repositories.users",
-                       "services.notifications", "services.registration",
-                       "services.growth", "services.payments",
-                       "services.profile", "services.matching", "services.settings",
-                       "services.reveal", "services.reports", "services.admin", "services.ads", "services.op"):
+        for module in (
+            "models.base",
+            "repositories.chats",
+            "repositories.users",
+            "services.notifications",
+            "services.registration",
+            "services.growth",
+            "services.payments",
+            "services.profile",
+            "services.matching",
+            "services.settings",
+            "services.reveal",
+            "services.reports",
+            "services.admin",
+            "services.ads",
+            "services.op",
+        ):
             p = patch(module + ".async_session", self.factory)
             p.start()
             self.addCleanup(p.stop)
@@ -300,23 +371,53 @@ class SecondBotOnboardingTests(unittest.IsolatedAsyncioTestCase):
         return True
 
     async def _start(self, instance, language_code, update_id=1):
-        await self.dp.feed_update(instance, Update(update_id=update_id, message=Message(
-            message_id=update_id, date=datetime.now(timezone.utc),
-            chat=Chat(id=self.uid, type="private"),
-            from_user=TgUser(id=self.uid, is_bot=False, first_name="T",
-                             language_code=language_code), text="/start")))
+        await self.dp.feed_update(
+            instance,
+            Update(
+                update_id=update_id,
+                message=Message(
+                    message_id=update_id,
+                    date=datetime.now(timezone.utc),
+                    chat=Chat(id=self.uid, type="private"),
+                    from_user=TgUser(
+                        id=self.uid,
+                        is_bot=False,
+                        first_name="T",
+                        language_code=language_code,
+                    ),
+                    text="/start",
+                ),
+            ),
+        )
 
     async def _tap(self, instance, data, update_id=1):
-        await self.dp.feed_update(instance, Update(update_id=update_id, callback_query=CallbackQuery(
-            id=str(update_id), from_user=TgUser(id=self.uid, is_bot=False, first_name="T"),
-            chat_instance="offline", data=data, message=Message(
-                message_id=update_id, date=datetime.now(timezone.utc),
-                chat=Chat(id=self.uid, type="private"),
-                from_user=TgUser(id=1, is_bot=True, first_name="Test", username="t"), text="stub"))))
+        await self.dp.feed_update(
+            instance,
+            Update(
+                update_id=update_id,
+                callback_query=CallbackQuery(
+                    id=str(update_id),
+                    from_user=TgUser(id=self.uid, is_bot=False, first_name="T"),
+                    chat_instance="offline",
+                    data=data,
+                    message=Message(
+                        message_id=update_id,
+                        date=datetime.now(timezone.utc),
+                        chat=Chat(id=self.uid, type="private"),
+                        from_user=TgUser(
+                            id=1, is_bot=True, first_name="Test", username="t"
+                        ),
+                        text="stub",
+                    ),
+                ),
+            ),
+        )
 
     async def _user(self):
         async with self.factory() as s:
-            return await s.scalar(select(UserModel).where(UserModel.telegram_id == self.uid))
+            return await s.scalar(
+                select(UserModel).where(UserModel.telegram_id == self.uid)
+            )
 
     async def test_the_second_bot_opens_in_ukrainian_for_a_russian_client(self):
         await self._start(SECOND, "ru")
