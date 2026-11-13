@@ -34,9 +34,16 @@ class DatabaseCase(unittest.IsolatedAsyncioTestCase):
             from sqlalchemy.engine import make_url
 
             url = config.DATABASE_URL
+            allowed_hosts = {"test-db"}
+            if os.getenv("CI") == "true":
+                # GitHub-hosted runner jobs reach service containers through
+                # published localhost ports; the Compose test network uses
+                # the service hostname instead.
+                allowed_hosts.update({"localhost", "127.0.0.1"})
+            parsed_url = make_url(url)
             if (
-                make_url(url).database != "anon_chat_test"
-                or make_url(url).host != "test-db"
+                parsed_url.database != "anon_chat_test"
+                or parsed_url.host not in allowed_hosts
             ):
                 raise RuntimeError(
                     "Integration tests require the isolated test-db/anon_chat_test"
