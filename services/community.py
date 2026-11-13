@@ -323,28 +323,49 @@ class ReconnectService:
             if not offer or offer.status != "pending":
                 return ServiceResult(False, "ALREADY_MATCHED")
             now = utcnow()
+            if user_id not in (offer.user1_id, offer.user2_id):
+                return ServiceResult(False, "NOT_FOUND")
+            a, b = offer.user1_id, offer.user2_id
+
+            # Recover a crash after start_direct() committed but before this
+            # offer was marked matched. The active pair is the durable proof
+            # that reconnect already succeeded.
+            existing_chat = await s.scalar(
+                select(Chat)
+                .where(
+                    Chat.status == "active",
+                    or_(
+                        and_(Chat.user1_id == a, Chat.user2_id == b),
+                        and_(Chat.user1_id == b, Chat.user2_id == a),
+                    ),
+                )
+                .with_for_update()
+            )
+            if existing_chat:
+                offer.status, offer.updated_at = "matched", now
+                return ServiceResult(True, "MATCHED", {"chat": existing_chat})
+
             if offer.expires_at <= now:
                 offer.status, offer.updated_at = "expired", now
                 return ServiceResult(False, "EXPIRED")
-            if user_id not in (offer.user1_id, offer.user2_id):
-                return ServiceResult(False, "NOT_FOUND")
-            if await _active(s, user_id):
-                return ServiceResult(False, "BUSY")
-            if await _blocked(s, offer.user1_id, offer.user2_id):
+            if await _blocked(s, a, b):
                 offer.status, offer.updated_at = "blocked", now
                 return ServiceResult(False, "BLOCKED")
-            if user_id == offer.user1_id:
-                if offer.user1_wants:
-                    return ServiceResult(True, "WAITING")
-                offer.user1_wants = True
-            else:
-                if offer.user2_wants:
-                    return ServiceResult(True, "WAITING")
+            if await _active(s, user_id):
+                return ServiceResult(False, "BUSY")
+            if user_id == a:
+                if not offer.user1_wants:
+                    offer.user1_wants = True
+            elif not offer.user2_wants:
                 offer.user2_wants = True
             offer.updated_at = now
             both = offer.user1_wants and offer.user2_wants
             other = _other(offer, user_id)
             if not both:
+                if (offer.user1_wants if user_id == a else offer.user2_wants):
+                    # An already-recorded first consent is still just waiting
+                    # while the other side has not agreed.
+                    pass
                 anon = await _anon(s, user_id)
                 lang = await _lang(s, other)
                 from services.notifications import enqueue
@@ -367,12 +388,30 @@ class ReconnectService:
         chat = await ChatRepository().start_direct(a, b)
         if not chat:
             async with async_session.begin() as s:
+                await lock_matching(s)
                 row = await s.scalar(
                     select(ReconnectOffer)
                     .where(ReconnectOffer.session_id == session_id)
                     .with_for_update()
                 )
-                if row:
+                existing_chat = await s.scalar(
+                    select(Chat)
+                    .where(
+                        Chat.status == "active",
+                        or_(
+                            and_(Chat.user1_id == a, Chat.user2_id == b),
+                            and_(Chat.user1_id == b, Chat.user2_id == a),
+                        ),
+                    )
+                    .with_for_update()
+                )
+                if existing_chat:
+                    if row:
+                        row.status, row.updated_at = "matched", utcnow()
+                    return ServiceResult(
+                        True, "MATCHED", {"chat": existing_chat}
+                    )
+                if row and row.status == "pending":
                     row.status, row.updated_at = "expired", utcnow()
             return ServiceResult(False, "BUSY")
         try:

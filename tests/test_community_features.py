@@ -237,6 +237,57 @@ class ReconnectTests(CommunityCase):
         self.assertIsNotNone(active)
         self.assertIn(2, (active.user1_id, active.user2_id))
 
+    async def test_retry_recovers_when_both_consents_were_saved_before_crash(self):
+        chat = await self.ended_chat()
+        async with self.factory.begin() as s:
+            offer = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == chat.session_id
+                )
+            )
+            offer.user1_wants = True
+            offer.user2_wants = True
+
+        result = await ReconnectService().press(2, chat.session_id)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.code, "MATCHED")
+        active = await self.repo.active(1)
+        self.assertIsNotNone(active)
+        self.assertEqual({active.user1_id, active.user2_id}, {1, 2})
+        async with self.factory() as s:
+            stored = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == chat.session_id
+                )
+            )
+            self.assertEqual(stored.status, "matched")
+
+    async def test_retry_repairs_offer_after_chat_was_created_before_crash(self):
+        chat = await self.ended_chat()
+        async with self.factory.begin() as s:
+            offer = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == chat.session_id
+                )
+            )
+            offer.user1_wants = True
+            offer.user2_wants = True
+
+        existing = await self.repo.start_direct(1, 2)
+        self.assertIsNotNone(existing)
+
+        result = await ReconnectService().press(2, chat.session_id)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.code, "MATCHED")
+        self.assertEqual(result.data["chat"].session_id, existing.session_id)
+        async with self.factory() as s:
+            stored = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == chat.session_id
+                )
+            )
+            self.assertEqual(stored.status, "matched")
+
     async def test_expired_offer_does_not_match(self):
         chat = await self.ended_chat()
         async with self.factory.begin() as s:
