@@ -75,12 +75,15 @@ class ScheduleCheckTests(OpCase):
     async def test_owner_window_notice_dispatches_without_owner_user_row(self):
         now = utcnow()
         await self.enable(starts_at=now - timedelta(minutes=2))
-        with patch.object(op_schedule, "OWNER_ID", 999):
+        with (
+            patch.object(op_schedule, "OWNER_ID", 999),
+            patch("config.OWNER_ID", 999),
+        ):
             self.assertEqual(await op_schedule.check(now=now), 1)
 
-        from services.notifications import NotificationService
+            from services.notifications import NotificationService
 
-        notification = await NotificationService().next()
+            notification = await NotificationService().next()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.type, "op_window")
         self.assertEqual(notification.user_id, 999)
