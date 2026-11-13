@@ -232,9 +232,19 @@ async def settings_for(s, bot_id):
 async def settings_or_create(s, bot_id) -> OpSettings:
     settings = await settings_for(s, bot_id)
     if settings is None:
-        settings = OpSettings(bot_id=bot_id)
-        s.add(settings)
-        await s.flush()
+        if s.bind.dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert
+
+        await s.execute(
+            insert(OpSettings)
+            .values(bot_id=bot_id)
+            .on_conflict_do_nothing(index_elements=["bot_id"])
+        )
+        # Another request may have inserted the row while this transaction
+        # waited on the primary-key conflict. Read the winning row back.
+        settings = await s.get(OpSettings, bot_id)
     return settings
 
 

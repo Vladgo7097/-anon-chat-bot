@@ -133,6 +133,29 @@ class ConcurrentTests(DatabaseCase):
             )
             self.assertEqual(accepted, 1)
 
+    async def test_op_settings_first_create_is_safe_under_contention(self):
+        from models.op import OpSettings
+        from services.op import settings_or_create
+
+        async def ensure_settings():
+            async with self.factory.begin() as session:
+                row = await settings_or_create(session, 987654321)
+                self.assertEqual(row.bot_id, 987654321)
+
+        results = await asyncio.gather(
+            *(ensure_settings() for _ in range(12)), return_exceptions=True
+        )
+        self.assertEqual(
+            [error for error in results if isinstance(error, BaseException)], []
+        )
+        async with self.factory() as session:
+            count = await session.scalar(
+                select(func.count(OpSettings.bot_id)).where(
+                    OpSettings.bot_id == 987654321
+                )
+            )
+        self.assertEqual(count, 1)
+
     async def test_scheduler_runs_while_matching_lock_is_held(self):
         from sqlalchemy import text
         from services.notifications import NotificationService
