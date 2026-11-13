@@ -76,7 +76,14 @@ def _spawn_periodic(name, factory):
     task = asyncio.create_task(factory(), name=f"maintenance:{name}")
 
     def _done(done):
-        _PERIODIC.pop(name, None)
+        # An old task's callback can run after a replacement was registered.
+        # Remove only the task that still owns this registry slot.
+        if _PERIODIC.get(name) is done:
+            _PERIODIC.pop(name, None)
+        # Task.exception() raises CancelledError for a cancelled task; shutdown
+        # intentionally cancels periodic work before closing Redis/DB.
+        if done.cancelled():
+            return
         error = done.exception()
         if error is not None:
             logger.error("event=periodic_failed job=%s", name, exc_info=error)
