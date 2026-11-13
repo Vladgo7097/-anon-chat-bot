@@ -336,7 +336,7 @@ class NotificationService:
                     cooldown = None
                 if cooldown and cooldown > now:
                     n.scheduled_at = cooldown
-                    return None
+                    continue
                 if n.attempt_count >= 5:
                     n.status = "failed"
                     if n.broadcast_id:
@@ -347,7 +347,7 @@ class NotificationService:
                     recent=await s.scalar(select(Notification.id).where(Notification.user_id==n.user_id,Notification.id!=n.id,Notification.marketing.is_(True),Notification.status=="sent",Notification.sent_at>now-timedelta(days=1)).limit(1))
                     if recent:
                         n.scheduled_at=now+timedelta(days=1)
-                        return None
+                        continue
                 n.status, n.scheduled_at = "sending", now+timedelta(minutes=2)
                 n.attempt_count += 1
                 return n

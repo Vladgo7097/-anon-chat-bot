@@ -88,6 +88,85 @@ class AuditDatabaseTests(DatabaseCase):
             )
             self.assertEqual(exhausted.status, "failed")
 
+    async def test_next_continues_after_recipient_rate_limit_cooldown(self):
+        now = utcnow()
+        async with self.factory.begin() as s:
+            s.add(
+                Notification(
+                    user_id=1,
+                    type="test",
+                    dedupe_key="audit:cooldown-current",
+                    text="defer",
+                    scheduled_at=now - timedelta(seconds=1),
+                )
+            )
+            await s.flush()
+            s.add(
+                Notification(
+                    user_id=1,
+                    type="test",
+                    dedupe_key="audit:cooldown-source",
+                    text="rate limited",
+                    status="queued",
+                    scheduled_at=now + timedelta(seconds=30),
+                    last_error="rate_limit",
+                )
+            )
+            s.add(
+                Notification(
+                    user_id=2,
+                    type="test",
+                    dedupe_key="audit:cooldown-next-recipient",
+                    text="deliver",
+                    scheduled_at=now - timedelta(seconds=1),
+                )
+            )
+
+        notification = await NotificationService().next()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.user_id, 2)
+
+    async def test_next_continues_after_daily_marketing_limit(self):
+        now = utcnow()
+        async with self.factory.begin() as s:
+            s.add(
+                Notification(
+                    user_id=1,
+                    type="inactive",
+                    dedupe_key="audit:marketing-current",
+                    text="defer",
+                    marketing=True,
+                    scheduled_at=now - timedelta(seconds=1),
+                )
+            )
+            await s.flush()
+            s.add(
+                Notification(
+                    user_id=1,
+                    type="inactive",
+                    dedupe_key="audit:marketing-recent",
+                    text="already sent",
+                    marketing=True,
+                    status="sent",
+                    scheduled_at=now - timedelta(hours=2),
+                    sent_at=now - timedelta(hours=2),
+                )
+            )
+            s.add(
+                Notification(
+                    user_id=2,
+                    type="inactive",
+                    dedupe_key="audit:marketing-next-recipient",
+                    text="deliver",
+                    marketing=True,
+                    scheduled_at=now - timedelta(seconds=1),
+                )
+            )
+
+        notification = await NotificationService().next()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.user_id, 2)
+
     async def test_reported_partner_is_excluded_from_next_match(self):
         from services.reports import ReportService
 
