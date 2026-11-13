@@ -36,6 +36,64 @@ class ConcurrentTests(DatabaseCase):
         await self.real_redis.aclose()
         await super().asyncTearDown()
 
+    async def test_growth_unique_grants_are_safe_under_contention(self):
+        from services.growth import award, event, first_purchase_discount, offer
+        from models.operations import Achievement, AnalyticsEvent, Offer as GrowthOffer
+
+        async def grant_once():
+            async with self.factory.begin() as session:
+                await event(session, 1, "concurrent_event", "growth:event:shared")
+                await award(session, 1, "concurrent_award")
+                await offer(session, 1, "growth:shared_offer", 20)
+
+        results = await asyncio.gather(
+            *(grant_once() for _ in range(8)), return_exceptions=True
+        )
+        self.assertEqual(
+            [error for error in results if isinstance(error, BaseException)], []
+        )
+
+        discounts = await asyncio.gather(
+            *(first_purchase_discount(1) for _ in range(8)),
+            return_exceptions=True,
+        )
+        self.assertEqual(discounts, [50] * 8)
+
+        async with self.factory() as session:
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count(AnalyticsEvent.id)).where(
+                        AnalyticsEvent.dedupe_key == "growth:event:shared"
+                    )
+                ),
+                1,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count(Achievement.user_id)).where(
+                        Achievement.user_id == 1,
+                        Achievement.achievement_code == "concurrent_award",
+                    )
+                ),
+                1,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count(GrowthOffer.id)).where(
+                        GrowthOffer.code == "growth:shared_offer"
+                    )
+                ),
+                1,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count(GrowthOffer.id)).where(
+                        GrowthOffer.code == "first_purchase:1"
+                    )
+                ),
+                1,
+            )
+
     async def test_scheduler_runs_while_matching_lock_is_held(self):
         from sqlalchemy import text
         from services.notifications import NotificationService

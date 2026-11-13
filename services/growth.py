@@ -7,22 +7,64 @@ from models.operations import Referral, Streak, Offer, Achievement, AnalyticsEve
 from utils.time import utcnow
 
 
+async def _insert_once(session, model, values, conflict_columns):
+    """Insert once under a unique constraint without check-then-insert races."""
+    if session.bind.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+
+    result = await session.execute(
+        insert(model)
+        .values(**values)
+        .on_conflict_do_nothing(index_elements=conflict_columns)
+    )
+    return result.rowcount == 1
+
+
 async def event(s, user_id, name, key):
-    if not await s.scalar(select(AnalyticsEvent).where(AnalyticsEvent.dedupe_key == key)):
-        s.add(AnalyticsEvent(user_id=user_id, event=name, dedupe_key=key))
+    await _insert_once(
+        s,
+        AnalyticsEvent,
+        {"user_id": user_id, "event": name, "dedupe_key": key},
+        ["dedupe_key"],
+    )
 
 
 async def award(s, user_id, code):
-    if not await s.get(Achievement, (user_id, code)):
-        s.add(Achievement(user_id=user_id, achievement_code=code))
+    await _insert_once(
+        s,
+        Achievement,
+        {"user_id": user_id, "achievement_code": code},
+        ["user_id", "achievement_code"],
+    )
 
 
 async def offer(s, user_id, code, percent, scope="premium", days=30):
-    if not await s.scalar(select(Offer).where(Offer.code == code)):
-        s.add(Offer(user_id=user_id, code=code, discount_percent=percent, product_scope=scope, ends_at=utcnow()+timedelta(days=days)))
+    created = await _insert_once(
+        s,
+        Offer,
+        {
+            "user_id": user_id,
+            "code": code,
+            "discount_percent": percent,
+            "product_scope": scope,
+            "ends_at": utcnow() + timedelta(days=days),
+        },
+        ["code"],
+    )
+    if created:
         from services.notifications import enqueue
-        await enqueue(s,user_id,"reward",f"reward:{code}",f"<tg-emoji emoji-id=\"5312160339335347417\">🎁</tg-emoji> Получена скидка {percent}%. Срок: {days} дней. Подробности в профиле.","profile:rewards")
 
+        await enqueue(
+            s,
+            user_id,
+            "reward",
+            f"reward:{code}",
+            f'<tg-emoji emoji-id="5312160339335347417">🎁</tg-emoji> '
+            f"Получена скидка {percent}%. Срок: {days} дней. Подробности в профиле.",
+            "profile:rewards",
+        )
 
 async def first_purchase_discount(user_id, percent=50, days=30):
     """Half off the first Premium ever bought, granted the moment the person
@@ -45,9 +87,25 @@ async def first_purchase_discount(user_id, percent=50, days=30):
         if existing:
             active = existing.status == "active" and existing.starts_at <= now < existing.ends_at
             return existing.discount_percent if active else None
-        s.add(Offer(user_id=user_id, code=code, discount_percent=percent,
-                    product_scope="premium", ends_at=now+timedelta(days=days)))
-    return percent
+        created = await _insert_once(
+            s,
+            Offer,
+            {
+                "user_id": user_id,
+                "code": code,
+                "discount_percent": percent,
+                "product_scope": "premium",
+                "ends_at": now + timedelta(days=days),
+            },
+            ["code"],
+        )
+        if created:
+            return percent
+        # Another request may have won the unique-key race after the SELECT.
+        existing = await s.scalar(select(Offer).where(Offer.code == code))
+        if existing and existing.status == "active" and existing.starts_at <= now < existing.ends_at:
+            return existing.discount_percent
+        return None
 
 
 OP_BYPASS_TEXT = {
@@ -220,9 +278,20 @@ class SeasonalService:
         if not data:
             return
         code=f"season:{data['code']}:{user_id}"
-        if await s.scalar(select(Offer.id).where(Offer.code==code)):
+        created = await _insert_once(
+            s,
+            Offer,
+            {
+                "user_id": user_id,
+                "code": code,
+                "discount_percent": data["discount"],
+                "product_scope": "premium",
+                "ends_at": datetime.fromisoformat(data["ends_at"]),
+            },
+            ["code"],
+        )
+        if not created:
             return
         await award(s,user_id,f"season:{data['code']}")
-        s.add(Offer(user_id=user_id,code=code,discount_percent=data["discount"],product_scope="premium",ends_at=datetime.fromisoformat(data["ends_at"])))
         from services.notifications import enqueue
         await enqueue(s,user_id,"reward",f"reward:{code}",f"<tg-emoji emoji-id=\"5994502837327892086\">🎉</tg-emoji> Событие «{data['code']}»: получен бейдж и скидка {data['discount']}% на Premium до {data['ends_at']}.","profile:rewards")
