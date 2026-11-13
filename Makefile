@@ -1,10 +1,9 @@
 # Local developer entry points. The deployed containers are built by the
 # post-receive hook on the server; nothing here touches the deploy path.
 #
-# Everything runs out of .venv so a fresh clone reproduces the working
-# environment (475 tests) instead of quietly depending on whatever the host
-# Python happens to have -- which is how five discord tests were being
-# silently skipped before discord.py was declared in requirements-dev.txt.
+# Everything runs out of .venv so a fresh clone reproduces the
+# project test environment instead of quietly depending on whatever the host
+# Python happens to have.
 
 PYTHON := .venv/bin/python
 RUFF   := $(HOME)/.local/bin/ruff

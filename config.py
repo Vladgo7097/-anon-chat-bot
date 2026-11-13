@@ -16,7 +16,7 @@ BOT_DETECT_CLIENT_LANG = os.getenv("BOT_DETECT_CLIENT_LANG", "1") != "0"
 # Канал тревог, не зависящий ни от одного из наших токенов: очередь
 # уведомлений разносит тот же процесс, что и бота, поэтому при полной
 # смерти обоих токенов сообщить владельцу иначе некому. Принимает POST
-# с полями content (Discord) и text (Slack).
+# с типовыми полями content или text от webhook-провайдера.
 ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 ADMIN_IDS: set[int] = set()
