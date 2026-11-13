@@ -81,6 +81,15 @@ async def first_purchase_discount(user_id, percent=50, days=30):
     now = utcnow()
     code = f"first_purchase:{user_id}"
     async with async_session.begin() as s:
+        # Serialize concurrent visits to the Premium screen for one account.
+        # PaymentService.complete() also locks the user row before crediting
+        # a purchase, so the paid-state check and discount reservation observe
+        # a consistent account state.
+        await s.scalar(
+            select(User)
+            .where(User.telegram_id == user_id)
+            .with_for_update()
+        )
         if await s.scalar(select(Payment.id).where(Payment.user_id == user_id, Payment.status == "paid").limit(1)):
             return None
         existing = await s.scalar(select(Offer).where(Offer.code == code))
@@ -95,7 +104,9 @@ async def first_purchase_discount(user_id, percent=50, days=30):
                 "code": code,
                 "discount_percent": percent,
                 "product_scope": "premium",
+                "starts_at": now,
                 "ends_at": now + timedelta(days=days),
+                "status": "active",
             },
             ["code"],
         )
