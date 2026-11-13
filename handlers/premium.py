@@ -511,7 +511,7 @@ async def on_subscription_update(update: Update):
     находим исходный Payment и PremiumSubscription.
     """
     sub: BotSubscriptionUpdated = update.subscription
-    async with async_session() as s:
+    async with async_session.begin() as s:
         p = await s.scalar(
             select(Payment)
             .where(Payment.payload == sub.invoice_payload)

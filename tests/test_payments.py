@@ -184,6 +184,51 @@ class PaymentTests(DatabaseCase):
             await service.precheckout(1, first.payload, first.stars_amount, "XTR")
         )
 
+    async def test_native_subscription_updates_are_committed(self):
+        from types import SimpleNamespace
+        from handlers.premium import on_subscription_update
+
+        async with self.factory.begin() as s:
+            payment = Payment(
+                user_id=1,
+                product="premium_1m",
+                stars_amount=100,
+                payload="native-subscription",
+                currency="XTR",
+                status="paid",
+            )
+            s.add(payment)
+            await s.flush()
+            subscription = PremiumSubscription(
+                user_id=1,
+                plan="1m",
+                stars_paid=100,
+                started_at=utcnow(),
+                expires_at=utcnow() + timedelta(days=30),
+                auto_renew=False,
+                source_payment_id=payment.id,
+            )
+            s.add(subscription)
+
+        with patch("handlers.premium.async_session", self.factory):
+            await on_subscription_update(
+                SimpleNamespace(
+                    subscription=SimpleNamespace(
+                        invoice_payload="native-subscription",
+                        user=SimpleNamespace(id=1),
+                        state="active",
+                    )
+                )
+            )
+
+        async with self.factory() as s:
+            stored = await s.scalar(
+                select(PremiumSubscription).where(
+                    PremiumSubscription.source_payment_id == payment.id
+                )
+            )
+            self.assertTrue(stored.auto_renew)
+
     async def test_monthly_filter_preserves_older_single_use(self):
         service = PaymentService()
         for code in ("gender_filter_one_match", "gender_filter_1m"):
