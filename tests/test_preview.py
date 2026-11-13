@@ -190,6 +190,29 @@ class PreviewServiceTests(DatabaseCase):
         # Контент собирается воркером в момент доставки, поэтому пуст.
         self.assertTrue(all(card.text == "" for card in cards))
 
+    async def test_closed_preview_offer_sends_gone_instead_of_stale_card(self):
+        from types import SimpleNamespace
+        from handlers.preview import send_preview_card
+        from keyboards import texts as T
+
+        offer = await self.repo.create_offer(1, 2, self._mock_redis())
+        async with self.factory.begin() as s:
+            row = await s.get(PreviewOffer, offer.id)
+            row.status = "declined"
+            row.resolved_at = utcnow()
+
+        target = SimpleNamespace(send_message=AsyncMock())
+        notification = SimpleNamespace(
+            callback_data=str(offer.id),
+            user_id=1,
+        )
+        with patch("handlers.preview.async_session", self.factory):
+            await send_preview_card(target, notification, "ru")
+
+        target.send_message.assert_awaited_once_with(
+            1, T.tr(T.PREVIEW_TEXTS, "ru")["gone"]
+        )
+
     async def test_offer_reserves_pair_against_third_party(self):
         offer = await self.repo.create_offer(1, 2, self._mock_redis())
         self.assertIsNotNone(offer)

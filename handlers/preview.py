@@ -17,6 +17,7 @@ from models.base import async_session
 from models.preview import PreviewOffer
 from models.user import User
 from utils.db import user_lang
+from utils.time import utcnow
 
 
 def preview_request_keyboard(offer_id, lang):
@@ -63,7 +64,12 @@ async def send_preview_card(target, notification, lang):
     async with async_session() as s:
         if notification.callback_data and notification.callback_data.isdigit():
             offer = await s.get(PreviewOffer, int(notification.callback_data))
-            if offer:
+            if (
+                offer
+                and offer.status == "requested"
+                and offer.expires_at > utcnow()
+                and notification.user_id in (offer.user1_id, offer.user2_id)
+            ):
                 partner_id = (
                     offer.user2_id
                     if offer.user1_id == notification.user_id
