@@ -77,6 +77,25 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             session_id="test-session",
         )
 
+    async def test_stale_unreachable_session_does_not_replace_new_chat_menu(self):
+        from handlers.chat import finish
+
+        end_chat = AsyncMock(return_value=SimpleNamespace(ok=False))
+        with patch("handlers.chat.ChatService.end_chat", end_chat):
+            result = await finish(
+                self.message,
+                1,
+                "unreachable",
+                lang="ru",
+                session_id="old-session",
+            )
+
+        self.assertFalse(result)
+        end_chat.assert_awaited_once_with(
+            1, session_id="old-session", reason="unreachable"
+        )
+        self.message.answer.assert_not_awaited()
+
     async def test_reply_uses_partner_message_id(self):
         self.message.reply_to_message = SimpleNamespace(message_id=9)
         self.bot.copy_message.return_value = SimpleNamespace(message_id=20)
