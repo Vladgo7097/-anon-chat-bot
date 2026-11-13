@@ -256,6 +256,68 @@ class FriendTests(CommunityCase):
         self.assertEqual(second.code, "SENT")
         self.assertEqual(second.data["friendship_id"], first.data["friendship_id"])
 
+    async def test_re_request_respects_pending_request_limit(self):
+        chat = await self.ended_chat(1, 2)
+        async with self.factory.begin() as s:
+            s.add(
+                Friendship(
+                    user1_id=1,
+                    user2_id=3,
+                    requested_by=1,
+                    status="pending",
+                )
+            )
+            declined = Friendship(
+                user1_id=1,
+                user2_id=2,
+                requested_by=2,
+                status="declined",
+                updated_at=utcnow() - timedelta(days=2),
+            )
+            s.add(declined)
+            await s.flush()
+            declined_id = declined.id
+
+        with patch("config.MAX_FRIEND_REQUESTS", 1):
+            result = await FriendService().request(1, chat.session_id)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, "LIMIT")
+        async with self.factory() as s:
+            stored = await s.get(Friendship, declined_id)
+        self.assertEqual(stored.status, "declined")
+
+    async def test_re_request_respects_accepted_friend_limit(self):
+        chat = await self.ended_chat(1, 2)
+        async with self.factory.begin() as s:
+            s.add(
+                Friendship(
+                    user1_id=1,
+                    user2_id=3,
+                    requested_by=1,
+                    status="accepted",
+                )
+            )
+            declined = Friendship(
+                user1_id=1,
+                user2_id=2,
+                requested_by=2,
+                status="declined",
+                updated_at=utcnow() - timedelta(days=2),
+            )
+            s.add(declined)
+            await s.flush()
+            declined_id = declined.id
+
+        with patch("config.MAX_FRIENDS", 1):
+            result = await FriendService().request(1, chat.session_id)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, "LIMIT")
+        async with self.factory() as s:
+            stored = await s.get(Friendship, declined_id)
+        self.assertEqual(stored.status, "declined")
+
     async def test_friend_invitation_creates_a_direct_chat(self):
         chat = await self.ended_chat()
         sent = await FriendService().request(1, chat.session_id)

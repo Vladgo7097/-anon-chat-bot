@@ -69,6 +69,20 @@ async def _accepted_count(s, user_id):
         or_(Friendship.user1_id == user_id, Friendship.user2_id == user_id),
     )) or 0)
 
+async def _request_limit_reached(s, user_id):
+    """Apply both outgoing-request and accepted-friend caps to every new request."""
+    if await _accepted_count(s, user_id) >= config.MAX_FRIENDS:
+        return True
+    pending = await s.scalar(
+        select(func.count(Friendship.id)).where(
+            Friendship.requested_by == user_id,
+            Friendship.status == "pending",
+        )
+    )
+    return int(pending or 0) >= config.MAX_FRIEND_REQUESTS
+
+
+
 
 async def _notify_accepted(s, row):
     requester = row.requested_by
@@ -143,6 +157,10 @@ class FriendService:
                     and existing.updated_at > now - timedelta(days=1)
                 ):
                     return ServiceResult(False, "COOLDOWN")
+                # Reusing a declined/stale pair still creates a new outgoing
+                # request and must obey the same limits as a first request.
+                if await _request_limit_reached(s, user_id):
+                    return ServiceResult(False, "LIMIT")
                 existing.requested_by = user_id
                 existing.status, existing.session_id, existing.updated_at = (
                     "pending",
@@ -151,15 +169,7 @@ class FriendService:
                 )
                 friendship = existing
             else:
-                if await _accepted_count(s, user_id) >= config.MAX_FRIENDS:
-                    return ServiceResult(False, "LIMIT")
-                pending = await s.scalar(
-                    select(func.count(Friendship.id)).where(
-                        Friendship.requested_by == user_id,
-                        Friendship.status == "pending",
-                    )
-                )
-                if pending >= config.MAX_FRIEND_REQUESTS:
+                if await _request_limit_reached(s, user_id):
                     return ServiceResult(False, "LIMIT")
                 friendship = Friendship(
                     user1_id=a,
