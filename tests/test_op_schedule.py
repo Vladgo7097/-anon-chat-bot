@@ -72,6 +72,19 @@ class ScheduleCheckTests(OpCase):
         self.assertEqual(rows[0].user_id, 999)
         self.assertEqual(rows[0].bot_id, BOT)
 
+    async def test_owner_window_notice_dispatches_without_owner_user_row(self):
+        now = utcnow()
+        await self.enable(starts_at=now - timedelta(minutes=2))
+        with patch.object(op_schedule, "OWNER_ID", 999):
+            self.assertEqual(await op_schedule.check(now=now), 1)
+
+        from services.notifications import NotificationService
+
+        notification = await NotificationService().next()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.type, "op_window")
+        self.assertEqual(notification.user_id, 999)
+
     async def test_disabled_requirement_is_silent(self):
         now = utcnow()
         await self.enable(enabled=False, starts_at=now - timedelta(minutes=2))
