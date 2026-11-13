@@ -126,7 +126,10 @@ class FriendService:
                         existing.status = "declined"
                         existing.updated_at = now - timedelta(days=2)
                     elif existing.requested_by == partner:
-                        if await _accepted_count(s, user_id) >= config.MAX_FRIENDS:
+                        if (
+                            await _accepted_count(s, user_id) >= config.MAX_FRIENDS
+                            or await _accepted_count(s, partner) >= config.MAX_FRIENDS
+                        ):
                             return ServiceResult(False, "LIMIT")
                         existing.status, existing.updated_at = "accepted", now
                         await _notify_accepted(s, existing)
@@ -187,6 +190,7 @@ class FriendService:
         if not 0 < friendship_id <= 2**63 - 1:
             return ServiceResult(False, "NOT_FOUND")
         async with async_session.begin() as s:
+            await lock_matching(s)
             row = await s.get(Friendship, friendship_id, with_for_update=True)
             if not row or user_id not in (row.user1_id, row.user2_id):
                 return ServiceResult(False, "NOT_FOUND")
@@ -201,7 +205,11 @@ class FriendService:
                 row.status, row.updated_at = "declined", now
                 return ServiceResult(False, "EXPIRED")
             if accept:
-                if await _accepted_count(s, user_id) >= config.MAX_FRIENDS:
+                partner = _other(row, user_id)
+                if (
+                    await _accepted_count(s, user_id) >= config.MAX_FRIENDS
+                    or await _accepted_count(s, partner) >= config.MAX_FRIENDS
+                ):
                     return ServiceResult(False, "LIMIT")
                 row.status, row.updated_at = "accepted", now
                 await _notify_accepted(s, row)

@@ -94,6 +94,45 @@ class ConcurrentTests(DatabaseCase):
                 1,
             )
 
+    async def test_concurrent_friend_accepts_cannot_exceed_limit(self):
+        from models.community import Friendship
+        from services.community import FriendService
+
+        async with self.factory.begin() as session:
+            first = Friendship(
+                user1_id=1,
+                user2_id=2,
+                requested_by=2,
+                status="pending",
+            )
+            second = Friendship(
+                user1_id=1,
+                user2_id=3,
+                requested_by=3,
+                status="pending",
+            )
+            session.add_all([first, second])
+            await session.flush()
+            first_id, second_id = first.id, second.id
+
+        with patch("config.MAX_FRIENDS", 1):
+            results = await asyncio.gather(
+                FriendService().respond(1, first_id, True),
+                FriendService().respond(1, second_id, True),
+            )
+        self.assertEqual(sum(result.ok for result in results), 1)
+        self.assertEqual(
+            sum(result.code == "LIMIT" for result in results), 1
+        )
+        async with self.factory() as session:
+            accepted = await session.scalar(
+                select(func.count(Friendship.id)).where(
+                    Friendship.user1_id == 1,
+                    Friendship.status == "accepted",
+                )
+            )
+            self.assertEqual(accepted, 1)
+
     async def test_scheduler_runs_while_matching_lock_is_held(self):
         from sqlalchemy import text
         from services.notifications import NotificationService

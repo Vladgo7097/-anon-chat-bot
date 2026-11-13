@@ -188,6 +188,51 @@ class FriendTests(CommunityCase):
             row = await s.get(Friendship, first.data["friendship_id"])
         self.assertEqual(row.status, "accepted")
 
+    async def test_reciprocal_request_respects_both_friends_limits(self):
+        chat = await self.ended_chat(1, 2)
+        first = await FriendService().request(1, chat.session_id)
+        self.assertEqual(first.code, "SENT")
+        async with self.factory.begin() as s:
+            s.add(
+                Friendship(
+                    user1_id=1,
+                    user2_id=3,
+                    requested_by=1,
+                    status="accepted",
+                )
+            )
+        with patch("config.MAX_FRIENDS", 1):
+            result = await FriendService().request(2, chat.session_id)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, "LIMIT")
+
+    async def test_accept_checks_requesters_friend_limit_too(self):
+        async with self.factory.begin() as s:
+            s.add(
+                Friendship(
+                    user1_id=1,
+                    user2_id=3,
+                    requested_by=1,
+                    status="accepted",
+                )
+            )
+            pending = Friendship(
+                user1_id=1,
+                user2_id=2,
+                requested_by=1,
+                status="pending",
+            )
+            s.add(pending)
+            await s.flush()
+            pending_id = pending.id
+        with patch("config.MAX_FRIENDS", 1):
+            result = await FriendService().respond(2, pending_id, True)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, "LIMIT")
+        async with self.factory() as s:
+            stored = await s.get(Friendship, pending_id)
+            self.assertEqual(stored.status, "pending")
+
     async def test_block_closes_a_friendship(self):
         chat = await self.ended_chat()
         sent = await FriendService().request(1, chat.session_id)
