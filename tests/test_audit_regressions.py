@@ -21,6 +21,73 @@ from utils.time import utcnow
 
 
 class AuditDatabaseTests(DatabaseCase):
+    async def test_next_skips_deleted_recipient_without_idling_worker(self):
+        from models.user import User
+
+        async with self.factory.begin() as s:
+            user = await s.scalar(select(User).where(User.telegram_id == 1))
+            user.deleted_at = utcnow()
+            s.add(
+                Notification(
+                    user_id=1,
+                    type="test",
+                    dedupe_key="audit:deleted-recipient",
+                    text="skip",
+                )
+            )
+            await s.flush()
+            s.add(
+                Notification(
+                    user_id=2,
+                    type="test",
+                    dedupe_key="audit:valid-after-deleted",
+                    text="deliver",
+                )
+            )
+
+        notification = await NotificationService().next()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.user_id, 2)
+        async with self.factory() as s:
+            skipped = await s.scalar(
+                select(Notification).where(
+                    Notification.dedupe_key == "audit:deleted-recipient"
+                )
+            )
+            self.assertEqual(skipped.status, "skipped")
+
+    async def test_next_skips_exhausted_notification_without_idling_worker(self):
+        async with self.factory.begin() as s:
+            s.add(
+                Notification(
+                    user_id=1,
+                    type="test",
+                    dedupe_key="audit:exhausted",
+                    text="skip",
+                    attempt_count=5,
+                )
+            )
+            await s.flush()
+            s.add(
+                Notification(
+                    user_id=2,
+                    type="test",
+                    dedupe_key="audit:valid-after-exhausted",
+                    text="deliver",
+                )
+            )
+
+        notification = await NotificationService().next()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.user_id, 2)
+        async with self.factory() as s:
+            exhausted = await s.scalar(
+                select(Notification).where(
+                    Notification.dedupe_key == "audit:exhausted"
+                )
+            )
+            self.assertEqual(exhausted.status, "failed")
+
     async def test_reported_partner_is_excluded_from_next_match(self):
         from services.reports import ReportService
 

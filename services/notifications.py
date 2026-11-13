@@ -324,7 +324,7 @@ class NotificationService:
                         not user or (banned(user) and n.type != "ban") or user.deleted_at
                         or user.bot_blocked_at or marketing_disabled or (n.marketing and muted(user)))):
                     n.status = "skipped"
-                    return None
+                    continue
                 cooldown = await s.scalar(select(func.max(Notification.scheduled_at)).where(
                     Notification.user_id == n.user_id, Notification.id != n.id,
                     Notification.status.in_(["queued", "sending"]),
@@ -342,7 +342,7 @@ class NotificationService:
                     if n.broadcast_id:
                         job=await s.get(Broadcast,n.broadcast_id,with_for_update=True)
                         job.failed+=1
-                    return None
+                    continue
                 if n.marketing:
                     recent=await s.scalar(select(Notification.id).where(Notification.user_id==n.user_id,Notification.id!=n.id,Notification.marketing.is_(True),Notification.status=="sent",Notification.sent_at>now-timedelta(days=1)).limit(1))
                     if recent:
