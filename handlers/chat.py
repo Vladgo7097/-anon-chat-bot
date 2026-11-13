@@ -197,8 +197,10 @@ async def cb_allow_contact(callback: CallbackQuery, lang: str = "ru"):
             pass  # карточка старше 48 часов — тост уже подтверждение дал
 
 
-async def finish(message, user_id, reason="stop", lang="ru"):
-    result = await ChatService().end_chat(user_id, reason=reason)
+async def finish(message, user_id, reason="stop", lang="ru", session_id=None):
+    # A failed relay must close the session it was prepared for, not a newer
+    # chat the user may have started while Telegram was processing the copy.
+    result = await ChatService().end_chat(user_id, session_id=session_id, reason=reason)
     if not result.ok:
         await message.answer(T.tr(NOT_IN_CHAT, lang), reply_markup=main_menu_kb(lang))
         return False
@@ -395,7 +397,13 @@ async def forward_message(
                 file_id=service.file_id(message),
             )
     except TelegramForbiddenError:
-        await finish(message, message.from_user.id, "unreachable", lang=lang)
+        await finish(
+            message,
+            message.from_user.id,
+            "unreachable",
+            lang=lang,
+            session_id=result.data["session_id"],
+        )
     except TelegramBadRequest:
         logger.warning(
             "event=relay_failed chat_session_id=%s", result.data["session_id"]
