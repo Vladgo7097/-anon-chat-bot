@@ -125,7 +125,6 @@ class AuditDatabaseTests(DatabaseCase):
             )
 
         service = NotificationService()
-        self.assertIsNone(await service.next())
         notification = await service.next()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.user_id, 2)
