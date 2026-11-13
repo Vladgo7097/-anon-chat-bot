@@ -352,7 +352,8 @@ class ReconnectTests(CommunityCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.code, "MATCHED")
-        sync.assert_awaited_once_with(existing)
+        sync.assert_awaited_once()
+        self.assertEqual(sync.await_args.args[0].session_id, existing.session_id)
 
     async def test_retry_recovery_resynchronizes_active_chat_cache(self):
         chat = await self.ended_chat()
@@ -374,7 +375,8 @@ class ReconnectTests(CommunityCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.code, "MATCHED")
-        sync.assert_awaited_once_with(existing)
+        sync.assert_awaited_once()
+        self.assertEqual(sync.await_args.args[0].session_id, existing.session_id)
 
     async def test_expired_offer_does_not_match(self):
         chat = await self.ended_chat()

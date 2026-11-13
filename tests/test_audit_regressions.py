@@ -45,7 +45,9 @@ class AuditDatabaseTests(DatabaseCase):
                 )
             )
 
-        notification = await NotificationService().next()
+        service = NotificationService()
+        self.assertIsNone(await service.next())
+        notification = await service.next()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.user_id, 2)
         async with self.factory() as s:
@@ -77,7 +79,9 @@ class AuditDatabaseTests(DatabaseCase):
                 )
             )
 
-        notification = await NotificationService().next()
+        service = NotificationService()
+        self.assertIsNone(await service.next())
+        notification = await service.next()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.user_id, 2)
         async with self.factory() as s:
@@ -122,7 +126,9 @@ class AuditDatabaseTests(DatabaseCase):
                 )
             )
 
-        notification = await NotificationService().next()
+        service = NotificationService()
+        self.assertIsNone(await service.next())
+        notification = await service.next()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.user_id, 2)
 

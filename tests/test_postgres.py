@@ -295,5 +295,9 @@ class ConcurrentTests(DatabaseCase):
         with (
             patch.object(health, "engine", self.engine),
             patch.object(health, "Path", return_value=heartbeat),
+            patch.object(
+                health, "get_redis", AsyncMock(return_value=self.real_redis)
+            ),
+            patch.object(health, "close_redis", AsyncMock()),
         ):
             await health.check()

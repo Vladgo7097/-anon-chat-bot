@@ -341,9 +341,10 @@ class PreviewPgTests(DatabaseCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
         import redis.asyncio as redis
+        import config
 
         self.real_redis = redis.from_url(
-            "redis://test-redis:6379/0", decode_responses=True
+            config.REDIS_URL, decode_responses=True
         )
         await self.real_redis.flushdb()
         p = patch("services.chat_manager.get_redis", return_value=self.real_redis)
