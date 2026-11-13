@@ -341,8 +341,7 @@ class OperationsTests(DatabaseCase):
         self.assertEqual(first.user_id, 1)
         await service.finish(first.id, "sent")
         await service.finish(first.id, "sent")
-        self.assertIsNone(await service.next())
-        third = await service.next()
+        third = await service.next()  # opt-out is skipped without an idle poll
         self.assertEqual(third.user_id, 3)
         await service.finish(third.id, "failed", "forbidden")
         await service.expand_broadcast()

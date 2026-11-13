@@ -125,8 +125,8 @@ class BroadcastProgressTests(DatabaseCase):
         await service.expand_broadcast()
         first = await service.next()
         await service.finish(first.id, "sent")
-        self.assertIsNone(await service.next())  # opted out, marked skipped
-        third = await service.next()
+        third = await service.next()  # opted-out recipient is skipped in the same poll
+        self.assertEqual(third.user_id, 3)
         await service.finish(third.id, "failed", "forbidden")
         found = await admin.broadcast_progress(99, job.id)
         self.assertIsNotNone(found)
