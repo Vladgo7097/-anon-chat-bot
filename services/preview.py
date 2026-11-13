@@ -124,6 +124,7 @@ class PreviewService:
     async def cancel_active(uid):
         """«Стоп» в поиске гасит живые переговоры юзера без вежливых ожиданий."""
         async with async_session.begin() as s:
+            await lock_matching(s)
             result = await s.execute(
                 update(PreviewOffer)
                 .where(
@@ -139,6 +140,7 @@ class PreviewService:
         """Sweeper maintenance: истёкшие 'requested' уходят в 'expired' --
         снимает резервации пар и кормит кулдаун «молчание»."""
         async with async_session.begin() as s:
+            await lock_matching(s)
             result = await s.execute(
                 update(PreviewOffer)
                 .where(

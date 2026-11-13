@@ -293,7 +293,9 @@ class PreviewServiceTests(DatabaseCase):
         from services.preview import PreviewService
 
         offer = await self.repo.create_offer(1, 2, self._mock_redis())
-        self.assertEqual(await PreviewService.cancel_active(1), 1)
+        with patch("services.preview.lock_matching", new_callable=AsyncMock) as lock:
+            self.assertEqual(await PreviewService.cancel_active(1), 1)
+        lock.assert_awaited_once()
         async with self.factory() as s:
             row = await s.get(PreviewOffer, offer.id)
             self.assertEqual(row.status, "canceled")
@@ -305,7 +307,9 @@ class PreviewServiceTests(DatabaseCase):
         async with self.factory.begin() as s:
             row = await s.get(PreviewOffer, offer.id)
             row.expires_at = utcnow() - timedelta(seconds=5)
-        self.assertEqual(await PreviewService.expire_stale(), 1)
+        with patch("services.preview.lock_matching", new_callable=AsyncMock) as lock:
+            self.assertEqual(await PreviewService.expire_stale(), 1)
+        lock.assert_awaited_once()
         async with self.factory() as s:
             row = await s.get(PreviewOffer, offer.id)
             self.assertEqual(row.status, "expired")
