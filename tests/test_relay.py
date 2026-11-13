@@ -69,7 +69,13 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch("handlers.chat.finish", AsyncMock()) as finish:
             await forward_message(self.message)
-        finish.assert_awaited_once_with(self.message, 1, "unreachable", lang="ru")
+        finish.assert_awaited_once_with(
+            self.message,
+            1,
+            "unreachable",
+            lang="ru",
+            session_id="test-session",
+        )
 
     async def test_reply_uses_partner_message_id(self):
         self.message.reply_to_message = SimpleNamespace(message_id=9)
