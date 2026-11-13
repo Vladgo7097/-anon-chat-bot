@@ -483,3 +483,12 @@ async def cleanup():
                 Friendship.updated_at < now - timedelta(days=90),
             )
         )
+        # Reconnect offers are only useful during their short expiry window.
+        # Keep recent history for diagnostics, but do not retain one row for
+        # every ended chat forever.
+        await s.execute(
+            delete(ReconnectOffer).where(
+                ReconnectOffer.status != "pending",
+                ReconnectOffer.expires_at < now - timedelta(days=90),
+            )
+        )

@@ -379,6 +379,72 @@ class ReconnectTests(CommunityCase):
         self.assertIsNone(row)
 
 
+    async def test_cleanup_prunes_old_finished_reconnect_offers(self):
+        now = utcnow()
+        async with self.factory.begin() as s:
+            s.add_all(
+                [
+                    ReconnectOffer(
+                        session_id="old-finished",
+                        user1_id=1,
+                        user2_id=2,
+                        status="expired",
+                        expires_at=now - timedelta(days=100),
+                    ),
+                    ReconnectOffer(
+                        session_id="recent-finished",
+                        user1_id=1,
+                        user2_id=2,
+                        status="expired",
+                        expires_at=now - timedelta(days=30),
+                    ),
+                    ReconnectOffer(
+                        session_id="old-pending",
+                        user1_id=1,
+                        user2_id=3,
+                        status="pending",
+                        expires_at=now - timedelta(days=100),
+                    ),
+                    ReconnectOffer(
+                        session_id="live-pending",
+                        user1_id=2,
+                        user2_id=3,
+                        status="pending",
+                        expires_at=now + timedelta(days=1),
+                    ),
+                ]
+            )
+
+        from services.community import cleanup as cleanup_community
+
+        await cleanup_community()
+        async with self.factory() as s:
+            old = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == "old-finished"
+                )
+            )
+            recent = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == "recent-finished"
+                )
+            )
+            expired_pending = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == "old-pending"
+                )
+            )
+            live = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == "live-pending"
+                )
+            )
+            self.assertIsNone(old)
+            self.assertIsNotNone(recent)
+            self.assertIsNone(expired_pending)
+            self.assertEqual(live.status, "pending")
+
+
 class ReferralBypassTests(CommunityCase):
     async def test_three_activated_referrals_grant_seven_days_once(self):
         async with self.factory.begin() as s:
