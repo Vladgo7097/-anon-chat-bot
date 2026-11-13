@@ -37,9 +37,9 @@ def compatible(a, b, gender_access=()):
             )
             if gender != "any" and gender != other.gender:
                 return False
-            if (
-                premium_active(own)
-                and not own.settings_age_min <= other.age <= own.settings_age_max
+            if premium_active(own) and (
+                other.age is None
+                or not own.settings_age_min <= other.age <= own.settings_age_max
             ):
                 return False
     return a.telegram_id != b.telegram_id
