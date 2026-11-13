@@ -328,8 +328,7 @@ class ReconnectService:
             a, b = offer.user1_id, offer.user2_id
 
             # Recover a crash after start_direct() committed but before this
-            # offer was marked matched. The active pair is the durable proof
-            # that reconnect already succeeded.
+            # offer was marked matched or the Redis chat cache was synchronized.
             existing_chat = await s.scalar(
                 select(Chat)
                 .where(
@@ -343,43 +342,49 @@ class ReconnectService:
             )
             if existing_chat:
                 offer.status, offer.updated_at = "matched", now
-                return ServiceResult(True, "MATCHED", {"chat": existing_chat})
-
-            if offer.expires_at <= now:
-                offer.status, offer.updated_at = "expired", now
-                return ServiceResult(False, "EXPIRED")
-            if await _blocked(s, a, b):
-                offer.status, offer.updated_at = "blocked", now
-                return ServiceResult(False, "BLOCKED")
-            if await _active(s, user_id):
-                return ServiceResult(False, "BUSY")
-            if user_id == a:
-                if not offer.user1_wants:
+                recovered_chat = existing_chat
+            else:
+                recovered_chat = None
+                if offer.expires_at <= now:
+                    offer.status, offer.updated_at = "expired", now
+                    return ServiceResult(False, "EXPIRED")
+                if await _blocked(s, a, b):
+                    offer.status, offer.updated_at = "blocked", now
+                    return ServiceResult(False, "BLOCKED")
+                if await _active(s, user_id):
+                    return ServiceResult(False, "BUSY")
+                if user_id == a:
                     offer.user1_wants = True
-            elif not offer.user2_wants:
-                offer.user2_wants = True
-            offer.updated_at = now
-            both = offer.user1_wants and offer.user2_wants
-            other = _other(offer, user_id)
-            if not both:
-                if (offer.user1_wants if user_id == a else offer.user2_wants):
-                    # An already-recorded first consent is still just waiting
-                    # while the other side has not agreed.
-                    pass
-                anon = await _anon(s, user_id)
-                lang = await _lang(s, other)
-                from services.notifications import enqueue
+                else:
+                    offer.user2_wants = True
+                offer.updated_at = now
+                both = offer.user1_wants and offer.user2_wants
+                other = _other(offer, user_id)
+                if not both:
+                    anon = await _anon(s, user_id)
+                    lang = await _lang(s, other)
+                    from services.notifications import enqueue
 
-                await enqueue(
-                    s,
-                    other,
-                    "reconnect_waiting",
-                    f"reconnect_wait:{offer.session_id}:{other}",
-                    T.tr(T.FRIEND_NOTIFY, lang)["reconnect"].format(anon=anon),
-                    offer.session_id,
+                    await enqueue(
+                        s,
+                        other,
+                        "reconnect_waiting",
+                        f"reconnect_wait:{offer.session_id}:{other}",
+                        T.tr(T.FRIEND_NOTIFY, lang)["reconnect"].format(anon=anon),
+                        offer.session_id,
+                    )
+                    return ServiceResult(True, "WAITING")
+                a, b = offer.user1_id, offer.user2_id
+
+        if recovered_chat:
+            try:
+                await ChatService().sync(recovered_chat)
+            except Exception:
+                logger.warning(
+                    "event=reconnect_recovery_sync_failed session_id=%s",
+                    recovered_chat.session_id,
                 )
-                return ServiceResult(True, "WAITING")
-            a, b = offer.user1_id, offer.user2_id
+            return ServiceResult(True, "MATCHED", {"chat": recovered_chat})
 
         from services.matching import MatchingService
 
@@ -387,6 +392,7 @@ class ReconnectService:
         await MatchingService().cancel(b)
         chat = await ChatRepository().start_direct(a, b)
         if not chat:
+            recovered_chat = None
             async with async_session.begin() as s:
                 await lock_matching(s)
                 row = await s.scalar(
@@ -408,11 +414,20 @@ class ReconnectService:
                 if existing_chat:
                     if row:
                         row.status, row.updated_at = "matched", utcnow()
-                    return ServiceResult(
-                        True, "MATCHED", {"chat": existing_chat}
-                    )
-                if row and row.status == "pending":
+                    recovered_chat = existing_chat
+                elif row and row.status == "pending":
                     row.status, row.updated_at = "expired", utcnow()
+            if recovered_chat:
+                try:
+                    await ChatService().sync(recovered_chat)
+                except Exception:
+                    logger.warning(
+                        "event=reconnect_recovery_sync_failed session_id=%s",
+                        recovered_chat.session_id,
+                    )
+                return ServiceResult(
+                    True, "MATCHED", {"chat": recovered_chat}
+                )
             return ServiceResult(False, "BUSY")
         try:
             await ChatService().sync(chat)

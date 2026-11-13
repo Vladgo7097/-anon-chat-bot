@@ -288,6 +288,28 @@ class ReconnectTests(CommunityCase):
             )
             self.assertEqual(stored.status, "matched")
 
+    async def test_retry_recovery_resynchronizes_active_chat_cache(self):
+        chat = await self.ended_chat()
+        async with self.factory.begin() as s:
+            offer = await s.scalar(
+                select(ReconnectOffer).where(
+                    ReconnectOffer.session_id == chat.session_id
+                )
+            )
+            offer.user1_wants = True
+            offer.user2_wants = True
+
+        existing = await self.repo.start_direct(1, 2)
+        self.assertIsNotNone(existing)
+        with patch(
+            "services.community.ChatService.sync", new_callable=AsyncMock
+        ) as sync:
+            result = await ReconnectService().press(2, chat.session_id)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.code, "MATCHED")
+        sync.assert_awaited_once_with(existing)
+
     async def test_expired_offer_does_not_match(self):
         chat = await self.ended_chat()
         async with self.factory.begin() as s:
