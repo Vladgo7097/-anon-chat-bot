@@ -200,12 +200,16 @@ async def cb_allow_contact(callback: CallbackQuery, lang: str = "ru"):
 async def finish(message, user_id, reason="stop", lang="ru", session_id=None):
     # A failed relay must close the session it was prepared for, not a newer
     # chat the user may have started while Telegram was processing the copy.
-    result = await ChatService().end_chat(user_id, session_id=session_id, reason=reason)
+    result = await ChatService().end_chat(
+        user_id, session_id=session_id, reason=reason
+    )
     if not result.ok:
         # A stale relay failure may arrive after this user has entered a new
         # chat. Do not replace that chat's keyboard with the main menu.
         if session_id is None:
-            await message.answer(T.tr(NOT_IN_CHAT, lang), reply_markup=main_menu_kb(lang))
+            await message.answer(
+                T.tr(NOT_IN_CHAT, lang), reply_markup=main_menu_kb(lang)
+            )
         return False
     chat = result.data["chat"]
     await message.answer(T.tr(CHAT_ENDED, lang), reply_markup=main_menu_kb(lang))
