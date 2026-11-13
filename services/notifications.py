@@ -136,10 +136,21 @@ async def enqueue(s, user_id, kind, key, content, callback=None, marketing=False
         from sqlalchemy.dialects.postgresql import insert
     else:
         from sqlalchemy.dialects.sqlite import insert
-    await s.execute(insert(Notification).values(user_id=user_id, type=kind, dedupe_key=key, text=content,
-        callback_data=callback, marketing=marketing, broadcast_id=broadcast_id,
-        bot_id=bot_id).on_conflict_do_nothing(
-        index_elements=["dedupe_key"]))
+    result = await s.execute(
+        insert(Notification)
+        .values(
+            user_id=user_id,
+            type=kind,
+            dedupe_key=key,
+            text=content,
+            callback_data=callback,
+            marketing=marketing,
+            broadcast_id=broadcast_id,
+            bot_id=bot_id,
+        )
+        .on_conflict_do_nothing(index_elements=["dedupe_key"])
+    )
+    return result.rowcount == 1
 
 
 class NotificationService:

@@ -63,8 +63,8 @@ class ScheduleCheckTests(OpCase):
         now = utcnow()
         await self.enable(starts_at=now - timedelta(minutes=2))
         with patch.object(op_schedule, "OWNER_ID", 999):
-            await op_schedule.check(now=now)
-            await op_schedule.check(now=now)
+            self.assertEqual(await op_schedule.check(now=now), 1)
+            self.assertEqual(await op_schedule.check(now=now), 0)
         async with self.factory() as s:
             rows = list(await s.scalars(select(Notification)))
         self.assertEqual(len(rows), 1)

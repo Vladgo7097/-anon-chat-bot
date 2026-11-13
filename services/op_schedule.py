@@ -108,7 +108,7 @@ async def check(now: datetime | None = None) -> int:
                 settings, policies, targets, now
             ):
                 key = f"op_window:{settings.bot_id}:{kind}:{moment:%Y%m%d%H%M}:{label}"
-                await enqueue(
+                inserted = await enqueue(
                     s,
                     OWNER_ID,
                     "op_window",
@@ -116,5 +116,5 @@ async def check(now: datetime | None = None) -> int:
                     _text(settings.bot_id, title, moment, label),
                     bot_id=settings.bot_id,
                 )
-                placed += 1
+                placed += int(inserted)
     return placed
